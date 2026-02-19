@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockSignal Pro | Indian Equity Intel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-chart-line"></i>
+                <span>Signal<span>Pro</span></span>
+            </div>
+
+            <nav class="nav-menu">
+                <div class="nav-label">Strategy Mode</div>
+                <div class="mode-toggles">
+                    <button id="mode-swing" class="mode-btn active" onclick="setMode('swing')">
+                        <i class="fas fa-calendar-alt"></i> Swing Trade
+                    </button>
+                    <button id="mode-intraday" class="mode-btn" onclick="setMode('intraday')">
+                        <i class="fas fa-bolt"></i> Intraday
+                    </button>
+                </div>
+
+                <div class="nav-label">General</div>
+                <a href="#" class="nav-item active"><i class="fas fa-th-large"></i> Dashboard</a>
+                <a href="#" class="nav-item" onclick="toggleSettings()"><i class="fas fa-cog"></i> Settings</a>
+                <a href="#" class="nav-item"><i class="fas fa-history"></i> Signal History</a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <img src="https://ui-avatars.com/api/?name=Suresh+Kumar&background=0284c7&color=fff" alt="User">
+                    <div>
+                        <div class="user-name">Suresh Kumar</div>
+                        <div class="user-status">Pro Consultant</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 id="page-title">Swing Trading Dashboard</h1>
+                    <p class="subtitle text-dim">Market Status: <span class="text-success">Live <i
+                                class="fas fa-circle blink"></i></span></p>
+                </div>
+                <div class="header-right">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search Symbol (RELIANCE, TCS...)">
+                    </div>
+                    <button class="btn btn-primary" onclick="refreshSignals()">
+                        <i class="fas fa-sync-alt" id="refresh-icon"></i> Refresh Signals
+                    </button>
+                </div>
+            </header>
+
+            <!-- Stats Bar -->
+            <section class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon bg-blue-trans"><i class="fas fa-list-ul"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-label">Total Watchlist</span>
+                        <span class="stat-value" id="stat-total">5,000</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon bg-success-trans"><i class="fas fa-arrow-up"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-label">Bullish Signals</span>
+                        <span class="stat-value" id="stat-bullish">1,240</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon bg-danger-trans"><i class="fas fa-arrow-down"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-label">Bearish Signals</span>
+                        <span class="stat-value" id="stat-bearish">892</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon bg-amber-trans"><i class="fas fa-bolt"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-label">Top Confluence</span>
+                        <span class="stat-value" id="stat-confluence">42</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Refresh Progress (Initially Hidden) -->
+            <div id="progress-container" class="progress-bar-container hidden">
+                <div class="progress-info">
+                    <span>Analyzing Indicators & Price Action...</span>
+                    <span id="progress-percent">0%</span>
+                </div>
+                <div class="progress-track">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <!-- Filters and Timeframes -->
+            <div class="controls-row">
+                <div class="timeframe-selector" id="timeframe-container">
+                    <!-- Dynamic Timeframes -->
+                </div>
+                <div class="filters">
+                    <select class="select-input" id="filter-rank">
+                        <option value="all">Minimum Rank (All)</option>
+                        <option value="3">Rank 3+</option>
+                        <option value="4">Rank 4+</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Signal Table -->
+            <div class="table-container">
+                <table class="signal-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Stock Detail</th>
+                            <th>LTP</th>
+                            <th>RSI</th>
+                            <th>EMA (20)</th>
+                            <th>Supertrend</th>
+                            <th>Multi-TF Agreement</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="signal-tbody">
+                        <!-- Mock Rows Generated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h2><i class="fas fa-cog"></i> Engine Configuration</h2>
+                <button class="close-btn" onclick="toggleSettings()">&times;</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="settings-grid">
+                    <!-- Profile Group -->
+                    <div class="settings-group">
+                        <h3>Strategy Profile</h3>
+                        <div class="control-field">
+                            <label>Editing Configuration For:</label>
+                            <select class="select-input" id="config-profile-selector" onchange="loadProfileSettings()">
+                                <option value="swing">Swing Portfolio (Daily/Weekly)</option>
+                                <option value="intraday">Intraday Momentum (5m/15m)</option>
+                            </select>
+                            <p class="text-dim" style="font-size: 11px; margin-top: 5px;">Settings are independent for
+                                each mode.</p>
+                        </div>
+                        <div class="control-field">
+                            <label>Watchlist Generation</label>
+                            <div class="radio-group">
+                                <label><input type="radio" name="watchlist" value="top"> Top by Volume</label>
+                                <label><input type="radio" name="watchlist" value="manual" checked> Manual
+                                    Picker</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Indicator Group -->
+                    <div class="settings-group">
+                        <h3>Indicator Tuning</h3>
+
+                        <!-- RSI -->
+                        <div class="indicator-config-card">
+                            <div class="ind-header">
+                                <strong>RSI (Strength)</strong>
+                                <label class="switch"><input type="checkbox" id="setting-rsi-enabled" checked><span
+                                        class="slider round"></span></label>
+                            </div>
+                            <div class="ind-params">
+                                <div class="param"><span>Period</span><input type="number" id="setting-rsi-period"
+                                        value="14"></div>
+                                <div class="param"><span>OB</span><input type="number" id="setting-rsi-ob" value="70">
+                                </div>
+                                <div class="param"><span>OS</span><input type="number" id="setting-rsi-os" value="30">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Supertrend -->
+                        <div class="indicator-config-card">
+                            <div class="ind-header">
+                                <strong>Supertrend</strong>
+                                <label class="switch"><input type="checkbox" id="setting-st-enabled" checked><span
+                                        class="slider round"></span></label>
+                            </div>
+                            <div class="ind-params">
+                                <div class="param"><span>ATR</span><input type="number" id="setting-st-period"
+                                        value="10"></div>
+                                <div class="param"><span>Mult</span><input type="number" id="setting-st-mult" value="3"
+                                        step="0.1"></div>
+                            </div>
+                        </div>
+
+                        <!-- EMA -->
+                        <div class="indicator-config-card">
+                            <div class="ind-header">
+                                <strong>EMA (Exponential)</strong>
+                                <label class="switch"><input type="checkbox" id="setting-ema-enabled" checked><span
+                                        class="slider round"></span></label>
+                            </div>
+                            <div class="ind-params">
+                                <div class="param"><span>Period</span><input type="number" id="setting-ema-period"
+                                        value="20"></div>
+                            </div>
+                        </div>
+
+                        <!-- DMA -->
+                        <div class="indicator-config-card">
+                            <div class="ind-header">
+                                <strong>DMA (Daily Moving Avg)</strong>
+                                <label class="switch"><input type="checkbox" id="setting-dma-enabled" checked><span
+                                        class="slider round"></span></label>
+                            </div>
+                            <div class="ind-params-multi">
+                                <label><input type="checkbox" id="dma-10" checked> 10</label>
+                                <label><input type="checkbox" id="dma-20" checked> 20</label>
+                                <label><input type="checkbox" id="dma-50" checked> 50</label>
+                                <label><input type="checkbox" id="dma-100" checked> 100</label>
+                                <label><input type="checkbox" id="dma-200" checked> 200</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-dim" onclick="toggleSettings()">Cancel</button>
+                <button class="btn btn-primary" onclick="toggleSettings()">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
