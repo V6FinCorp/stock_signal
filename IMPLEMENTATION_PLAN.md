@@ -9,6 +9,8 @@ A professional-grade equity signal engine for the Indian stock market (NSE), sup
 *   **Web Framework:** PHP (for Settings and Dashboard UI)
 *   **Data Source:** Upstox V3 API (Historical & Minute candles)
     *   *Endpoint discovered:* `https://api.upstox.com/v3/historical-candle/NSE_EQ|{ISIN}/days/1/{to_date}/{from_date}` (Authentication-free for EOD)
+    *   *Endpoint discovered:* `https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{ISIN}/minutes/5/` (Authentication-free for Intraday)
+
 
 ## 3. Core Features & Business Logic
 ### A. Execution Modes
@@ -18,7 +20,7 @@ A professional-grade equity signal engine for the Indian stock market (NSE), sup
     *   **Frequency:** Refreshed once daily (post-market) or on-demand.
 2.  **Intraday Mode:**
     *   **Scope:** 200 high-priority stocks.
-    *   **Timeframes:** 5m, 15m, 30m, 60m (Resampled from 1m data).
+    *   **Timeframes:** 5m, 15m, 30m, 60m (Resampled from 5m data).
     *   **Frequency:** Semi-automatic (Triggered by "Refresh" button in UI).
 
 ### B. Indicator Configuration
