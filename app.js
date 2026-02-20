@@ -42,15 +42,23 @@ const CONFIGS = {
 let currentMode = 'swing';
 let currentTimeframe = 'Daily';
 let liveSignals = [];
+let signalCache = {};
 
 // --- Core API Logic ---
 
-async function fetchAndRenderSignals() {
+async function fetchAndRenderSignals(forceFetch = false) {
+    const apiTf = TF_MAP[currentTimeframe] || '1d';
+    const cacheKey = `${currentMode}_${apiTf}`;
+
+    // Return instant cached data if we already requested this tab
+    if (!forceFetch && signalCache[cacheKey]) {
+        liveSignals = signalCache[cacheKey];
+        renderSignals();
+        return;
+    }
+
     const tbody = document.getElementById('signal-tbody');
     tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-circle-notch fa-spin fa-2x"></i><br><br>Loading live signals from App DB...</td></tr>';
-
-    // Map UI timeframe to API timeframe
-    const apiTf = TF_MAP[currentTimeframe] || '1d';
 
     try {
         const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${apiTf}`);
@@ -58,12 +66,13 @@ async function fetchAndRenderSignals() {
 
         if (result.status === 'success') {
             liveSignals = result.data;
+            signalCache[cacheKey] = liveSignals; // Save to memory cache
         } else {
             console.error(result.message);
             liveSignals = [];
         }
     } catch (e) {
-        console.error("Fetch failed. Is your PHP server running?", e);
+        console.error("Fetch failed. Is your server running?", e);
         liveSignals = [];
     }
 
@@ -324,8 +333,8 @@ async function refreshSignals() {
             method: 'POST'
         });
 
-        // 2. Fetch the newly injected signals from DB
-        await fetchAndRenderSignals();
+        // 2. Fetch the newly injected signals from DB & force cache overwrite
+        await fetchAndRenderSignals(true);
 
     } catch (e) {
         console.error("Failed to trigger engine:", e);
