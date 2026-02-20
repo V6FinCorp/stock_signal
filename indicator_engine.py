@@ -81,7 +81,9 @@ def calculate_indicators(df, settings):
         
     return df.iloc[-1] # Return the latest row
 
-async def process_profile(pool, datamart_pool, profile_id, timeframe):
+async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cache=None):
+    if shared_cache is None:
+        shared_cache = {}
     logging.info(f"--- Processing Profile: {profile_id.upper()} (Timeframe: {timeframe}) ---")
     settings = await get_profile_settings(pool, profile_id)
     
@@ -214,21 +216,30 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe):
                 # --- Anchored DMA Calculation (Always strictly Daily timeframe) ---
                 dma_data = {}
                 if settings['DMA']['enabled']:
-                    await cur.execute(
-                        "SELECT close FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d' ORDER BY timestamp DESC LIMIT 250",
-                        (isin,)
-                    )
-                    rows_1d = await cur.fetchall()
-                    if rows_1d:
-                        df_1d = pd.DataFrame(rows_1d)
-                        df_1d['close'] = df_1d['close'].astype(float)
-                        # Reverse so oldest data is first (required for accurate moving average calculations)
-                        df_1d = df_1d.iloc[::-1].reset_index(drop=True)
-                        for p in settings['DMA']['periods']:
-                            if len(df_1d) >= p:
-                                sma_series = ta.sma(df_1d['close'], length=p)
-                                if sma_series is not None and not pd.isna(sma_series.iloc[-1]):
-                                    dma_data[f"SMA_{p}"] = float(sma_series.iloc[-1])
+                    # Check memory cache first to avoid repeating Pandas math for the exact same company
+                    if isin in shared_cache and 'dma_data' in shared_cache[isin]:
+                        dma_data = shared_cache[isin]['dma_data']
+                    else:
+                        await cur.execute(
+                            "SELECT close FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d' ORDER BY timestamp DESC LIMIT 250",
+                            (isin,)
+                        )
+                        rows_1d = await cur.fetchall()
+                        if rows_1d:
+                            df_1d = pd.DataFrame(rows_1d)
+                            df_1d['close'] = df_1d['close'].astype(float)
+                            # Reverse so oldest data is first (required for accurate moving average calculations)
+                            df_1d = df_1d.iloc[::-1].reset_index(drop=True)
+                            for p in settings['DMA']['periods']:
+                                if len(df_1d) >= p:
+                                    sma_series = ta.sma(df_1d['close'], length=p)
+                                    if sma_series is not None and not pd.isna(sma_series.iloc[-1]):
+                                        dma_data[f"SMA_{p}"] = float(sma_series.iloc[-1])
+                        
+                        # Save back to cache
+                        if isin not in shared_cache:
+                            shared_cache[isin] = {}
+                        shared_cache[isin]['dma_data'] = dma_data
                 
                 # --- Confluence Ranking Logic ---
                 # Example basic logic: 
@@ -270,16 +281,19 @@ async def main():
         logging.error(f"Failed to connect to Databases: {e}")
         return
 
+    # Initialize memory caching object
+    shared_cache = {}
+
     # Process Swing Mode (Daily data)
-    await process_profile(pool, datamart_pool, 'swing', '1d')
-    await process_profile(pool, datamart_pool, 'swing', '1w')
-    await process_profile(pool, datamart_pool, 'swing', '1mo')
+    await process_profile(pool, datamart_pool, 'swing', '1d', shared_cache)
+    await process_profile(pool, datamart_pool, 'swing', '1w', shared_cache)
+    await process_profile(pool, datamart_pool, 'swing', '1mo', shared_cache)
     
     # Process Intraday Mode (5m data)
-    await process_profile(pool, datamart_pool, 'intraday', '5m')
-    await process_profile(pool, datamart_pool, 'intraday', '15m')
-    await process_profile(pool, datamart_pool, 'intraday', '30m')
-    await process_profile(pool, datamart_pool, 'intraday', '60m')
+    await process_profile(pool, datamart_pool, 'intraday', '5m', shared_cache)
+    await process_profile(pool, datamart_pool, 'intraday', '15m', shared_cache)
+    await process_profile(pool, datamart_pool, 'intraday', '30m', shared_cache)
+    await process_profile(pool, datamart_pool, 'intraday', '60m', shared_cache)
 
     pool.close()
     datamart_pool.close()
