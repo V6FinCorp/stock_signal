@@ -43,6 +43,7 @@ let currentMode = 'swing';
 let currentTimeframe = 'Daily';
 let liveSignals = [];
 let signalCache = {};
+let activeStatFilter = 'all';
 
 // --- Core API Logic ---
 
@@ -80,6 +81,13 @@ async function fetchAndRenderSignals(forceFetch = false) {
 }
 
 // --- UI Logic ---
+
+function setStatFilter(filterType) {
+    activeStatFilter = filterType;
+    document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active-filter'));
+    document.getElementById(`card-${filterType}`).classList.add('active-filter');
+    renderSignals();
+}
 
 function setMode(mode) {
     currentMode = mode;
@@ -148,23 +156,36 @@ function renderSignals() {
 
     const conf = CONFIGS[currentMode];
 
-    // Filter by rank if needed
-    const filterRank = document.getElementById('filter-rank') ? document.getElementById('filter-rank').value : 'all';
+    // 1. Update Stats dynamically based on the full DB pull BEFORE filtering
+    document.getElementById('stat-total').innerText = liveSignals.length.toLocaleString();
+    const bullish = liveSignals.filter(s => s.supertrend_dir === 'BUY').length;
+    document.getElementById('stat-bullish').innerText = bullish.toLocaleString();
+    const bearish = liveSignals.filter(s => s.supertrend_dir === 'SELL').length;
+    document.getElementById('stat-bearish').innerText = bearish.toLocaleString();
+    const confluence = liveSignals.filter(s => s.confluence_rank >= 3).length;
+    document.getElementById('stat-confluence').innerText = confluence.toLocaleString();
+
+    // 2. Filter Data
     let displayData = liveSignals;
 
+    // Filter by active stat card
+    if (activeStatFilter === 'bullish') {
+        displayData = displayData.filter(s => s.supertrend_dir === 'BUY');
+    } else if (activeStatFilter === 'bearish') {
+        displayData = displayData.filter(s => s.supertrend_dir === 'SELL');
+    } else if (activeStatFilter === 'confluence') {
+        displayData = displayData.filter(s => s.confluence_rank >= 3);
+    }
+
+    // Filter by rank dropdown
+    const filterRank = document.getElementById('filter-rank') ? document.getElementById('filter-rank').value : 'all';
     if (filterRank !== 'all') {
         const minRank = parseInt(filterRank);
         displayData = displayData.filter(s => s.confluence_rank >= minRank);
     }
 
     if (displayData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);">No signals found.<br>Ensure the Python Indicator Engine has processed this timeframe (' + TF_MAP[currentTimeframe] + ')</td></tr>';
-
-        // Zero out stats
-        document.getElementById('stat-total').innerText = '0';
-        document.getElementById('stat-bullish').innerText = '0';
-        document.getElementById('stat-bearish').innerText = '0';
-        document.getElementById('stat-confluence').innerText = '0';
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);">No signals match your selected filters.</td></tr>`;
         return;
     }
 
@@ -228,15 +249,6 @@ function renderSignals() {
         row.innerHTML = rowHtml;
         tbody.appendChild(row);
     });
-
-    // Update Stats dynamically based on the DB pull
-    document.getElementById('stat-total').innerText = liveSignals.length.toLocaleString();
-    const bullish = liveSignals.filter(s => s.supertrend_dir === 'BUY').length;
-    document.getElementById('stat-bullish').innerText = bullish.toLocaleString();
-    const bearish = liveSignals.filter(s => s.supertrend_dir === 'SELL').length;
-    document.getElementById('stat-bearish').innerText = bearish.toLocaleString();
-    const confluence = liveSignals.filter(s => s.confluence_rank >= 3).length;
-    document.getElementById('stat-confluence').innerText = confluence.toLocaleString();
 }
 
 // Global Filter Setup

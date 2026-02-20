@@ -72,28 +72,28 @@
 
             <!-- Stats Bar -->
             <section class="stats-grid">
-                <div class="stat-card">
+                <div class="stat-card active-filter" id="card-all" onclick="setStatFilter('all')">
                     <div class="stat-icon bg-blue-trans"><i class="fas fa-list-ul"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Total Watchlist</span>
                         <span class="stat-value" id="stat-total">5,000</span>
                     </div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" id="card-bullish" onclick="setStatFilter('bullish')">
                     <div class="stat-icon bg-success-trans"><i class="fas fa-arrow-up"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Bullish Signals</span>
                         <span class="stat-value" id="stat-bullish">1,240</span>
                     </div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" id="card-bearish" onclick="setStatFilter('bearish')">
                     <div class="stat-icon bg-danger-trans"><i class="fas fa-arrow-down"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Bearish Signals</span>
                         <span class="stat-value" id="stat-bearish">892</span>
                     </div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" id="card-confluence" onclick="setStatFilter('confluence')">
                     <div class="stat-icon bg-amber-trans"><i class="fas fa-bolt"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Top Confluence</span>
