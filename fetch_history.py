@@ -24,16 +24,55 @@ async def fetch_data(client, url):
         pass # Silently fail for stocks that might be BSE only, as NSE_EQ request will fail
     return []
 
+async def cleanup_old_data(app_pool):
+    logging.info("Running Garbage Collection: Cleaning up old historical data to conserve database space...")
+    try:
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # Keep roughly 3 years of 1d data (~1095 days)
+                cutoff_1d = (datetime.now() - timedelta(days=1095)).strftime("%Y-%m-%d")
+                await cur.execute("DELETE FROM app_sg_ohlcv_prices WHERE timeframe = '1d' AND timestamp < %s", (cutoff_1d,))
+                deleted_1d = cur.rowcount
+                
+                # Keep roughly 35 days of 5m data
+                cutoff_5m = (datetime.now() - timedelta(days=35)).strftime("%Y-%m-%d")
+                await cur.execute("DELETE FROM app_sg_ohlcv_prices WHERE timeframe = '5m' AND timestamp < %s", (cutoff_5m,))
+                deleted_5m = cur.rowcount
+                
+                logging.info(f"Cleanup Complete: Automatically purged {deleted_1d} old daily rows, {deleted_5m} old intraday rows.")
+    except Exception as e:
+        logging.error(f"Cleanup failed: {e}")
+
 async def process_company(app_pool, client, isin, symbol, fetch_intraday=False):
     logging.info(f"Processing {symbol} ({isin}) - Intraday: {fetch_intraday}")
     
-    # We need historical data from Jan 2022
     to_date = datetime.now().strftime("%Y-%m-%d")
     from_date = "2022-01-01"
     
-    # For Intraday, fetch the last 30 days (safely under Upstox limit of ~32 days max)
+    # 30-day strict cap max for Upstox intraday API
     from_date_intraday = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-    
+
+    # Dynamic Delta Fetch Logic - only download what we are missing
+    try:
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # 1. Delta fetch for Swing (Daily)
+                await cur.execute("SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d'", (isin,))
+                latest_1d = await cur.fetchone()
+                if latest_1d and latest_1d[0]:
+                    from_date = latest_1d[0].strftime("%Y-%m-%d")
+                
+                # 2. Delta fetch for Intraday (5m)
+                if fetch_intraday:
+                    await cur.execute("SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '5m'", (isin,))
+                    latest_5m = await cur.fetchone()
+                    if latest_5m and latest_5m[0]:
+                        db_latest_5m = latest_5m[0].strftime("%Y-%m-%d")
+                        # We must fetch the max (most recent) between the Database's latest date and the 30-day Upstox limit
+                        from_date_intraday = max(from_date_intraday, db_latest_5m)
+    except Exception as e:
+         logging.warning(f"Delta fetch check failed for {symbol}: {e}")
+
     daily_url = URL_DAILY.format(isin=isin, to_date=to_date, from_date=from_date)
     
     # Upstox candle format: [timestamp, open, high, low, close, volume, open_interest]
@@ -158,6 +197,9 @@ async def main():
             for comp in active_companies
         ]
         await asyncio.gather(*tasks)
+
+    # Execute historical garbage collection
+    await cleanup_old_data(app_pool)
 
     app_pool.close()
     datamart_pool.close()
