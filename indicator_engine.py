@@ -15,15 +15,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 DEFAULT_CONFIGS = {
     'swing': {
         'RSI': {'period': 14, 'ob': 70, 'os': 30, 'enabled': True},
-        'EMA': {'period': 20, 'enabled': True},
+        'EMA': {'fast_period': 9, 'slow_period': 20, 'enabled': True},
         'SUPERTREND': {'period': 10, 'mult': 3.0, 'enabled': True},
-        'DMA': {'periods': [10, 20, 50, 200], 'enabled': True}
+        'DMA': {'periods': [10, 20, 50, 200], 'enabled': True},
+        'VOLUME': {'period': 20, 'threshold': 2.0, 'enabled': True}
     },
     'intraday': {
         'RSI': {'period': 14, 'ob': 80, 'os': 20, 'enabled': True},
-        'EMA': {'period': 9, 'enabled': True},
+        'EMA': {'fast_period': 9, 'slow_period': 21, 'enabled': True},
         'SUPERTREND': {'period': 10, 'mult': 2.5, 'enabled': True},
-        'DMA': {'periods': [10, 20], 'enabled': False}
+        'DMA': {'periods': [10, 20], 'enabled': False},
+        'VOLUME': {'period': 20, 'threshold': 1.5, 'enabled': True}
     }
 }
 
@@ -61,10 +63,18 @@ def calculate_indicators(df, settings):
         rsi_len = settings['RSI']['period']
         df[f'RSI_{rsi_len}'] = ta.rsi(df['close'], length=rsi_len)
         
-    # EMA
+    # EMA (Fast/Slow Crossover)
     if settings['EMA']['enabled']:
-        ema_len = settings['EMA']['period']
-        df[f'EMA_{ema_len}'] = ta.ema(df['close'], length=ema_len)
+        fast_len = settings['EMA']['fast_period']
+        slow_len = settings['EMA']['slow_period']
+        
+        df[f'EMA_{fast_len}'] = ta.ema(df['close'], length=fast_len)
+        df[f'EMA_{slow_len}'] = ta.ema(df['close'], length=slow_len)
+        
+        # Determine signal based on current values
+        # We can also detect crossover by comparing with previous values if we wanted to
+        # For simplicity, BUY if Fast > Slow, else SELL
+        df['ema_signal'] = np.where(df[f'EMA_{fast_len}'] > df[f'EMA_{slow_len}'], 'BUY', 'SELL')
         
     # DMA (Simple Moving Averages)
     # (DMA is explicitly handled in process_profile to remain anchored to the 1d timeframe)
@@ -78,6 +88,19 @@ def calculate_indicators(df, settings):
         if st_df is not None and not st_df.empty:
             df['ST_value'] = st_df[f'SUPERT_{st_len}_{st_mult}']
             df['ST_dir'] = st_df[f'SUPERTd_{st_len}_{st_mult}'] # 1 for BUY, -1 for SELL
+
+    # VOLUME SPIKE
+    if settings.get('VOLUME', {}).get('enabled'):
+        vol_len = settings['VOLUME']['period']
+        vol_threshold = settings['VOLUME']['threshold']
+        df['vol_sma'] = df['volume'].rolling(window=vol_len).mean()
+        df['vol_ratio'] = df['volume'] / df['vol_sma']
+        
+        # Bull spike: Ratio > threshold AND current close > current open
+        # Bear spike: Ratio > threshold AND current close < current open
+        df['vol_signal'] = 'NORMAL'
+        df.loc[(df['vol_ratio'] > vol_threshold) & (df['close'] > df['open']), 'vol_signal'] = 'BULL_SPIKE'
+        df.loc[(df['vol_ratio'] > vol_threshold) & (df['close'] < df['open']), 'vol_signal'] = 'BEAR_SPIKE'
         
     return df.iloc[-1] # Return the latest row
 
@@ -200,10 +223,21 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     rsi_col = f"RSI_{settings['RSI']['period']}"
                     rsi_val = float(latest_data[rsi_col]) if rsi_col in latest_data and pd.notna(latest_data[rsi_col]) else None
                 
-                ema_val = None
+                ema_fast = None
+                ema_slow = None
+                ema_signal = None
                 if settings['EMA']['enabled']:
-                    ema_col = f"EMA_{settings['EMA']['period']}"
-                    ema_val = float(latest_data[ema_col]) if ema_col in latest_data and pd.notna(latest_data[ema_col]) else None
+                    f_len = settings['EMA']['fast_period']
+                    s_len = settings['EMA']['slow_period']
+                    ema_fast = float(latest_data[f'EMA_{f_len}']) if f'EMA_{f_len}' in latest_data and pd.notna(latest_data[f'EMA_{f_len}']) else None
+                    ema_slow = float(latest_data[f'EMA_{s_len}']) if f'EMA_{s_len}' in latest_data and pd.notna(latest_data[f'EMA_{s_len}']) else None
+                    ema_signal = latest_data.get('ema_signal')
+
+                vol_signal = 'NORMAL'
+                vol_ratio = 1.0
+                if settings.get('VOLUME', {}).get('enabled'):
+                    vol_signal = latest_data.get('vol_signal', 'NORMAL')
+                    vol_ratio = float(latest_data.get('vol_ratio', 1.0))
                     
                 st_value = None
                 st_dir = None
@@ -248,26 +282,79 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 # +1 if RSI > 50 (bullish momemtum)
                 # +1 if Price > DMA(20)
                 rank = 0
-                if ema_val and ltp > ema_val: rank += 1
+                if ema_fast and ema_slow and ema_fast > ema_slow: rank += 1
                 if st_dir == 'BUY': rank += 1
                 if rsi_val and rsi_val > 50: rank += 1
                 if dma_data and dma_data.get('SMA_20') and ltp > dma_data.get('SMA_20'): rank += 1
+                if vol_signal == 'BULL_SPIKE': rank += 1
+
+                # --- Trade Plan Logic (Pick Stocks for Trade) ---
+                sl = None
+                target = None
+                trade_strategy = "NORMAL"
+                
+                if st_dir == 'BUY':
+                    # SL is the lower of Supertrend and EMA Slow (safer floor)
+                    if st_value and ema_slow:
+                        sl = min(st_value, ema_slow)
+                    elif st_value:
+                        sl = st_value
+                    elif ema_slow:
+                        sl = ema_slow
+                        
+                    if sl and sl < ltp:
+                        risk = ltp - sl
+                        target = ltp + (risk * 2.0) # 1:2 Reward
+                elif st_dir == 'SELL':
+                    # Shorting Trade Plan
+                    if st_value and ema_slow:
+                        sl = max(st_value, ema_slow)
+                    elif st_value:
+                        sl = st_value
+                    elif ema_slow:
+                        sl = ema_slow
+                        
+                    if sl and sl > ltp:
+                        risk = sl - ltp
+                        target = ltp - (risk * 2.0)
+                
+                # Pick Strategy Labels
+                if rank >= 4 and vol_signal == 'BULL_SPIKE' and ema_signal == 'BUY' and st_dir == 'BUY':
+                    trade_strategy = "PERFECT_BUY"
+                elif st_dir == 'BUY' and dma_data:
+                    # Pullback logic: Check if price is near major DMA (20, 50, or 200)
+                    for dma_val in dma_data.values():
+                        if 0.985 <= (ltp / dma_val) <= 1.015:
+                            trade_strategy = "DMA_BOUNCE"
+                            break
+                
+                # Overextended check
+                if ema_slow and ltp > (ema_slow * 1.12):
+                    trade_strategy = "OVEREXTENDED"
 
                 signals_to_insert.append((
-                    isin, profile_id, timeframe, timestamp, ltp, rsi_val, ema_val, 
-                    st_dir, st_value, json.dumps(dma_data), rank
+                    isin, profile_id, timeframe, timestamp, ltp, rsi_val, 
+                    ema_signal, ema_fast, ema_slow, 
+                    vol_signal, vol_ratio,
+                    ema_fast, # Using ema_fast as legacy ema_value
+                    st_dir, st_value, json.dumps(dma_data), rank,
+                    sl, target, trade_strategy
                 ))
             
             # Upsert into database
             if signals_to_insert:
                 upsert_query = """
                     INSERT INTO app_sg_calculated_signals 
-                    (isin, profile_id, timeframe, timestamp, ltp, rsi, ema_value, supertrend_dir, supertrend_value, dma_data, confluence_rank)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (isin, profile_id, timeframe, timestamp, ltp, rsi, ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, trade_strategy)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                        timestamp=VALUES(timestamp), ltp=VALUES(ltp), rsi=VALUES(rsi), ema_value=VALUES(ema_value),
+                        timestamp=VALUES(timestamp), ltp=VALUES(ltp), rsi=VALUES(rsi), 
+                        ema_signal=VALUES(ema_signal), ema_fast=VALUES(ema_fast), ema_slow=VALUES(ema_slow),
+                        volume_signal=VALUES(volume_signal), volume_ratio=VALUES(volume_ratio),
+                        ema_value=VALUES(ema_value),
                         supertrend_dir=VALUES(supertrend_dir), supertrend_value=VALUES(supertrend_value),
-                        dma_data=VALUES(dma_data), confluence_rank=VALUES(confluence_rank)
+                        dma_data=VALUES(dma_data), confluence_rank=VALUES(confluence_rank),
+                        sl=VALUES(sl), target=VALUES(target), trade_strategy=VALUES(trade_strategy)
                 """
                 await cur.executemany(upsert_query, signals_to_insert)
                 logging.info(f"✅ Successfully updated {len(signals_to_insert)} signals for {profile_id} ({timeframe}).")

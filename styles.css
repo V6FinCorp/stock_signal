@@ -481,6 +481,8 @@ h1 {
     padding: 20px 24px;
     border-top: 1px solid var(--border-color);
     font-size: 14px;
+    vertical-align: top;
+    line-height: 1.2;
 }
 
 .rank-badge {
@@ -527,6 +529,46 @@ h1 {
 .pill-sell {
     background: rgba(239, 68, 68, 0.15);
     color: var(--danger);
+}
+
+.strategy-badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.bg-perfect {
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    color: white;
+}
+
+.bg-bounce {
+    background: rgba(14, 165, 233, 0.15);
+    color: var(--primary);
+}
+
+.bg-stretch {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
+}
+
+.bg-normal {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-dim);
+}
+
+.trade-plan-box {
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.tp-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 2px;
 }
 
 .st-value {

@@ -85,10 +85,18 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                         "ltp": float(row['ltp']) if row['ltp'] is not None else None,
                         "rsi": float(row['rsi']) if row['rsi'] is not None else None,
                         "ema_value": float(row['ema_value']) if row['ema_value'] is not None else None,
+                        "ema_signal": row['ema_signal'],
+                        "ema_fast": float(row['ema_fast']) if row['ema_fast'] is not None else None,
+                        "ema_slow": float(row['ema_slow']) if row['ema_slow'] is not None else None,
+                        "volume_signal": row['volume_signal'],
+                        "volume_ratio": float(row['volume_ratio']) if row['volume_ratio'] is not None else 1.0,
                         "supertrend_dir": row['supertrend_dir'],
                         "supertrend_value": float(row['supertrend_value']) if row['supertrend_value'] is not None else None,
                         "dma_data": json.loads(row['dma_data']) if row['dma_data'] else {},
                         "confluence_rank": int(row['confluence_rank']) if row['confluence_rank'] is not None else 0,
+                        "sl": float(row['sl']) if row['sl'] is not None else None,
+                        "target": float(row['target']) if row['target'] is not None else None,
+                        "trade_strategy": row['trade_strategy'] or "NORMAL",
                         "mtf_data": mtf_map.get(isin, {})
                     })
                     

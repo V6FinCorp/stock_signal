@@ -63,10 +63,6 @@
                                 class="fas fa-circle blink"></i></span></p>
                 </div>
                 <div class="header-right">
-                    <div class="search-box">
-                        <i class="fas fa-search"></i>
-                        <input type="text" placeholder="Search Symbol (RELIANCE, TCS...)">
-                    </div>
                     <button class="btn btn-primary" onclick="refreshSignals()">
                         <i class="fas fa-sync-alt" id="refresh-icon"></i> Refresh Signals
                     </button>
@@ -121,7 +117,12 @@
                 <div class="timeframe-selector" id="timeframe-container">
                     <!-- Dynamic Timeframes -->
                 </div>
-                <div class="filters">
+                <div class="filters" style="display: flex; gap: 12px; align-items: center;">
+                    <div class="search-box" style="margin: 0; width: 250px;">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="search-input" placeholder="Search Symbol/ISIN..."
+                            oninput="renderSignals()">
+                    </div>
                     <select class="select-input" id="filter-rank">
                         <option value="all">Minimum Rank (All)</option>
                         <option value="3">Rank 3+</option>
@@ -139,10 +140,12 @@
                             <th>Stock Detail</th>
                             <th>LTP</th>
                             <th>RSI</th>
-                            <th>EMA (20)</th>
+                            <th>EMA Signal</th>
+                            <th>Volume</th>
+                            <th>Strategy</th>
                             <th>Supertrend</th>
                             <th>MTF</th>
-                            <th>Action</th>
+                            <th>Trade Plan</th>
                         </tr>
                     </thead>
                     <tbody id="signal-tbody">
@@ -221,16 +224,32 @@
                             </div>
                         </div>
 
-                        <!-- EMA -->
                         <div class="indicator-config-card">
                             <div class="ind-header">
-                                <strong>EMA (Exponential)</strong>
+                                <strong>EMA (Crossover)</strong>
                                 <label class="switch"><input type="checkbox" id="setting-ema-enabled" checked><span
                                         class="slider round"></span></label>
                             </div>
                             <div class="ind-params">
-                                <div class="param"><span>Period</span><input type="number" id="setting-ema-period"
+                                <div class="param"><span>Fast</span><input type="number" id="setting-ema-fast"
+                                        value="9"></div>
+                                <div class="param"><span>Slow</span><input type="number" id="setting-ema-slow"
                                         value="20"></div>
+                            </div>
+                        </div>
+
+                        <!-- VOLUME -->
+                        <div class="indicator-config-card">
+                            <div class="ind-header">
+                                <strong>Volume Spike</strong>
+                                <label class="switch"><input type="checkbox" id="setting-vol-enabled" checked><span
+                                        class="slider round"></span></label>
+                            </div>
+                            <div class="ind-params">
+                                <div class="param"><span>SMA</span><input type="number" id="setting-vol-period"
+                                        value="20"></div>
+                                <div class="param"><span>Threshold</span><input type="number" id="setting-vol-threshold"
+                                        value="2.0" step="0.1"></div>
                             </div>
                         </div>
 
