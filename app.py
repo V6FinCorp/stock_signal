@@ -111,3 +111,7 @@ async def calculate_signals(mode: str = "swing", timeframe: str = None):
     await datamart_pool.wait_closed()
     
     return {"status": "success", "message": f"Successfully recalculated {mode} signals for {selected_timeframe}."}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)

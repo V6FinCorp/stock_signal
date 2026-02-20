@@ -103,11 +103,19 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe):
         logging.warning("No favourite indices found in Datamart. Aborting calculation.")
         return
 
+    # Determine base timeframe to fetch raw data 
+    if timeframe in ['1w', '1mo']:
+        base_timeframe = '1d'
+    elif timeframe in ['15m', '30m', '60m']:
+        base_timeframe = '5m'
+    else:
+        base_timeframe = timeframe
+
     # 2. Connect to App DB and process JUST those companies
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             # We need to map available ISINs to their symbols to do the intersection
-            await cur.execute("SELECT DISTINCT isin FROM app_sg_ohlcv_prices WHERE timeframe = %s", (timeframe,))
+            await cur.execute("SELECT DISTINCT isin FROM app_sg_ohlcv_prices WHERE timeframe = %s", (base_timeframe,))
             available_isins = {row['isin'] for row in await cur.fetchall()}
             
             # Map those ISINs back to Symbols using the Datamart DB
@@ -136,15 +144,16 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe):
             signals_to_insert = []
             
             for isin in isins:
-                # Fetch recent historical data (need enough rows for indicators like 200 DMA)
+                # Fetch recent historical data (increase limit if we are resampling to higher timeframes)
+                limit = 1500 if timeframe in ['1w', '1mo'] else 400
                 await cur.execute(
                     """
                     SELECT timestamp, open, high, low, close, volume 
                     FROM app_sg_ohlcv_prices 
                     WHERE isin = %s AND timeframe = %s 
-                    ORDER BY timestamp DESC LIMIT 300
+                    ORDER BY timestamp DESC LIMIT %s
                     """,
-                    (isin, timeframe)
+                    (isin, base_timeframe, limit)
                 )
                 rows = await cur.fetchall()
                 if len(rows) < 14: # Minimum rows for basic RSI
@@ -152,6 +161,29 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe):
                     
                 df = pd.DataFrame(rows)
                 df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
+                
+                # Resampling Logic
+                if timeframe != base_timeframe:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    df = df.sort_values('timestamp')
+                    df.set_index('timestamp', inplace=True)
+                    
+                    resample_rule = {
+                        '1w': 'W-FRI',
+                        '1mo': 'ME',
+                        '15m': '15min',
+                        '30m': '30min',
+                        '60m': '60min'
+                    }.get(timeframe)
+                    
+                    df = df.resample(resample_rule).agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }).dropna()
+                    df.reset_index(inplace=True)
                 
                 try:
                     latest_data = calculate_indicators(df, settings)
@@ -230,9 +262,14 @@ async def main():
 
     # Process Swing Mode (Daily data)
     await process_profile(pool, datamart_pool, 'swing', '1d')
+    await process_profile(pool, datamart_pool, 'swing', '1w')
+    await process_profile(pool, datamart_pool, 'swing', '1mo')
     
     # Process Intraday Mode (5m data)
     await process_profile(pool, datamart_pool, 'intraday', '5m')
+    await process_profile(pool, datamart_pool, 'intraday', '15m')
+    await process_profile(pool, datamart_pool, 'intraday', '30m')
+    await process_profile(pool, datamart_pool, 'intraday', '60m')
 
     pool.close()
     datamart_pool.close()

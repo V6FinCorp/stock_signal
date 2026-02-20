@@ -298,7 +298,7 @@ function toggleSettings() {
     }
 }
 
-function refreshSignals() {
+async function refreshSignals() {
     const btnIcon = document.getElementById('refresh-icon');
     const container = document.getElementById('progress-container');
     const fill = document.getElementById('progress-fill');
@@ -310,14 +310,26 @@ function refreshSignals() {
     // Simulate progress while API loads
     let progress = 0;
     const interval = setInterval(() => {
-        progress += Math.random() * 20;
+        progress += Math.random() * 15;
         if (progress >= 85) clearInterval(interval);
         fill.style.width = `${Math.min(progress, 85)}%`;
         percent.innerText = `${Math.floor(Math.min(progress, 85))}%`;
     }, 150);
 
-    // Call API Route
-    fetchAndRenderSignals().then(() => {
+    try {
+        const apiTf = TF_MAP[currentTimeframe] || '1d';
+
+        // 1. Manually trigger the Pandas-TA calculating backend
+        await fetch(`http://127.0.0.1:8000/api/calculate?mode=${currentMode}&timeframe=${apiTf}`, {
+            method: 'POST'
+        });
+
+        // 2. Fetch the newly injected signals from DB
+        await fetchAndRenderSignals();
+
+    } catch (e) {
+        console.error("Failed to trigger engine:", e);
+    } finally {
         clearInterval(interval);
         fill.style.width = `100%`;
         percent.innerText = `100%`;
@@ -325,7 +337,7 @@ function refreshSignals() {
             container.classList.add('hidden');
             btnIcon.classList.remove('fa-spin');
         }, 500);
-    });
+    }
 }
 
 // --- Initialize ---

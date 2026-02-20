@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 import aiomysql
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import Config
 import logging
 
@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Endpoints as discovered & outlined in IMPLEMENTATION_PLAN.md
 URL_DAILY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{to_date}/{from_date}"
-URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5/"
+URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/minutes/5/{to_date}/{from_date_intraday}"
 
 async def fetch_data(client, url):
     """Fetch JSON data from Upstox endpoint natively."""
@@ -31,6 +31,9 @@ async def process_company(app_pool, client, isin, symbol, fetch_intraday=False):
     to_date = datetime.now().strftime("%Y-%m-%d")
     from_date = "2022-01-01"
     
+    # For Intraday, fetch the last 30 days (safely under Upstox limit of ~32 days max)
+    from_date_intraday = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    
     daily_url = URL_DAILY.format(isin=isin, to_date=to_date, from_date=from_date)
     
     # Upstox candle format: [timestamp, open, high, low, close, volume, open_interest]
@@ -38,7 +41,7 @@ async def process_company(app_pool, client, isin, symbol, fetch_intraday=False):
     
     intraday_candles = []
     if fetch_intraday:
-        intraday_url = URL_INTRADAY.format(isin=isin)
+        intraday_url = URL_INTRADAY.format(isin=isin, to_date=to_date, from_date_intraday=from_date_intraday)
         intraday_candles = await fetch_data(client, intraday_url)
     
     # Write OHLCV data to APP DATABASE
@@ -113,20 +116,23 @@ async def main():
             # Fetch Favourite Intraday Companies (to flag which ones get 5m data)
             try:
                 await cur.execute("""
-                    SELECT bs_ISIN as isin 
+                    SELECT bs_symbol as symbol 
                     FROM vw_e_bs_companies_favourite_indices
                 """)
                 favourite_rows = await cur.fetchall()
-                intraday_isins = {row['isin'] for row in favourite_rows}
+                intraday_symbols = {row['symbol'] for row in favourite_rows}
             except Exception as e:
                 logging.warning(f"Failed to read 'vw_e_bs_companies_favourite_indices': {e}. Continuing without intraday flags.")
-                intraday_isins = set()
+                intraday_symbols = set()
+                
+            # Filter the active companies to ONLY be the 50 favourites for this testing phase
+            active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
             
     if not active_companies:
         logging.warning("No active companies found in Datamart DB.")
         return
 
-    logging.info(f"Loaded {len(active_companies)} active companies. {len(intraday_isins)} marked for Intraday limits.")
+    logging.info(f"Loaded {len(active_companies)} active companies. {len(intraday_symbols)} marked for Intraday limits.")
     
     # 3. Process concurrently
     sem = asyncio.Semaphore(5)
@@ -141,13 +147,13 @@ async def main():
     }
 
     async with httpx.AsyncClient(headers=headers) as client:
-        # Loop through all active companies. If ISIN is in the intraday_isins set, pass True to fetch_intraday
+        # Loop through all active companies. If symbol is in the intraday_symbols set, pass True to fetch_intraday
         tasks = [
             sem_process(
                 client, 
                 comp["isin"], 
                 comp["symbol"], 
-                fetch_intraday=(comp["isin"] in intraday_isins)
+                fetch_intraday=(comp["symbol"] in intraday_symbols)
             ) 
             for comp in active_companies
         ]
