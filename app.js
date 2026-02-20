@@ -53,7 +53,7 @@ async function fetchAndRenderSignals() {
     const apiTf = TF_MAP[currentTimeframe] || '1d';
 
     try {
-        const response = await fetch(`http://127.0.0.1:8000/api/signals?mode=${currentMode}&timeframe=${apiTf}`);
+        const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${apiTf}`);
         const result = await response.json();
 
         if (result.status === 'success') {
@@ -320,7 +320,7 @@ async function refreshSignals() {
         const apiTf = TF_MAP[currentTimeframe] || '1d';
 
         // 1. Manually trigger the Pandas-TA calculating backend
-        await fetch(`http://127.0.0.1:8000/api/calculate?mode=${currentMode}&timeframe=${apiTf}`, {
+        await fetch(`/api/calculate?mode=${currentMode}&timeframe=${apiTf}`, {
             method: 'POST'
         });
 
