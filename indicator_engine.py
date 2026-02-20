@@ -67,9 +67,7 @@ def calculate_indicators(df, settings):
         df[f'EMA_{ema_len}'] = ta.ema(df['close'], length=ema_len)
         
     # DMA (Simple Moving Averages)
-    if settings['DMA']['enabled']:
-        for p in settings['DMA']['periods']:
-            df[f'SMA_{p}'] = ta.sma(df['close'], length=p)
+    # (DMA is explicitly handled in process_profile to remain anchored to the 1d timeframe)
             
     # SUPERTREND
     if settings['SUPERTREND']['enabled']:
@@ -213,12 +211,24 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe):
                     if pd.notna(st_dir_num):
                         st_dir = 'BUY' if st_dir_num == 1 else 'SELL'
                         
+                # --- Anchored DMA Calculation (Always strictly Daily timeframe) ---
                 dma_data = {}
                 if settings['DMA']['enabled']:
-                    for p in settings['DMA']['periods']:
-                        sma_col = f"SMA_{p}"
-                        if sma_col in latest_data and pd.notna(latest_data[sma_col]):
-                            dma_data[f"SMA_{p}"] = float(latest_data[sma_col])
+                    await cur.execute(
+                        "SELECT close FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d' ORDER BY timestamp DESC LIMIT 250",
+                        (isin,)
+                    )
+                    rows_1d = await cur.fetchall()
+                    if rows_1d:
+                        df_1d = pd.DataFrame(rows_1d)
+                        df_1d['close'] = df_1d['close'].astype(float)
+                        # Reverse so oldest data is first (required for accurate moving average calculations)
+                        df_1d = df_1d.iloc[::-1].reset_index(drop=True)
+                        for p in settings['DMA']['periods']:
+                            if len(df_1d) >= p:
+                                sma_series = ta.sma(df_1d['close'], length=p)
+                                if sma_series is not None and not pd.isna(sma_series.iloc[-1]):
+                                    dma_data[f"SMA_{p}"] = float(sma_series.iloc[-1])
                 
                 # --- Confluence Ranking Logic ---
                 # Example basic logic: 
