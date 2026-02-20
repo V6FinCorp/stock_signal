@@ -127,6 +127,7 @@ function updateTableHeader() {
 
     html += `
         <th>Supertrend</th>
+        <th>MTF</th>
         <th>Action</th>
     `;
     thead.innerHTML = html;
@@ -240,6 +241,26 @@ function renderSignals() {
                 <span class="signal-pill ${stock.supertrend_dir === 'BUY' ? 'pill-buy' : (stock.supertrend_dir === 'SELL' ? 'pill-sell' : 'pill-wait')}">${stock.supertrend_dir || '-'}</span>
                 <div class="st-value">@ ${stock.supertrend_value !== null ? stock.supertrend_value.toFixed(2) : '-'}</div>
             </td>
+        `;
+
+        // MTF Agreement
+        rowHtml += `<td class="tf-agreement" style="gap: 8px; justify-content: flex-start; align-items: center; display: flex;">`;
+        MODES[currentMode].timeframes.forEach(tf => {
+            const apiTf = TF_MAP[tf];
+            const dir = (stock.mtf_data && stock.mtf_data[apiTf]) ? stock.mtf_data[apiTf] : null;
+
+            let dotClass = 'tf-dot';
+            if (dir === 'BUY') {
+                dotClass += ' dot-bull';
+            } else if (dir === 'SELL') {
+                dotClass += ' dot-bear';
+            }
+
+            rowHtml += `<div class="${dotClass}" title="${tf}: ${dir || 'Calculating...'}"></div>`;
+        });
+        rowHtml += `</td>`;
+
+        rowHtml += `
             <td>
                 <button class="btn btn-dim" style="padding: 6px 12px; font-size: 11px;">
                     <i class="fas fa-chart-area"></i>
@@ -317,6 +338,13 @@ function toggleSettings() {
     if (!isHidden) {
         loadProfileSettings();
     }
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('main-sidebar');
+    const mainContent = document.querySelector('.main-content');
+    sidebar.classList.toggle('collapsed');
+    mainContent.classList.toggle('expanded');
 }
 
 async function refreshSignals() {

@@ -42,6 +42,44 @@ body.dark-theme {
     padding: 24px 0;
     position: fixed;
     height: 100vh;
+    transition: width 0.3s ease;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.sidebar.collapsed {
+    width: 80px;
+}
+
+.sidebar.collapsed .logo-text span,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .user-info>div,
+.sidebar.collapsed .mode-btn span,
+.sidebar.collapsed .nav-item span {
+    display: none;
+}
+
+.sidebar.collapsed .mode-btn {
+    padding: 10px;
+    justify-content: center;
+}
+
+.sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding: 12px 0;
+}
+
+.dock-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 18px;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.dock-btn:hover {
+    color: var(--primary);
 }
 
 .logo {
@@ -52,10 +90,17 @@ body.dark-theme {
     color: var(--primary);
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
 }
 
-.logo span span {
+.logo-text {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-text span span {
     color: var(--text-main);
 }
 
@@ -152,6 +197,11 @@ body.dark-theme {
     flex: 1;
     margin-left: 260px;
     padding: 32px 40px;
+    transition: margin-left 0.3s ease;
+}
+
+.main-content.expanded {
+    margin-left: 80px;
 }
 
 .top-header {

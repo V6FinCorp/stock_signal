@@ -16,28 +16,31 @@
 
 <body class="dark-theme">
     <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
+        <aside class="sidebar" id="main-sidebar">
             <div class="logo">
-                <i class="fas fa-chart-line"></i>
-                <span>Signal<span>Pro</span></span>
+                <div class="logo-text">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Signal<span>Pro</span></span>
+                </div>
+                <button class="dock-btn" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
             </div>
 
             <nav class="nav-menu">
                 <div class="nav-label">Strategy Mode</div>
                 <div class="mode-toggles">
                     <button id="mode-swing" class="mode-btn active" onclick="setMode('swing')">
-                        <i class="fas fa-calendar-alt"></i> Swing Trade
+                        <i class="fas fa-calendar-alt"></i> <span>Swing Trade</span>
                     </button>
                     <button id="mode-intraday" class="mode-btn" onclick="setMode('intraday')">
-                        <i class="fas fa-bolt"></i> Intraday
+                        <i class="fas fa-bolt"></i> <span>Intraday</span>
                     </button>
                 </div>
 
                 <div class="nav-label">General</div>
-                <a href="#" class="nav-item active"><i class="fas fa-th-large"></i> Dashboard</a>
-                <a href="#" class="nav-item" onclick="toggleSettings()"><i class="fas fa-cog"></i> Settings</a>
-                <a href="#" class="nav-item"><i class="fas fa-history"></i> Signal History</a>
+                <a href="#" class="nav-item active"><i class="fas fa-th-large"></i> <span>Dashboard</span></a>
+                <a href="#" class="nav-item" onclick="toggleSettings()"><i class="fas fa-cog"></i>
+                    <span>Settings</span></a>
+                <a href="#" class="nav-item"><i class="fas fa-history"></i> <span>Signal History</span></a>
             </nav>
 
             <div class="sidebar-footer">
@@ -138,7 +141,7 @@
                             <th>RSI</th>
                             <th>EMA (20)</th>
                             <th>Supertrend</th>
-                            <th>Multi-TF Agreement</th>
+                            <th>MTF</th>
                             <th>Action</th>
                         </tr>
                     </thead>

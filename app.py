@@ -48,6 +48,23 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                 
         async with app_pool.acquire() as app_conn:
             async with app_conn.cursor(aiomysql.DictCursor) as app_cur:
+                # Add MTF query to fetch all supertrend directions for the entire mode
+                await app_cur.execute(
+                    """
+                    SELECT isin, timeframe, supertrend_dir 
+                    FROM app_sg_calculated_signals 
+                    WHERE profile_id = %s
+                    """,
+                    (mode,)
+                )
+                mtf_data_all = await app_cur.fetchall()
+                mtf_map = {}
+                for m in mtf_data_all:
+                    if m['isin'] not in mtf_map:
+                        mtf_map[m['isin']] = {}
+                    mtf_map[m['isin']][m['timeframe']] = m['supertrend_dir']
+                
+                # Fetch main timeframe rows
                 await app_cur.execute(
                     """
                     SELECT * FROM app_sg_calculated_signals 
@@ -71,7 +88,8 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                         "supertrend_dir": row['supertrend_dir'],
                         "supertrend_value": float(row['supertrend_value']) if row['supertrend_value'] is not None else None,
                         "dma_data": json.loads(row['dma_data']) if row['dma_data'] else {},
-                        "confluence_rank": int(row['confluence_rank']) if row['confluence_rank'] is not None else 0
+                        "confluence_rank": int(row['confluence_rank']) if row['confluence_rank'] is not None else 0,
+                        "mtf_data": mtf_map.get(isin, {})
                     })
                     
     except Exception as e:
