@@ -5,6 +5,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from config import Config
 from indicator_engine import process_profile
+from scenario_engine import run_scenario_backtest
+from pydantic import BaseModel
 import json
 
 app = FastAPI(title="StockSignal Pro API")
@@ -137,6 +139,39 @@ async def calculate_signals(mode: str = "swing", timeframe: str = None):
     await datamart_pool.wait_closed()
     
     return {"status": "success", "message": f"Successfully recalculated {mode} signals for {selected_timeframe}."}
+
+from typing import Optional
+
+class BacktestParams(BaseModel):
+    symbol: Optional[str] = None
+    start_date: str
+    end_date: str
+    primary_tf: str
+    action: str
+    rsi_min: float
+    rsi_max: float
+    stop_loss_pct: float
+
+@app.post("/api/backtest/run")
+async def api_run_backtest(params: BacktestParams):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database Connection Failed: {str(e)}")
+
+    try:
+        results = await run_scenario_backtest(app_pool, datamart_pool, params.dict())
+    except Exception as e:
+        app_pool.close()
+        datamart_pool.close()
+        raise HTTPException(status_code=500, detail=f"Backtest Engine Failed: {str(e)}")
+
+    app_pool.close()
+    datamart_pool.close()
+    await app_pool.wait_closed()
+    await datamart_pool.wait_closed()
+    return results
 
 if __name__ == "__main__":
     import uvicorn

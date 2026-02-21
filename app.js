@@ -478,6 +478,164 @@ async function refreshSignals() {
     }
 }
 
+// --- Strategy Builder UI Logic ---
+function switchTab(tabId) {
+    if (tabId === 'dashboard') {
+        document.getElementById('dashboard-view').classList.remove('hidden');
+        document.getElementById('scenario-builder-view').classList.add('hidden');
+        document.getElementById('nav-dashboard').classList.add('active');
+        document.getElementById('nav-scenario-builder').classList.remove('active');
+    } else if (tabId === 'scenario-builder') {
+        document.getElementById('dashboard-view').classList.add('hidden');
+        document.getElementById('scenario-builder-view').classList.remove('hidden');
+        document.getElementById('nav-dashboard').classList.remove('active');
+        document.getElementById('nav-scenario-builder').classList.add('active');
+    }
+}
+
+async function runAdvancedBacktest() {
+    const btn = document.getElementById('run-scenario-btn');
+    const ogHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> Running...';
+    btn.disabled = true;
+
+    // Collect variables
+    const symbol = document.getElementById('sb-symbol').value || null;
+    let actionSelect = document.getElementById('sb-action').value;
+    const action = actionSelect.includes("BUY") ? "BUY" : "SELL";
+    const primaryTfSelect = document.getElementById('sb-primary-tf').value;
+
+    let primary_tf = '15m';
+    if (primaryTfSelect.includes("30")) primary_tf = '30m';
+    else if (primaryTfSelect.includes("Daily")) primary_tf = '1d';
+    else if (primaryTfSelect.includes("Weekly")) primary_tf = '1w';
+    else if (primaryTfSelect.includes("Monthly")) primary_tf = '1mo';
+
+    const rsi_min = parseFloat(document.getElementById('sb-rsi-min').value);
+    const rsi_max = parseFloat(document.getElementById('sb-rsi-max').value);
+    const sl_pct = parseFloat(document.getElementById('sb-sl').value);
+    const startDate = document.getElementById('sb-date-start').value;
+    const endDate = document.getElementById('sb-date-end').value;
+
+    if (!startDate || !endDate) {
+        alert("Please set a Valid Start and End Date.");
+        btn.innerHTML = ogHtml;
+        btn.disabled = false;
+        return;
+    }
+
+    const payload = {
+        symbol: symbol,
+        start_date: startDate,
+        end_date: endDate,
+        primary_tf: primary_tf,
+        action: action,
+        rsi_min: rsi_min,
+        rsi_max: rsi_max,
+        stop_loss_pct: sl_pct
+    };
+
+    try {
+        const response = await fetch('/api/backtest/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        renderBacktestResults(result);
+
+    } catch (err) {
+        console.error(err);
+        alert("Backtest Failed. See console.");
+    } finally {
+        btn.innerHTML = ogHtml;
+        btn.disabled = false;
+    }
+}
+
+function renderBacktestResults(result) {
+    const grid = document.getElementById('sb-results-grid');
+    if (result.status !== 'success' || !result.data || result.data.length === 0) {
+        grid.innerHTML = `
+            <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--border-color); border-radius: 12px; padding: 60px; text-align: center; color: var(--text-dim);">
+                <i class="fas fa-exclamation-triangle fa-3x" style="margin-bottom: 16px; opacity: 0.5;"></i>
+                <h3 style="font-weight: 500;">No Trades Executed</h3>
+                <p style="font-size: 13px;">The selected parameters did not trigger any entries within the specified date range.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const data = result.data;
+
+    // Compute stats
+    const totalTrades = data.length;
+    const winners = data.filter(d => d.pnl_pct > 0).length;
+    const winRate = ((winners / totalTrades) * 100).toFixed(1);
+    let totalPnl = 0;
+    data.forEach(d => totalPnl += d.pnl_pct);
+
+    // Create new stats container at top of grid
+    let html = `
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+        <div style="background: var(--card-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); text-align: center;">
+            <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 4px;">Total Trades</div>
+            <div style="font-size: 20px; font-weight: 700;">${totalTrades}</div>
+        </div>
+        <div style="background: var(--card-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); text-align: center;">
+            <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 4px;">Win Rate</div>
+            <div style="font-size: 20px; font-weight: 700;">${winRate}%</div>
+        </div>
+        <div style="background: var(--card-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); text-align: center;">
+            <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 4px;">Net Profit</div>
+            <div style="font-size: 20px; font-weight: 700;" class="${totalPnl > 0 ? 'text-success' : 'text-danger'}">${totalPnl > 0 ? '+' : ''}${totalPnl.toFixed(2)}%</div>
+        </div>
+    </div>
+    <table class="signal-table" style="width: 100%; text-align: left; font-size: 13px;">
+            <thead>
+                <tr style="background: rgba(255,255,255,0.05);">
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Date / Time</th>
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Symbol</th>
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Action</th>
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Avg Entry</th>
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Tranches</th>
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Exit Price</th>
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Exit Trigger</th>
+                    <th style="padding: 12px; border-bottom: 1px solid var(--border-color); text-align: right;">P&L (%)</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    data.forEach(d => {
+        const pnlColor = d.pnl_pct > 0 ? 'var(--success)' : 'var(--danger)';
+        const dateObj = new Date(d.timestamp);
+        const dateStr = dateObj.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        let trancheDisplay = d.tranches;
+        if (d.tranches === 1) trancheDisplay = "1 (50%)";
+        if (d.tranches === 2) trancheDisplay = "1, 2 (75%)";
+        if (d.tranches === 3) trancheDisplay = "1, 2, 3 (100%)";
+
+        html += `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.02);">
+                <td style="padding: 12px;">${dateStr}</td>
+                <td style="padding: 12px; font-weight: 600;">${d.symbol}</td>
+                <td style="padding: 12px;">${d.action}</td>
+                <td style="padding: 12px;">₹${d.avg_entry.toFixed(2)}</td>
+                <td style="padding: 12px; color: var(--text-dim);">${trancheDisplay}</td>
+                <td style="padding: 12px;">₹${d.exit_price.toFixed(2)}</td>
+                <td style="padding: 12px;">${d.exit_trigger}</td>
+                <td style="padding: 12px; text-align: right; color: ${pnlColor}; font-weight: 600;">${d.pnl_pct > 0 ? '+' : ''}${d.pnl_pct.toFixed(2)}%</td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table>`;
+    grid.innerHTML = html;
+}
+
 // --- Initialize ---
 window.onload = () => {
     setMode('swing');

@@ -37,7 +37,10 @@
                 </div>
 
                 <div class="nav-label">General</div>
-                <a href="#" class="nav-item active"><i class="fas fa-th-large"></i> <span>Dashboard</span></a>
+                <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')"><i
+                        class="fas fa-th-large"></i> <span>Dashboard</span></a>
+                <a href="#" class="nav-item" id="nav-scenario-builder" onclick="switchTab('scenario-builder')"><i
+                        class="fas fa-flask"></i> <span>Scenario Backtester</span></a>
                 <a href="#" class="nav-item" onclick="toggleSettings()"><i class="fas fa-cog"></i>
                     <span>Settings</span></a>
                 <a href="#" class="nav-item"><i class="fas fa-history"></i> <span>Signal History</span></a>
@@ -55,7 +58,7 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="main-content">
+        <main class="main-content" id="dashboard-view">
             <header class="top-header">
                 <div class="header-left">
                     <h1 id="page-title">Swing Trading Dashboard</h1>
@@ -153,6 +156,194 @@
                     </tbody>
                 </table>
             </div>
+        </main>
+
+        <main class="main-content hidden" id="scenario-builder-view">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 id="page-title-sb">Advanced Scenario Backtester</h1>
+                    <p class="subtitle text-dim">Engine: <span class="text-success">Pandas-TA <i
+                                class="fas fa-check-circle"></i></span></p>
+                </div>
+                <div class="header-right">
+                    <div class="mode-toggles">
+                        <button class="mode-btn active"
+                            style="background: var(--success); border-color: var(--success);">HISTORICAL
+                            BACKTEST</button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="strategy-builder-form bg-card"
+                style="background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
+                <div <div
+                    style="padding: 24px; border-bottom: 1px solid var(--border-color); background: rgba(14, 165, 233, 0.05);">
+                    <h3 style="font-size: 18px; display: flex; align-items: center; gap: 8px; color: var(--primary);"><i
+                            class="fas fa-calendar-alt"></i> Step 1: Scenario Context</h3>
+                    <p class="text-dim" style="font-size: 13px; margin-top: 5px;">Define market environment constraints
+                        & targeting.</p>
+
+                    <div class="settings-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top: 16px;">
+                        <div class="control-field">
+                            <label>Target Stock Symbol <span class="text-dim"
+                                    style="font-weight: normal;">(Optional)</span></label>
+                            <input type="text" id="sb-symbol" class="select-input"
+                                placeholder="Leave blank to scan ALL stocks">
+                        </div>
+                        <div class="control-field">
+                            <label>Day Type / Volatility</label>
+                            <select class="select-input">
+                                <option>Normal Days (Mon, Wed, Fri)</option>
+                                <option>Volatile/Expiry Days (Tue, Thu)</option>
+                                <option>All Days</option>
+                            </select>
+                        </div>
+                        <div class="control-field">
+                            <label>Primary Timeframe</label>
+                            <select id="sb-primary-tf" class="select-input">
+                                <option>5 Minutes</option>
+                                <option selected>15 Minutes</option>
+                                <option>30 Minutes</option>
+                                <option>Daily (Swing)</option>
+                                <option>Weekly (Swing)</option>
+                                <option>Monthly (Swing)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 24px; border-bottom: 1px solid var(--border-color);">
+                    <h3 style="font-size: 18px; display: flex; align-items: center; gap: 8px; color: var(--success);"><i
+                            class="fas fa-arrow-right-to-bracket"></i> Step 2: Staggered Entry Trigger</h3>
+                    <p class="text-dim" style="font-size: 13px; margin-top: 5px;">Condition to trigger entry block
+                        scaling. (e.g. BUY RSI 26-32, SELL RSI 68-78)</p>
+
+                    <div style="display: flex; gap: 12px; align-items: center; margin-top: 16px; flex-wrap: wrap;">
+                        <span class="text-main" style="font-weight: 500;">Action</span>
+                        <select id="sb-action" class="select-input" style="width: auto; font-weight: bold;">
+                            <option>BUY (Long) Entry</option>
+                            <option>SELL (Short) Entry</option>
+                        </select>
+                        <span class="text-main" style="font-weight: 500; margin-left: 10px;">When</span>
+                        <select class="select-input" style="width: auto;">
+                            <option>RSI</option>
+                            <option>EMA</option>
+                        </select>
+                        <span class="text-main" style="font-weight: 500;">is</span>
+                        <select class="select-input" style="width: auto;">
+                            <option>Between</option>
+                            <option>Greater Than</option>
+                            <option>Less Than</option>
+                        </select>
+                        <input type="number" id="sb-rsi-min" class="select-input" value="26" style="width: 80px;">
+                        <span class="text-main" style="font-weight: 500;">and</span>
+                        <input type="number" id="sb-rsi-max" class="select-input" value="32" style="width: 80px;">
+                    </div>
+
+                    <div
+                        style="margin-top: 24px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <h4 style="font-size: 14px; margin-bottom: 12px;">Tranches (Averaging Down)</h4>
+
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="width: 80px; font-size: 13px;" class="text-dim">Tranche 1:</div>
+                            <input type="number" class="select-input" value="50" style="width: 70px;"> <span
+                                class="text-dim">%</span>
+                            <span class="text-dim" style="font-size: 13px;">at Base Trigger</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="width: 80px; font-size: 13px;" class="text-dim">Tranche 2:</div>
+                            <input type="number" class="select-input" value="25" style="width: 70px;"> <span
+                                class="text-dim">%</span>
+                            <span class="text-dim" style="font-size: 13px;">when price drops</span>
+                            <input type="number" step="0.1" class="select-input" value="0.1" style="width: 80px;"> <span
+                                class="text-dim">% below entry</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 80px; font-size: 13px;" class="text-dim">Tranche 3:</div>
+                            <input type="number" class="select-input" value="25" style="width: 70px;"> <span
+                                class="text-dim">%</span>
+                            <span class="text-dim" style="font-size: 13px;">when price drops further by</span>
+                            <input type="number" step="0.1" class="select-input" value="0.1" style="width: 80px;"> <span
+                                class="text-dim">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 24px; border-bottom: 1px solid var(--border-color);">
+                    <h3 style="font-size: 18px; display: flex; align-items: center; gap: 8px; color: var(--danger);"><i
+                            class="fas fa-sign-out-alt"></i> Step 3: Dynamic Exits</h3>
+                    <p class="text-dim" style="font-size: 13px; margin-top: 5px;">Define Stop Loss from Avg Entry, and
+                        Multi-Level targets.</p>
+
+                    <div
+                        style="display: flex; align-items: center; gap: 12px; margin-top:16px; margin-bottom: 24px; background: rgba(239, 68, 68, 0.05); padding: 12px; border-radius: 8px; border: 1px dashed rgba(239, 68, 68, 0.3);">
+                        <span class="text-danger" style="font-weight: 600; width: 80px;">Stop Loss:</span>
+                        <input type="number" id="sb-sl" step="0.01" class="select-input" value="0.21"
+                            style="width: 80px;"> <span class="text-dim">% from Average Entry</span>
+                    </div>
+
+                    <div
+                        style="margin-top: 16px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                            <div style="width: 70px; font-weight: 600; color: var(--success);">Target 1:</div>
+                            <input type="number" class="select-input" value="50" style="width: 70px;"> <span
+                                class="text-dim">% exit at Fixed P&L</span>
+                            <input type="number" step="0.01" class="select-input" value="0.49" style="width: 80px;">
+                            <span class="text-dim">%</span>
+                            <span class="text-main" style="font-weight: 600; margin: 0 10px;">OR</span>
+                            <select class="select-input" style="width: 140px;">
+                                <option>Supertrend (5m)</option>
+                                <option>Supertrend (15m)</option>
+                            </select>
+                            <span class="text-dim">breaks.</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 70px; font-weight: 600; color: var(--success);">Target 2:</div>
+                            <input type="number" class="select-input" value="50" style="width: 70px;"> <span
+                                class="text-dim">% exit at Fixed P&L</span>
+                            <input type="number" step="0.01" class="select-input" value="0.90" style="width: 80px;">
+                            <span class="text-dim">%</span>
+                            <span class="text-main" style="font-weight: 600; margin: 0 10px;">OR</span>
+                            <select class="select-input" style="width: 140px;">
+                                <option>Supertrend (15m)</option>
+                                <option>Supertrend (5m)</option>
+                            </select>
+                            <span class="text-main" style="font-weight: 500;">minus</span>
+                            <input type="number" step="0.1" class="select-input" value="0.2" style="width: 70px;"> <span
+                                class="text-dim">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    style="padding: 24px; background: rgba(255,255,255,0.02); display: flex; justify-content: space-between; align-items: center;">
+                    <div class="control-field" style="margin: 0; display:flex; gap: 12px; align-items: center;">
+                        <label style="margin: 0;">Backtest Date Range:</label>
+                        <input type="date" id="sb-date-start" class="select-input" style="width: auto;">
+                        <span class="text-dim">to</span>
+                        <input type="date" id="sb-date-end" class="select-input" style="width: auto;">
+                    </div>
+                    <button id="run-scenario-btn" onclick="runAdvancedBacktest()" class="btn btn-primary"
+                        style="padding: 14px 32px; font-weight: 600; font-size: 16px;"><i class="fas fa-play"
+                            style="margin-right: 8px;"></i> Run Advanced Backtest</button>
+                </div>
+            </div>
+
+            <!-- Result Placeholder area -->
+            <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+                <h2 style="font-size: 18px; margin-bottom: 16px;">Backtest Results Grid</h2>
+                <div id="sb-results-grid">
+                    <div
+                        style="background: rgba(0,0,0,0.2); border: 1px dashed var(--border-color); border-radius: 12px; padding: 60px; text-align: center; color: var(--text-dim);">
+                        <i class="fas fa-chart-bar fa-3x" style="margin-bottom: 16px; opacity: 0.5;"></i>
+                        <h3 style="font-weight: 500;">No Simulation Run Yet</h3>
+                        <p style="font-size: 13px;">Configure your strategy parameters above and hit Run to view
+                            execution
+                            paths and P&L statements.</p>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
