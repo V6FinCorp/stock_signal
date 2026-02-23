@@ -125,7 +125,7 @@ async function fetchSystemStatus() {
 }
 
 function updateTableHeader() {
-    const thead = document.querySelector('.signal-table thead tr');
+    const thead = document.querySelector('#main-signal-table thead tr');
     const conf = CONFIGS[currentMode];
 
     let html = `
@@ -152,6 +152,9 @@ function updateTableHeader() {
         <th>Trade Plan</th>
     `;
     thead.innerHTML = html;
+
+    // Setup Column Toggle Dropdown
+    setTimeout(() => setupColumnToggle('#main-signal-table', 'main-col-toggle-container'), 0);
 }
 
 function renderTimeframes() {
@@ -669,7 +672,7 @@ function renderBacktestResults(result) {
             <div style="font-size: 20px; font-weight: 700;" class="${totalPnl > 0 ? 'text-success' : 'text-danger'}">${totalPnl > 0 ? '+' : ''}${totalPnl.toFixed(2)}%</div>
         </div>
     </div>
-    <table class="signal-table" style="width: 100%; text-align: left; font-size: 13px;">
+    <table class="signal-table" id="bt-signal-table" style="width: 100%; text-align: left; font-size: 13px;">
             <thead>
                 <tr style="background: rgba(255,255,255,0.05);">
                     <th style="padding: 12px; border-bottom: 1px solid var(--border-color);">Date / Time</th>
@@ -711,6 +714,8 @@ function renderBacktestResults(result) {
 
     html += `</tbody></table>`;
     grid.innerHTML = html;
+
+    setTimeout(() => setupColumnToggle('#bt-signal-table', 'bt-col-toggle-container'), 0);
 }
 
 // --- Initialize ---
@@ -724,3 +729,84 @@ window.onload = () => {
         }
     }
 };
+
+// --- Column Toggle Logic ---
+let tableColumnStates = {};
+
+function setupColumnToggle(tableSelector, containerId) {
+    const table = document.querySelector(tableSelector);
+    const container = document.getElementById(containerId);
+    if (!table || !container) return;
+
+    const headers = table.querySelectorAll('thead th');
+    if (headers.length === 0) return;
+
+    // Default all columns to visible if not state stored or config changed
+    if (!tableColumnStates[tableSelector] || tableColumnStates[tableSelector].length !== headers.length) {
+        tableColumnStates[tableSelector] = Array.from(headers).map(th => {
+            const text = th.innerText.trim();
+            // Default these specific columns to hidden
+            return text !== 'Strategy' && text !== 'Trade Plan';
+        });
+    }
+
+    let html = `
+    <div style="position: relative; display: inline-block;">
+        <button class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-main);" onclick="this.nextElementSibling.classList.toggle('hidden')">
+            <i class="fas fa-columns"></i> Columns
+        </button>
+        <div class="hidden column-toggle-dropdown" style="position: absolute; right: 0; margin-top: 5px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; z-index: 100; min-width: 180px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+    `;
+
+    headers.forEach((th, index) => {
+        const headerText = th.innerText.trim() || `Col ${index + 1}`;
+        const isChecked = tableColumnStates[tableSelector][index] ? 'checked' : '';
+        html += `
+            <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" ${isChecked} onchange="toggleTableColumn('${tableSelector}', ${index}, this.checked)" style="accent-color: var(--primary);">
+                ${headerText}
+            </label>
+        `;
+    });
+
+    html += `</div></div>`;
+    container.innerHTML = html;
+    applyTableColumnStyles();
+}
+
+function toggleTableColumn(tableSelector, colIndex, isVisible) {
+    tableColumnStates[tableSelector][colIndex] = isVisible;
+    applyTableColumnStyles();
+}
+
+function applyTableColumnStyles() {
+    let styleEl = document.getElementById('dynamic-column-styles');
+    if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'dynamic-column-styles';
+        document.head.appendChild(styleEl);
+    }
+
+    let css = '';
+    for (const [tableSelector, states] of Object.entries(tableColumnStates)) {
+        states.forEach((isVisible, index) => {
+            if (!isVisible) {
+                // nth-child is 1-indexed (index + 1)
+                css += `
+                    ${tableSelector} th:nth-child(${index + 1}),
+                    ${tableSelector} td:nth-child(${index + 1}) {
+                        display: none !important;
+                    }
+                `;
+            }
+        });
+    }
+    styleEl.innerHTML = css;
+}
+
+// Close Dropdowns on outside click automatically
+document.addEventListener('click', function (event) {
+    if (!event.target.closest('.column-toggle-dropdown') && !event.target.closest('[onclick*="classList.toggle"]')) {
+        document.querySelectorAll('.column-toggle-dropdown').forEach(d => d.classList.add('hidden'));
+    }
+});

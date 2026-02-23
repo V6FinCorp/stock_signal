@@ -144,12 +144,13 @@
                         <option value="3">Rank 3+</option>
                         <option value="4">Rank 4+</option>
                     </select>
+                    <div id="main-col-toggle-container"></div>
                 </div>
             </div>
 
             <!-- Signal Table -->
             <div class="table-container">
-                <table class="signal-table">
+                <table class="signal-table" id="main-signal-table">
                     <thead>
                         <tr>
                             <th>Rank</th>
@@ -344,7 +345,10 @@
 
             <!-- Result Placeholder area -->
             <div style="margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px;">
-                <h2 style="font-size: 18px; margin-bottom: 16px;">Backtest Results Grid</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h2 style="font-size: 18px; margin: 0;">Backtest Results Grid</h2>
+                    <div id="bt-col-toggle-container"></div>
+                </div>
                 <div id="sb-results-grid">
                     <div
                         style="background: rgba(0,0,0,0.2); border: 1px dashed var(--border-color); border-radius: 12px; padding: 60px; text-align: center; color: var(--text-dim);">
