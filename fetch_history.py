@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Endpoints as discovered & outlined in IMPLEMENTATION_PLAN.md
 URL_DAILY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{to_date}/{from_date}"
-URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5"
+URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/minutes/5/{to_date}/{from_date_intraday}"
 
 async def fetch_data(client, url):
     """Fetch JSON data from Upstox endpoint natively."""
@@ -182,8 +182,8 @@ async def main():
             if mode == "intraday":
                 active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
             elif mode == "swing":
-                # Only process up to 5000 stocks, no intraday filter needed for swing
-                pass
+                # User requested to limit Swing mode to favorites for now to save time
+                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
             else:
                 # "all" mode: fetch everything (can be heavy, originally limited to intraday)
                 active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
@@ -212,9 +212,8 @@ async def main():
         total_len = len(active_companies)
         for idx, comp in enumerate(active_companies, 1):
             fetch_swing = (mode in ["swing", "all"])
-            fetch_intraday = False
-            if mode in ["intraday", "all"]:
-                 fetch_intraday = comp["symbol"] in intraday_symbols
+            # Always fetch intraday for favorites, even in swing mode, to support "Live Daily" candles
+            fetch_intraday = comp["symbol"] in intraday_symbols
 
             tasks.append(
                 sem_process(

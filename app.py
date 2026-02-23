@@ -1,4 +1,5 @@
 import aiomysql
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -86,6 +87,8 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                         "symbol": symbols_map.get(isin, isin),
                         "ltp": float(row['ltp']) if row['ltp'] is not None else None,
                         "rsi": float(row['rsi']) if row['rsi'] is not None else None,
+                        "rsi_day_high": float(row['rsi_day_high']) if row['rsi_day_high'] is not None else None,
+                        "rsi_day_low": float(row['rsi_day_low']) if row['rsi_day_low'] is not None else None,
                         "ema_value": float(row['ema_value']) if row['ema_value'] is not None else None,
                         "ema_signal": row['ema_signal'],
                         "ema_fast": float(row['ema_fast']) if row['ema_fast'] is not None else None,
@@ -150,7 +153,7 @@ async def calculate_signals(mode: str = "swing", timeframe: str = None):
             status = {"swing": {}, "intraday": {}}
             
         status.setdefault(mode, {})
-        status[mode]["last_calc"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status[mode]["last_calc"] = datetime.now().strftime("%d-%b-%Y %I:%M:%S %p")
         with open(status_file, "w") as f:
             json.dump(status, f)
     except Exception as e:
@@ -161,6 +164,10 @@ async def calculate_signals(mode: str = "swing", timeframe: str = None):
 import asyncio
 import sys
 import subprocess
+import os
+import signal
+
+active_fetch_processes = {}
 
 @app.get("/api/stream/fetch-data")
 def stream_api_fetch_data(mode: str = "swing"):
@@ -174,28 +181,37 @@ def stream_api_fetch_data(mode: str = "swing"):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, # Merge stderr into stdout
             text=True,
-            bufsize=1 # Line buffered
+            bufsize=1, # Line buffered
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
         )
-        for line in iter(proc.stdout.readline, ''):
-            if not line:
-                break
-            # Only stream actual module logs, not library warnings
-            clean_line = line.strip()
-            if "INFO" in clean_line or "Planned:" in clean_line or "WARNING" in clean_line:
-                 # Clean up python log prefix for nicer UI reading
-                 if " - INFO - " in clean_line:
-                     clean_line = clean_line.split(" - INFO - ")[-1]
-                 elif " - WARNING - " in clean_line:
-                     clean_line = "WARNING: " + clean_line.split(" - WARNING - ")[-1]
-                 yield f"data: {clean_line}\n\n"
-            elif "ERROR" in clean_line:
-                 if " - ERROR - " in clean_line:
-                     clean_line = clean_line.split(" - ERROR - ")[-1]
-                 yield f"data: ERROR: {clean_line}\n\n"
-            
+        active_fetch_processes[mode] = proc
+        
+        try:
+            for line in iter(proc.stdout.readline, ''):
+                if not line:
+                    break
+                # Only stream actual module logs, not library warnings
+                clean_line = line.strip()
+                if "INFO" in clean_line or "Planned:" in clean_line or "WARNING" in clean_line:
+                     # Clean up python log prefix for nicer UI reading
+                     if " - INFO - " in clean_line:
+                         clean_line = clean_line.split(" - INFO - ")[-1]
+                     elif " - WARNING - " in clean_line:
+                         clean_line = "WARNING: " + clean_line.split(" - WARNING - ")[-1]
+                     yield f"data: {clean_line}\n\n"
+                elif "ERROR" in clean_line:
+                     if " - ERROR - " in clean_line:
+                         clean_line = clean_line.split(" - ERROR - ")[-1]
+                     yield f"data: ERROR: {clean_line}\n\n"
+        except Exception as e:
+            yield f"data: ERROR: Streaming interrupted: {repr(e)}\n\n"
+
         proc.stdout.close()
         proc.wait()
         
+        if mode in active_fetch_processes:
+            del active_fetch_processes[mode]
+            
         try:
             import json
             from datetime import datetime
@@ -207,7 +223,7 @@ def stream_api_fetch_data(mode: str = "swing"):
                 status = {"swing": {}, "intraday": {}}
                 
             status.setdefault(mode, {})
-            status[mode]["last_fetch"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            status[mode]["last_fetch"] = datetime.now().strftime("%d-%b-%Y %I:%M:%S %p")
             with open(status_file, "w") as f:
                 json.dump(status, f)
         except Exception as e:
@@ -216,6 +232,35 @@ def stream_api_fetch_data(mode: str = "swing"):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(log_generator(), media_type="text/event-stream")
+
+@app.post("/api/stop-fetch")
+async def stop_fetch(mode: str = "swing"):
+    """Terminates an active fetching process."""
+    if mode in active_fetch_processes:
+        proc = active_fetch_processes[mode]
+        try:
+            if os.name == 'nt':
+                # Sending CTRL_BREAK_EVENT to the process group
+                os.kill(proc.pid, signal.CTRL_BREAK_EVENT)
+            else:
+                proc.terminate()
+            
+            # Briefly wait for it to exit
+            for _ in range(10):
+                if proc.poll() is not None:
+                    break
+                await asyncio.sleep(0.1)
+                
+            if proc.poll() is None:
+                proc.kill() # Force kill if still running
+                
+            if mode in active_fetch_processes:
+                del active_fetch_processes[mode]
+                
+            return {"status": "success", "message": f"Fetch process for {mode} stopped."}
+        except Exception as e:
+            return {"status": "error", "message": f"Failed to stop process: {str(e)}"}
+    return {"status": "error", "message": "No active fetch process found for this mode."}
 
 # Keep the original POST for backwards compatibility if needed, though UI will use stream
 @app.post("/api/fetch-data")
@@ -243,14 +288,72 @@ async def api_fetch_data(mode: str = "swing"):
         raise HTTPException(status_code=500, detail=f"Failed to execute fetch: {repr(e)}")
 
 @app.get("/api/status")
-async def api_status():
-    """Returns the last fetch and calculate execution timestamps."""
+async def api_status(mode: Optional[str] = None):
+    """Returns the last fetch, calculate, and latest OHLC execution timestamps for all modes."""
     import json
+    from datetime import datetime
+    
+    # 1. Get last fetch/calc from file
+    status = {"swing": {}, "intraday": {}}
     try:
         with open("status.json", "r") as f:
-            return json.load(f)
+            status = json.load(f)
     except FileNotFoundError:
-        return {"swing": {}, "intraday": {}}
+        pass
+        
+    def format_ts(ts_str):
+        if not ts_str or ts_str == "Never":
+            return "Never"
+        # If it's already in the target format (DD-MMM-YYYY), return it
+        # (e.g. 23-Feb-2026 07:46:23 PM)
+        try:
+            # Check if it matches new format (loosely)
+            if "-" in ts_str and any(m in ts_str for m in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]):
+                return ts_str
+            # Try parsing old format
+            dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+            return dt.strftime("%d-%b-%Y %I:%M:%S %p")
+        except:
+            return ts_str
+
+    # Normalize existing status timestamps
+    for m in ["swing", "intraday"]:
+        status.setdefault(m, {})
+        for key in ["last_fetch", "last_calc"]:
+            if key in status[m]:
+                status[m][key] = format_ts(status[m][key])
+
+    # 2. Get latest OHLC times from DB for BOTH modes
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # Get Swing effective date (check 1d vs 5m)
+                await cur.execute("SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE timeframe = '1d'")
+                res_s_1d = await cur.fetchone()
+                
+                await cur.execute("SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE timeframe = '5m'")
+                res_s_5m = await cur.fetchone()
+                
+                s_1d = res_s_1d[0] if res_s_1d and res_s_1d[0] else None
+                s_5m = res_s_5m[0] if res_s_5m and res_s_5m[0] else None
+                
+                # If 5m is NEWER than 1d (even on same day), show the 5m time as "Live"
+                if s_5m and (not s_1d or s_5m > s_1d):
+                    status["swing"]["latest_ohlc"] = s_5m.strftime("%d-%b-%Y %I:%M:%S %p") + " (Live)"
+                else:
+                    status["swing"]["latest_ohlc"] = s_1d.strftime("%d-%b-%Y %I:%M:%S %p") if s_1d else "Never"
+                
+                # Get Intraday (5m) - purely based on 5m data
+                status["intraday"]["latest_ohlc"] = s_5m.strftime("%d-%b-%Y %I:%M:%S %p") if s_5m else "Never"
+        app_pool.close()
+        await app_pool.wait_closed()
+    except Exception as e:
+        print(f"Error fetching latest OHLC: {e}")
+        status["swing"]["latest_ohlc"] = status["swing"].get("latest_ohlc", "Never")
+        status["intraday"]["latest_ohlc"] = status["intraday"].get("latest_ohlc", "Never")
+        
+    return status
 
 from typing import Optional
 
@@ -263,6 +366,12 @@ class BacktestParams(BaseModel):
     rsi_min: float
     rsi_max: float
     stop_loss_pct: float
+    t1_weight: Optional[float] = 50.0
+    t2_weight: Optional[float] = 50.0
+    t1_price: Optional[float] = 0.49
+    t2_price: Optional[float] = 0.90
+    tranche_weights: Optional[list] = [50.0, 25.0, 25.0]
+    tranche_prices: Optional[list] = [0.1, 0.1]
 
 @app.post("/api/backtest/run")
 async def api_run_backtest(params: BacktestParams):

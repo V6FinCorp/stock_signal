@@ -62,19 +62,29 @@
             <header class="top-header">
                 <div class="header-left">
                     <h1 id="page-title">Swing Trading Dashboard</h1>
-                    <p class="subtitle text-dim">Market Status: <span class="text-success">Live <i
-                                class="fas fa-circle blink"></i></span></p>
-                    <div style="margin-top: 8px; font-size: 11px; display: flex; gap: 15px;">
-                        <div><i class="fas fa-history"></i> Last Fetch: <span id="last-fetch-time"
-                                style="color:var(--text);font-weight:600;">Never</span></div>
-                        <div><i class="fas fa-bolt"></i> Last Calc: <span id="last-calc-time"
-                                style="color:var(--text);font-weight:600;">Never</span></div>
+                    <div class="subtitle text-dim"
+                        style="display: flex; align-items: center; gap: 20px; font-size: 11px; margin-top: 8px;">
+                        <span>Market Status: <span class="text-success" style="font-weight: 700;">Live <i
+                                    class="fas fa-circle blink"></i></span></span>
+                        <div
+                            style="display: flex; gap: 15px; border-left: 1px solid var(--border-color); padding-left: 20px;">
+                            <div><i class="fas fa-history"></i> Fetch: <span id="last-fetch-time"
+                                    style="color:var(--text);font-weight:600;">Never</span></div>
+                            <div><i class="fas fa-bolt"></i> Calc: <span id="last-calc-time"
+                                    style="color:var(--text);font-weight:600;">Never</span></div>
+                            <div><i class="fas fa-clock"></i> OHLC: <span id="latest-ohlc-time"
+                                    style="color:var(--text);font-weight:600;">Never</span></div>
+                        </div>
                     </div>
                 </div>
                 <div class="header-right" style="display: flex; gap: 12px;">
                     <button class="btn btn-primary" onclick="fetchMarketData()" id="fetch-data-btn"
                         style="background: var(--amber); border-color: var(--amber);">
                         <i class="fas fa-download" id="fetch-icon"></i> Fetch Market Data
+                    </button>
+                    <button class="btn btn-primary" onclick="stopFetch()" id="stop-fetch-btn"
+                        style="background: var(--danger); border-color: var(--danger); display: none;">
+                        <i class="fas fa-stop-circle"></i> Stop Fetch
                     </button>
                     <button class="btn btn-primary" onclick="refreshSignals()" id="calc-signals-btn">
                         <i class="fas fa-sync-alt" id="refresh-icon"></i> Calculate Signals
@@ -139,11 +149,24 @@
                         <input type="text" id="search-input" placeholder="Search Symbol/ISIN..."
                             oninput="renderSignals()">
                     </div>
-                    <select class="select-input" id="filter-rank">
-                        <option value="all">Minimum Rank (All)</option>
+                    <select class="select-input" id="filter-rank" onchange="renderSignals()">
+                        <option value="all">Min Rank (All)</option>
                         <option value="3">Rank 3+</option>
                         <option value="4">Rank 4+</option>
                     </select>
+
+                    <div class="rsi-filter-wrapper">
+                        <span
+                            style="font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase;">RSI
+                            Range:</span>
+                        <div class="rsi-slider-container">
+                            <div class="rsi-slider-track"></div>
+                            <div class="rsi-slider-range" id="rsi-slider-range"></div>
+                            <input type="range" id="filter-rsi-min" min="0" max="100" value="0" step="1">
+                            <input type="range" id="filter-rsi-max" min="0" max="100" value="100" step="1">
+                        </div>
+                        <div class="rsi-values" id="rsi-range-label">0 - 100</div>
+                    </div>
                     <div id="main-col-toggle-container"></div>
                 </div>
             </div>
@@ -260,25 +283,25 @@
 
                         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                             <div style="width: 80px; font-size: 13px;" class="text-dim">Tranche 1:</div>
-                            <input type="number" class="select-input" value="50" style="width: 70px;"> <span
-                                class="text-dim">%</span>
+                            <input type="number" id="sb-tr1-weight" class="select-input" value="50"
+                                style="width: 70px;"> <span class="text-dim">%</span>
                             <span class="text-dim" style="font-size: 13px;">at Base Trigger</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
                             <div style="width: 80px; font-size: 13px;" class="text-dim">Tranche 2:</div>
-                            <input type="number" class="select-input" value="25" style="width: 70px;"> <span
-                                class="text-dim">%</span>
+                            <input type="number" id="sb-tr2-weight" class="select-input" value="25"
+                                style="width: 70px;"> <span class="text-dim">%</span>
                             <span class="text-dim" style="font-size: 13px;">when price drops</span>
-                            <input type="number" step="0.1" class="select-input" value="0.1" style="width: 80px;"> <span
-                                class="text-dim">% below entry</span>
+                            <input type="number" id="sb-tr2-price" step="0.1" class="select-input" value="0.1"
+                                style="width: 80px;"> <span class="text-dim">% below entry</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <div style="width: 80px; font-size: 13px;" class="text-dim">Tranche 3:</div>
-                            <input type="number" class="select-input" value="25" style="width: 70px;"> <span
-                                class="text-dim">%</span>
+                            <input type="number" id="sb-tr3-weight" class="select-input" value="25"
+                                style="width: 70px;"> <span class="text-dim">%</span>
                             <span class="text-dim" style="font-size: 13px;">when price drops further by</span>
-                            <input type="number" step="0.1" class="select-input" value="0.1" style="width: 80px;"> <span
-                                class="text-dim">%</span>
+                            <input type="number" id="sb-tr3-price" step="0.1" class="select-input" value="0.1"
+                                style="width: 80px;"> <span class="text-dim">%</span>
                         </div>
                     </div>
                 </div>
@@ -300,31 +323,33 @@
                         style="margin-top: 16px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
                         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
                             <div style="width: 70px; font-weight: 600; color: var(--success);">Target 1:</div>
-                            <input type="number" class="select-input" value="50" style="width: 70px;"> <span
-                                class="text-dim">% exit at Fixed P&L</span>
-                            <input type="number" step="0.01" class="select-input" value="0.49" style="width: 80px;">
+                            <input type="number" id="sb-t1-weight" class="select-input" value="50" style="width: 70px;">
+                            <span class="text-dim">% exit at Fixed P&L</span>
+                            <input type="number" id="sb-t1-price" step="0.01" class="select-input" value="0.49"
+                                style="width: 80px;">
                             <span class="text-dim">%</span>
                             <span class="text-main" style="font-weight: 600; margin: 0 10px;">OR</span>
-                            <select class="select-input" style="width: 140px;">
-                                <option>Supertrend (5m)</option>
-                                <option>Supertrend (15m)</option>
+                            <select id="sb-t1-trigger" class="select-input" style="width: 140px;">
+                                <option value="st5">Supertrend (5m)</option>
+                                <option value="st15">Supertrend (15m)</option>
                             </select>
                             <span class="text-dim">breaks.</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <div style="width: 70px; font-weight: 600; color: var(--success);">Target 2:</div>
-                            <input type="number" class="select-input" value="50" style="width: 70px;"> <span
-                                class="text-dim">% exit at Fixed P&L</span>
-                            <input type="number" step="0.01" class="select-input" value="0.90" style="width: 80px;">
+                            <input type="number" id="sb-t2-weight" class="select-input" value="50" style="width: 70px;">
+                            <span class="text-dim">% exit at Fixed P&L</span>
+                            <input type="number" id="sb-t2-price" step="0.01" class="select-input" value="0.90"
+                                style="width: 80px;">
                             <span class="text-dim">%</span>
                             <span class="text-main" style="font-weight: 600; margin: 0 10px;">OR</span>
-                            <select class="select-input" style="width: 140px;">
-                                <option>Supertrend (15m)</option>
-                                <option>Supertrend (5m)</option>
+                            <select id="sb-t2-trigger" class="select-input" style="width: 140px;">
+                                <option value="st15">Supertrend (15m)</option>
+                                <option value="st5">Supertrend (5m)</option>
                             </select>
                             <span class="text-main" style="font-weight: 500;">minus</span>
-                            <input type="number" step="0.1" class="select-input" value="0.2" style="width: 70px;"> <span
-                                class="text-dim">%</span>
+                            <input type="number" id="sb-t2-adj" step="0.1" class="select-input" value="0.2"
+                                style="width: 70px;"> <span class="text-dim">%</span>
                         </div>
                     </div>
                 </div>

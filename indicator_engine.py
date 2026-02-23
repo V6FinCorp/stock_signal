@@ -1,5 +1,6 @@
 import asyncio
 import aiomysql
+from datetime import datetime
 import pandas as pd
 import numpy as np
 # Fix for pandas_ta compatibility with NumPy 2.0+
@@ -17,6 +18,7 @@ DEFAULT_CONFIGS = {
         'RSI': {'period': 14, 'ob': 70, 'os': 30, 'enabled': True},
         'EMA': {'fast_period': 9, 'slow_period': 20, 'enabled': True},
         'SUPERTREND': {'period': 10, 'mult': 3.0, 'enabled': True},
+        'ATR': {'period': 14, 'enabled': True},
         'DMA': {'periods': [10, 20, 50, 200], 'enabled': True},
         'VOLUME': {'period': 20, 'threshold': 2.0, 'enabled': True}
     },
@@ -24,6 +26,7 @@ DEFAULT_CONFIGS = {
         'RSI': {'period': 14, 'ob': 80, 'os': 20, 'enabled': True},
         'EMA': {'fast_period': 9, 'slow_period': 21, 'enabled': True},
         'SUPERTREND': {'period': 10, 'mult': 2.5, 'enabled': True},
+        'ATR': {'period': 14, 'enabled': True},
         'DMA': {'periods': [10, 20], 'enabled': False},
         'VOLUME': {'period': 20, 'threshold': 1.5, 'enabled': True}
     }
@@ -63,6 +66,18 @@ def calculate_indicators(df, settings):
         rsi_len = settings['RSI']['period']
         df[f'RSI_{rsi_len}'] = ta.rsi(df['close'], length=rsi_len)
         
+        # Calculate RSI Day High/Low
+        # Filter for the latest day available in the df
+        if not df.empty and 'timestamp' in df.columns:
+            # Ensure 'timestamp' is datetime type for .dt accessor
+            if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+            latest_date = df['timestamp'].max().date()
+            day_mask = df['timestamp'].dt.date == latest_date
+            rsi_today = df.loc[day_mask, f'RSI_{rsi_len}']
+            df['RSI_day_high'] = rsi_today.max()
+            df['RSI_day_low'] = rsi_today.min()
+        
     # EMA (Fast/Slow Crossover)
     if settings['EMA']['enabled']:
         fast_len = settings['EMA']['fast_period']
@@ -80,14 +95,21 @@ def calculate_indicators(df, settings):
     # (DMA is explicitly handled in process_profile to remain anchored to the 1d timeframe)
             
     # SUPERTREND
-    if settings['SUPERTREND']['enabled']:
+    if settings.get('SUPERTREND', {}).get('enabled'):
         st_len = settings['SUPERTREND']['period']
         st_mult = settings['SUPERTREND']['mult']
-        # Pandas-TA Supertrend returns a DataFrame: SUPERT_length_mult, SUPERTd_length_mult, SUPERTl_length_mult, SUPERTs_length_mult
+        # Pandas-TA Supertrend returns a DataFrame with dynamic column names
         st_df = ta.supertrend(df['high'], df['low'], df['close'], length=st_len, multiplier=st_mult)
         if st_df is not None and not st_df.empty:
-            df['ST_value'] = st_df[f'SUPERT_{st_len}_{st_mult}']
-            df['ST_dir'] = st_df[f'SUPERTd_{st_len}_{st_mult}'] # 1 for BUY, -1 for SELL
+            # Use iloc to get the columns by position to avoid dynamic name issues
+            # Col 0: Supertrend, Col 1: Direction
+            df['ST_value'] = st_df.iloc[:, 0]
+            df['ST_dir'] = st_df.iloc[:, 1] # 1 for BUY, -1 for SELL
+
+    # ATR (Average True Range)
+    if settings.get('ATR', {}).get('enabled'):
+        atr_len = settings['ATR']['period']
+        df['ATR_value'] = ta.atr(df['high'], df['low'], df['close'], length=atr_len)
 
     # VOLUME SPIKE
     if settings.get('VOLUME', {}).get('enabled'):
@@ -179,6 +201,50 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     (isin, base_timeframe, limit)
                 )
                 rows = await cur.fetchall()
+                
+                # --- Synthesis Logic for "Live Daily" Candle ---
+                if timeframe == '1d' and rows:
+                    latest_1d_ts = rows[0]['timestamp']
+                    
+                    # 1. Find the absolute latest date present in 5m data for this stock
+                    await cur.execute(
+                        "SELECT MAX(timestamp) as max_5m FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '5m'",
+                        (isin,)
+                    )
+                    res_5m = await cur.fetchone()
+                    if res_5m and res_5m['max_5m']:
+                        latest_5m_ts = res_5m['max_5m']
+                        latest_1d_ts = rows[0]['timestamp']
+
+                        # 2. If 5m data is NEWER than our 1d data (even on same day), synthesize that day
+                        if latest_5m_ts > latest_1d_ts:
+                            # If they are on the same day, remove the 1d candle first to avoid duplicates
+                            if latest_5m_ts.date() == latest_1d_ts.date():
+                                rows.pop(0)
+                            
+                            latest_5m_date = latest_5m_ts.strftime("%Y-%m-%d")
+                            await cur.execute(
+                                """
+                                SELECT timestamp, open, high, low, close, volume 
+                                FROM app_sg_ohlcv_prices 
+                                WHERE isin = %s AND timeframe = '5m' AND DATE(timestamp) = %s
+                                ORDER BY timestamp ASC
+                                """,
+                                (isin, latest_5m_date)
+                            )
+                            intra_rows = await cur.fetchall()
+                            if intra_rows:
+                                live_candle = {
+                                    'timestamp': datetime.strptime(latest_5m_date + " 00:00:00", "%Y-%m-%d %H:%M:%S"),
+                                    'open': float(intra_rows[0]['open']),
+                                    'high': max(float(r['high']) for r in intra_rows),
+                                    'low': min(float(r['low']) for r in intra_rows),
+                                    'close': float(intra_rows[-1]['close']),
+                                    'volume': sum(int(r['volume']) for r in intra_rows)
+                                }
+                                rows.insert(0, live_candle)
+                                logging.info(f"Synthesized live 1d candle for {isin} for date {latest_5m_date}")
+
                 if len(rows) < 14: # Minimum rows for basic RSI
                     continue
                     
@@ -219,9 +285,13 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 timestamp = latest_data['timestamp']
                 
                 rsi_val = None
+                rsi_day_high = None
+                rsi_day_low = None
                 if settings['RSI']['enabled']:
                     rsi_col = f"RSI_{settings['RSI']['period']}"
                     rsi_val = float(latest_data[rsi_col]) if rsi_col in latest_data and pd.notna(latest_data[rsi_col]) else None
+                    rsi_day_high = float(latest_data['RSI_day_high']) if 'RSI_day_high' in latest_data and pd.notna(latest_data['RSI_day_high']) else None
+                    rsi_day_low = float(latest_data['RSI_day_low']) if 'RSI_day_low' in latest_data and pd.notna(latest_data['RSI_day_low']) else None
                 
                 ema_fast = None
                 ema_slow = None
@@ -334,6 +404,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
 
                 signals_to_insert.append((
                     isin, profile_id, timeframe, timestamp, ltp, rsi_val, 
+                    rsi_day_high, rsi_day_low,
                     ema_signal, ema_fast, ema_slow, 
                     vol_signal, vol_ratio,
                     ema_fast, # Using ema_fast as legacy ema_value
@@ -345,10 +416,11 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
             if signals_to_insert:
                 upsert_query = """
                     INSERT INTO app_sg_calculated_signals 
-                    (isin, profile_id, timeframe, timestamp, ltp, rsi, ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, trade_strategy)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (isin, profile_id, timeframe, timestamp, ltp, rsi, rsi_day_high, rsi_day_low, ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, trade_strategy)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         timestamp=VALUES(timestamp), ltp=VALUES(ltp), rsi=VALUES(rsi), 
+                        rsi_day_high=VALUES(rsi_day_high), rsi_day_low=VALUES(rsi_day_low),
                         ema_signal=VALUES(ema_signal), ema_fast=VALUES(ema_fast), ema_slow=VALUES(ema_slow),
                         volume_signal=VALUES(volume_signal), volume_ratio=VALUES(volume_ratio),
                         ema_value=VALUES(ema_value),

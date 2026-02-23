@@ -7,6 +7,7 @@ import pandas_ta as ta
 import json
 import logging
 from datetime import timedelta
+from indicator_engine import get_profile_settings
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -36,29 +37,35 @@ def resample_data(df, tf_rule):
     df_resampled.reset_index(inplace=True)
     return df_resampled
 
-def prepare_indicators(df_5m, df_primary, primary_tf, action):
-    # Calculate Supertrends
-    st_5m = ta.supertrend(df_5m['high'], df_5m['low'], df_5m['close'], length=10, multiplier=3.0)
-    if st_5m is not None:
-        df_5m['ST_5m_dir'] = st_5m['SUPERTd_10_3.0']
-
-    # For primary timeframe (e.g. 15m), calculate RSI and Supertrend
-    df_primary['RSI'] = ta.rsi(df_primary['close'], length=14)
-    st_primary = ta.supertrend(df_primary['high'], df_primary['low'], df_primary['close'], length=10, multiplier=3.0)
-    if st_primary is not None:
-        df_primary['ST_primary_dir'] = st_primary['SUPERTd_10_3.0']
-
-    # Map the primary timeframe indicators back onto the 5m timeframe using forward fill
-    # This simulates "what was the last closed 15m candle's RSI at this 5m candle"
-    df_primary_subset = df_primary[['timestamp', 'RSI', 'ST_primary_dir']].copy()
+def prepare_indicators(df_base, df_primary, settings):
+    # Calculate Supertrend for base (e.g. 5m)
+    st_p = settings['SUPERTREND']['period']
+    st_m = settings['SUPERTREND']['mult']
     
-    # We shift the primary indicators by 1 so we don't look ahead. 
-    # e.g. The 10:15 candle finishes at 10:15, so between 10:15 and 10:30 we use the 10:15 RSI.
+    st_base = ta.supertrend(df_base['high'], df_base['low'], df_base['close'], length=st_p, multiplier=st_m)
+    if st_base is not None and not st_base.empty:
+        # Col 1 is direction (1 for buy, -1 for sell)
+        df_base['ST_base_dir'] = st_base.iloc[:, 1]
+    
+    # Calculate RSI and Supertrend for Primary (resampled) timeframe
+    rsi_p = settings['RSI']['period']
+    df_primary['RSI'] = ta.rsi(df_primary['close'], length=rsi_p)
+    
+    st_primary = ta.supertrend(df_primary['high'], df_primary['low'], df_primary['close'], length=st_p, multiplier=st_m)
+    if st_primary is not None and not st_primary.empty:
+        df_primary['ST_primary_dir'] = st_primary.iloc[:, 1] # Direction
+        df_primary['ST_primary_val'] = st_primary.iloc[:, 0] # Supertrend Line
+
+    # Map the primary timeframe indicators back onto the base timeframe
+    df_primary_subset = df_primary[['timestamp', 'RSI', 'ST_primary_dir', 'ST_primary_val']].copy()
+    
+    # Shift to avoid lookahead bias
     df_primary_subset['RSI'] = df_primary_subset['RSI'].shift(1)
     df_primary_subset['ST_primary_dir'] = df_primary_subset['ST_primary_dir'].shift(1)
+    df_primary_subset['ST_primary_val'] = df_primary_subset['ST_primary_val'].shift(1)
 
     df_combined = pd.merge_asof(
-        df_5m, 
+        df_base, 
         df_primary_subset, 
         on='timestamp', 
         direction='backward'
@@ -103,6 +110,10 @@ async def run_scenario_backtest(pool, datamart_pool, params):
 
     results = []
 
+    # Fetch Profile Settings
+    profile_id = 'swing' if params['primary_tf'] in ['1d', '1w', '1mo'] else 'intraday'
+    settings = await get_profile_settings(pool, profile_id)
+
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             for isin, symbol in isins_to_test.items():
@@ -122,21 +133,33 @@ async def run_scenario_backtest(pool, datamart_pool, params):
                 else:
                     df_primary = df_base.copy()
                 
-                df_sim = prepare_indicators(df_base, df_primary, params['primary_tf'], action)
+                # Use dynamic settings here
+                df_sim = prepare_indicators(df_base, df_primary, settings)
                 
                 # Filter strictly by start_date to ignore warmup
                 df_sim = df_sim[df_sim['timestamp'] >= pd.to_datetime(params['start_date'])].copy()
 
                 # Simulation Variables
                 pos_open = False
+                pos_qty = 0.0  # Percentage of current open position (Total weight)
                 pos_tranches = 0
                 entry_points = []
                 avg_entry = 0.0
+                t1_hit = False
                 
+                tr_weights = params.get('tranche_weights', [50.0, 25.0, 25.0])
+                tr_prices = params.get('tranche_prices', [0.1, 0.1])
+                t1_weight = params.get('t1_weight', 50.0)
+                t2_weight = params.get('t2_weight', 50.0)
+                t1_target_pnl = params.get('t1_price', 0.49) / 100.0
+                t2_target_pnl = params.get('t2_price', 0.90) / 100.0
+
                 for idx, row in df_sim.iterrows():
                     current_price = row['close']
                     ts = row['timestamp']
                     rsi = row['RSI']
+                    st_5m_dir = row.get('ST_5m_dir')
+                    st_primary_dir = row.get('ST_primary_dir')
                     
                     if not pos_open:
                         # Entry Trigger
@@ -149,74 +172,112 @@ async def run_scenario_backtest(pool, datamart_pool, params):
                                 
                             if trigger_met:
                                 pos_open = True
+                                pos_qty = tr_weights[0]
                                 pos_tranches = 1
                                 entry_points = [current_price]
                                 avg_entry = current_price
-                                
-                                # Log Tranche 1
-                                # logging.info(f"[{ts}] {symbol} Tranche 1 {action} at {current_price}")
+                                t1_hit = False
                     else:
                         modifier = 1 if action == 'BUY' else -1
                         
-                        # --- Check Stop Loss ---
+                        # --- Check Stop Loss (Priority) ---
                         sl_price = avg_entry * (1 - (sl_pct * modifier))
                         if (action == 'BUY' and current_price <= sl_price) or (action == 'SELL' and current_price >= sl_price):
-                            # STOP LOSS HIT
                             pnl_pct = ((current_price - avg_entry) / avg_entry) * modifier * 100
                             results.append({
                                 "timestamp": ts.isoformat(),
                                 "symbol": symbol,
-                                "action": f"{action} (Long)" if action=="BUY" else f"{action} (Short)",
+                                "action": f"{action} EXIT (SL)",
                                 "avg_entry": round(avg_entry, 2),
-                                "tranches": pos_tranches,
+                                "tranches": f"{pos_tranches} ({pos_qty}%)",
                                 "exit_price": round(current_price, 2),
-                                "exit_trigger": "Stop Loss (-0.21%)",
-                                "pnl_pct": round(pnl_pct, 4)
+                                "exit_trigger": f"Stop Loss (-{params['stop_loss_pct']}%)",
+                                "pnl_pct": round(pnl_pct * (pos_qty/100.0), 4) # Weighted P&L for remaining pos
                             })
                             pos_open = False
                             continue
                             
                         # --- Check Scaling In (Tranche 2 & 3) ---
-                        if pos_tranches == 1:
-                            t2_price = avg_entry * (1 - (0.001 * modifier)) # 0.1% drop
-                            if (action == 'BUY' and current_price <= t2_price) or (action == 'SELL' and current_price >= t2_price):
+                        if pos_tranches == 1 and tr_weights[1] > 0:
+                            t2_trigger_price = avg_entry * (1 - (tr_prices[0]/100.0 * modifier))
+                            if (action == 'BUY' and current_price <= t2_trigger_price) or (action == 'SELL' and current_price >= t2_trigger_price):
                                 entry_points.append(current_price)
-                                avg_entry = sum(entry_points) / len(entry_points) # Wait, it's 50% then 25%, weighting is complex
-                                # Proper weighting: Base=50, T2=25 -> Weight=(50*E1 + 25*E2)/75
-                                avg_entry = ((entry_points[0] * 0.50) + (current_price * 0.25)) / 0.75
+                                # Weighted Average: (W1*E1 + W2*E2) / (W1+W2)
+                                avg_entry = ((entry_points[0] * tr_weights[0]) + (current_price * tr_weights[1])) / (tr_weights[0] + tr_weights[1])
+                                pos_qty += tr_weights[1]
                                 pos_tranches = 2
-                        elif pos_tranches == 2:
-                            t3_price = entry_points[1] * (1 - (0.001 * modifier)) # Drop from T2
-                            if (action == 'BUY' and current_price <= t3_price) or (action == 'SELL' and current_price >= t3_price):
+                        elif pos_tranches == 2 and tr_weights[2] > 0:
+                            t3_trigger_price = entry_points[1] * (1 - (tr_prices[1]/100.0 * modifier))
+                            if (action == 'BUY' and current_price <= t3_trigger_price) or (action == 'SELL' and current_price >= t3_trigger_price):
                                 entry_points.append(current_price)
-                                avg_entry = ((entry_points[0] * 0.50) + (entry_points[1] * 0.25) + (current_price * 0.25))
+                                # Weighted Average: (W1*E1 + W2*E2 + W3*E3) / (W1+W2+W3)
+                                avg_entry = ((entry_points[0] * tr_weights[0]) + (entry_points[1] * tr_weights[1]) + (current_price * tr_weights[2])) / (tr_weights[0] + tr_weights[1] + tr_weights[2])
+                                pos_qty += tr_weights[2]
                                 pos_tranches = 3
 
-                        # --- Check Target 1 (50% position) ---
-                        # Simplification: For the ledger, if Target 1 hits, we log it and reset position for simplicity. 
-                        # In a true partial exit, we'd log T1, scale down position, and wait for T2.
-                        t1_hit = False
-                        t1_price = avg_entry * (1 + (0.0049 * modifier))
-                        st_5m_dir = row.get('ST_5m_dir')
-                        if (action == 'BUY' and current_price >= t1_price) or (action == 'SELL' and current_price <= t1_price):
-                            t1_hit = True
-                        elif st_5m_dir is not None:
-                            if action == 'BUY' and st_5m_dir == -1: t1_hit = True
-                            if action == 'SELL' and st_5m_dir == 1: t1_hit = True
+                        # --- Check Target 1 ---
+                        if not t1_hit and t1_weight > 0:
+                            t1_price = avg_entry * (1 + (t1_target_pnl * modifier))
+                            t1_triggered = False
                             
-                        if t1_hit:
-                            pnl_pct = ((current_price - avg_entry) / avg_entry) * modifier * 100
-                            results.append({
-                                "timestamp": ts.isoformat(),
-                                "symbol": symbol,
-                                "action": f"{action} (Long)" if action=="BUY" else f"{action} (Short)",
-                                "avg_entry": round(avg_entry, 2),
-                                "tranches": pos_tranches,
-                                "exit_price": round(current_price, 2),
-                                "exit_trigger": "Target 1 (0.49%) OR ST 5m Break",
-                                "pnl_pct": round(pnl_pct, 4)
-                            })
-                            pos_open = False # Closing whole position for ledger clarity in V1
-                            continue
+                            if (action == 'BUY' and current_price >= t1_price) or (action == 'SELL' and current_price <= t1_price):
+                                t1_triggered = True
+                                t1_reason = f"Target 1 ({params['t1_price']}%)"
+                            elif st_5m_dir is not None:
+                                if action == 'BUY' and st_5m_dir == 1:
+                                    t1_triggered = True
+                                    t1_reason = "ST 5m Break (Bullish)"
+                                elif action == 'SELL' and st_5m_dir == -1:
+                                    t1_triggered = True
+                                    t1_reason = "ST 5m Break (Bearish)"
+                            
+                            if t1_triggered:
+                                t1_hit = True
+                                pnl_pct = ((current_price - avg_entry) / avg_entry) * modifier * 100
+                                results.append({
+                                    "timestamp": ts.isoformat(),
+                                    "symbol": symbol,
+                                    "action": f"{action} T1",
+                                    "avg_entry": round(avg_entry, 2),
+                                    "tranches": f"{pos_tranches} ({t1_weight}%)",
+                                    "exit_price": round(current_price, 2),
+                                    "exit_trigger": t1_reason,
+                                    "pnl_pct": round(pnl_pct * (t1_weight/100.0), 4)
+                                })
+                                pos_qty -= t1_weight
+                                if pos_qty <= 0:
+                                    pos_open = False
+                                    continue
+                        
+                        # --- Check Target 2 ---
+                        if t1_hit and t2_weight > 0:
+                            t2_price = avg_entry * (1 + (t2_target_pnl * modifier))
+                            t2_triggered = False
+                            
+                            if (action == 'BUY' and current_price >= t2_price) or (action == 'SELL' and current_price <= t2_price):
+                                t2_triggered = True
+                                t2_reason = f"Target 2 ({params['t2_price']}%)"
+                            elif st_primary_dir is not None:
+                                if action == 'BUY' and st_primary_dir == 1:
+                                    t2_triggered = True
+                                    t2_reason = f"ST {params['primary_tf']} Break (Bullish)"
+                                elif action == 'SELL' and st_primary_dir == -1:
+                                    t2_triggered = True
+                                    t2_reason = f"ST {params['primary_tf']} Break (Bearish)"
+                                    
+                            if t2_triggered:
+                                pnl_pct = ((current_price - avg_entry) / avg_entry) * modifier * 100
+                                results.append({
+                                    "timestamp": ts.isoformat(),
+                                    "symbol": symbol,
+                                    "action": f"{action} T2",
+                                    "avg_entry": round(avg_entry, 2),
+                                    "tranches": f"{pos_tranches} ({t2_weight}%)",
+                                    "exit_price": round(current_price, 2),
+                                    "exit_trigger": t2_reason,
+                                    "pnl_pct": round(pnl_pct * (t2_weight/100.0), 4)
+                                })
+                                pos_open = False # Fully closed
+                                continue
 
     return {"status": "success", "data": results}

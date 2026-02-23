@@ -43,9 +43,12 @@ const CONFIGS = {
 
 let currentMode = 'swing';
 let currentTimeframe = 'Daily';
+let fetchEvtSource = null;
 let liveSignals = [];
 let signalCache = {};
 let activeStatFilter = 'all';
+let currentSortColumn = 'rsi'; // Default sort by RSI
+let currentSortDirection = 'desc'; // Default desc
 
 // --- Core API Logic ---
 
@@ -111,14 +114,16 @@ function setMode(mode) {
 
 async function fetchSystemStatus() {
     try {
-        const response = await fetch('/api/status');
+        const response = await fetch(`/api/status?mode=${currentMode}&_=${Date.now()}`);
         const status = await response.json();
 
         let fetchTime = status[currentMode]?.last_fetch || 'Never';
         let calcTime = status[currentMode]?.last_calc || 'Never';
+        let ohlcTime = status[currentMode]?.latest_ohlc || 'Never';
 
         document.getElementById('last-fetch-time').innerText = fetchTime;
         document.getElementById('last-calc-time').innerText = calcTime;
+        document.getElementById('latest-ohlc-time').innerText = ohlcTime;
     } catch (e) {
         console.error("Failed to fetch system status:", e);
     }
@@ -126,35 +131,62 @@ async function fetchSystemStatus() {
 
 function updateTableHeader() {
     const thead = document.querySelector('#main-signal-table thead tr');
+    thead.innerHTML = '';
     const conf = CONFIGS[currentMode];
 
-    let html = `
-        <th>Rank</th>
-        <th>Stock Detail</th>
-        <th>LTP</th>
-        <th>RSI</th>
-    `;
+    const createHeader = (label, key, sortable = false) => {
+        const th = document.createElement('th');
+        if (sortable) {
+            const isActive = currentSortColumn === key;
+            const icon = isActive ? (currentSortDirection === 'asc' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort';
+            th.innerHTML = `
+                <div class="sortable-header" onclick="toggleSort('${key}')" style="cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                    ${label} <i class="fas ${icon}" style="font-size: 12px; opacity: ${isActive ? 1 : 0.3}"></i>
+                </div>
+            `;
+        } else {
+            th.innerText = label;
+        }
+        return th;
+    };
 
-    if (conf.ema.enabled) html += `<th>EMA (${conf.ema.fast_period}/${conf.ema.slow_period})</th>`;
-    if (conf.vol && conf.vol.enabled) html += `<th>Volume (${conf.vol.threshold}x)</th>`;
+    thead.appendChild(createHeader('Rank', 'confluence_rank', true));
+    thead.appendChild(createHeader('Stock Detail', 'symbol', true));
+    thead.appendChild(createHeader('LTP', 'ltp', true));
+    thead.appendChild(createHeader('RSI', 'rsi', true));
 
-    html += `<th>Strategy</th>`;
+    if (conf.ema.enabled) {
+        thead.appendChild(createHeader(`EMA (${conf.ema.fast_period}/${conf.ema.slow_period})`, 'ema_signal', false));
+    }
+    if (conf.vol && conf.vol.enabled) {
+        thead.appendChild(createHeader(`Volume (${conf.vol.threshold}x)`, 'volume_ratio', true));
+    }
+
+    thead.appendChild(createHeader('Strategy', 'trade_strategy', false));
 
     if (conf.dma.enabled) {
         conf.dma.periods.forEach(p => {
-            html += `<th>DMA ${p}</th>`;
+            thead.appendChild(createHeader(`DMA ${p}`, `dma_${p}`, false));
         });
     }
 
-    html += `
-        <th>Supertrend</th>
-        <th>MTF</th>
-        <th>Trade Plan</th>
-    `;
-    thead.innerHTML = html;
+    thead.appendChild(createHeader('Supertrend', 'supertrend_dir', false));
+    thead.appendChild(createHeader('MTF', null, false));
+    thead.appendChild(createHeader('Trade Plan', null, false));
 
     // Setup Column Toggle Dropdown
     setTimeout(() => setupColumnToggle('#main-signal-table', 'main-col-toggle-container'), 0);
+}
+
+function toggleSort(column) {
+    if (currentSortColumn === column) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = column;
+        currentSortDirection = 'desc';
+    }
+    updateTableHeader();
+    renderSignals();
 }
 
 function renderTimeframes() {
@@ -218,6 +250,41 @@ function renderSignals() {
         );
     }
 
+    // Filter by RSI Range
+    const rsiMinInput = document.getElementById('filter-rsi-min');
+    const rsiMaxInput = document.getElementById('filter-rsi-max');
+    if (rsiMinInput && rsiMaxInput) {
+        const rsiMin = parseFloat(rsiMinInput.value || 0);
+        const rsiMax = parseFloat(rsiMaxInput.value || 100);
+        displayData = displayData.filter(s => {
+            if (s.rsi === null || s.rsi === undefined) return false;
+            return s.rsi >= rsiMin && s.rsi <= rsiMax;
+        });
+    }
+
+    // 3. Sort Data
+    if (currentSortColumn) {
+        displayData.sort((a, b) => {
+            let valA = a[currentSortColumn];
+            let valB = b[currentSortColumn];
+
+            // Handle strings (like symbol)
+            if (typeof valA === 'string') {
+                valA = valA.toLowerCase();
+                valB = (valB || '').toLowerCase();
+                if (currentSortDirection === 'asc') return valA.localeCompare(valB);
+                return valB.localeCompare(valA);
+            }
+
+            // Handle numbers
+            valA = valA === null || valA === undefined ? (currentSortDirection === 'asc' ? Infinity : -Infinity) : valA;
+            valB = valB === null || valB === undefined ? (currentSortDirection === 'asc' ? Infinity : -Infinity) : valB;
+
+            if (currentSortDirection === 'asc') return valA - valB;
+            return valB - valA;
+        });
+    }
+
     if (displayData.length === 0) {
         tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);">No signals match your selected filters.</td></tr>`;
         return;
@@ -239,8 +306,17 @@ function renderSignals() {
         // RSI
         if (conf.rsi.enabled) {
             const rsi = stock.rsi;
+            const rsiH = stock.rsi_day_high;
+            const rsiL = stock.rsi_day_low;
             if (rsi !== null && rsi !== undefined) {
-                rowHtml += `<td><div class="${rsi > conf.rsi.ob ? 'text-success' : (rsi < conf.rsi.os ? 'text-danger' : '')}" style="font-weight: 600; font-size: 15px;">${rsi.toFixed(1)}</div></td>`;
+                rowHtml += `
+                    <td>
+                        <div class="${rsi > conf.rsi.ob ? 'text-success' : (rsi < conf.rsi.os ? 'text-danger' : '')}" style="font-weight: 600; font-size: 15px;">${rsi.toFixed(1)}</div>
+                        <div style="font-size: 10px; color: var(--text-dim); margin-top: 3px; display: flex; gap: 6px;">
+                            <span title="Day High" style="color: rgba(34, 197, 94, 0.7)">H: ${rsiH ? rsiH.toFixed(1) : '-'}</span>
+                            <span title="Day Low" style="color: rgba(239, 68, 68, 0.7)">L: ${rsiL ? rsiL.toFixed(1) : '-'}</span>
+                        </div>
+                    </td>`;
             } else {
                 rowHtml += `<td><div style="font-size: 15px; color: var(--text-dim);">-</div></td>`;
             }
@@ -468,6 +544,9 @@ async function fetchMarketData() {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
     btn.disabled = true;
 
+    const stopBtn = document.getElementById('stop-fetch-btn');
+    if (stopBtn) stopBtn.style.display = 'block';
+
     container.classList.remove('hidden');
     liveConsole.classList.remove('hidden');
     track.classList.add('hidden'); // Hide fake bar
@@ -475,10 +554,13 @@ async function fetchMarketData() {
     if (progText) progText.innerText = `Streaming Upstox API Data (${currentMode.toUpperCase()})...`;
 
     const evtSource = new EventSource(`/api/stream/fetch-data?mode=${currentMode}`);
+    fetchEvtSource = evtSource;
 
     evtSource.onmessage = function (event) {
         if (event.data === "[DONE]") {
             evtSource.close();
+            fetchEvtSource = null;
+            if (stopBtn) stopBtn.style.display = 'none';
             fetchSystemStatus();
             setTimeout(() => {
                 container.classList.add('hidden');
@@ -489,7 +571,6 @@ async function fetchMarketData() {
             }, 1000);
             return;
         }
-
         const logLine = document.createElement('div');
         logLine.innerText = event.data;
         logLine.style.marginBottom = "4px";
@@ -507,10 +588,62 @@ async function fetchMarketData() {
     evtSource.onerror = function () {
         console.error("EventSource failed.");
         evtSource.close();
+        fetchEvtSource = null;
+        if (stopBtn) stopBtn.style.display = 'none';
         btn.innerHTML = originalHTML;
         btn.disabled = false;
         fetchSystemStatus();
     };
+}
+
+async function stopFetch() {
+    const stopBtn = document.getElementById('stop-fetch-btn');
+    if (stopBtn) {
+        stopBtn.disabled = true;
+        stopBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Stopping...';
+    }
+
+    try {
+        const response = await fetch(`/api/stop-fetch?mode=${currentMode}`, { method: 'POST' });
+        const result = await response.json();
+        console.log(result.message);
+
+        if (fetchEvtSource) {
+            fetchEvtSource.close();
+            fetchEvtSource = null;
+        }
+
+        // Reset UI immediately
+        const btn = document.getElementById('fetch-data-btn');
+        const container = document.getElementById('progress-container');
+        const liveConsole = document.getElementById('live-console');
+        const track = document.getElementById('progress-track-element');
+
+        if (stopBtn) {
+            stopBtn.style.display = 'none';
+            stopBtn.disabled = false;
+            stopBtn.innerHTML = '<i class="fas fa-stop-circle"></i> Stop Fetch';
+        }
+
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-download"></i> Fetch Market Data';
+            btn.disabled = false;
+        }
+
+        setTimeout(() => {
+            if (container) container.classList.add('hidden');
+            if (liveConsole) liveConsole.classList.add('hidden');
+            if (track) track.classList.remove('hidden');
+            fetchSystemStatus();
+        }, 500);
+
+    } catch (e) {
+        console.error("Failed to stop fetch:", e);
+        if (stopBtn) {
+            stopBtn.disabled = false;
+            stopBtn.innerHTML = '<i class="fas fa-stop-circle"></i> Stop Fetch';
+        }
+    }
 }
 
 async function refreshSignals() {
@@ -604,6 +737,18 @@ async function runAdvancedBacktest() {
         return;
     }
 
+    const t1_weight = parseFloat(document.getElementById('sb-t1-weight')?.value || 50);
+    const t2_weight = parseFloat(document.getElementById('sb-t2-weight')?.value || 50);
+    const t1_price = parseFloat(document.getElementById('sb-t1-price')?.value || 0.49);
+    const t2_price = parseFloat(document.getElementById('sb-t2-price')?.value || 0.90);
+
+    const tr1_weight = parseFloat(document.getElementById('sb-tr1-weight')?.value || 50);
+    const tr2_weight = parseFloat(document.getElementById('sb-tr2-weight')?.value || 25);
+    const tr3_weight = parseFloat(document.getElementById('sb-tr3-weight')?.value || 25);
+
+    const tr2_price = parseFloat(document.getElementById('sb-tr2-price')?.value || 0.1);
+    const tr3_price = parseFloat(document.getElementById('sb-tr3-price')?.value || 0.1);
+
     const payload = {
         symbol: symbol,
         start_date: startDate,
@@ -612,7 +757,13 @@ async function runAdvancedBacktest() {
         action: action,
         rsi_min: rsi_min,
         rsi_max: rsi_max,
-        stop_loss_pct: sl_pct
+        stop_loss_pct: sl_pct,
+        t1_weight: t1_weight,
+        t2_weight: t2_weight,
+        t1_price: t1_price,
+        t2_price: t2_price,
+        tranche_weights: [tr1_weight, tr2_weight, tr3_weight],
+        tranche_prices: [tr2_price, tr3_price]
     };
 
     try {
@@ -721,6 +872,7 @@ function renderBacktestResults(result) {
 // --- Initialize ---
 window.onload = () => {
     setMode('swing');
+    setupRSISlider(); // Initialize Dual RSI Slider
 
     window.onclick = function (event) {
         const modal = document.getElementById('settings-modal');
@@ -729,6 +881,47 @@ window.onload = () => {
         }
     }
 };
+
+function setupRSISlider() {
+    const minInput = document.getElementById('filter-rsi-min');
+    const maxInput = document.getElementById('filter-rsi-max');
+    const rangeTrack = document.getElementById('rsi-slider-range');
+    const label = document.getElementById('rsi-range-label');
+
+    if (!minInput || !maxInput || !rangeTrack || !label) return;
+
+    function updateSlider() {
+        let minVal = parseInt(minInput.value);
+        let maxVal = parseInt(maxInput.value);
+
+        // Prevent crossing
+        if (minVal > maxVal - 5) {
+            if (this === minInput) {
+                minInput.value = maxVal - 5;
+                minVal = maxVal - 5;
+            } else {
+                maxInput.value = minVal + 5;
+                maxVal = minVal + 5;
+            }
+        }
+
+        // Update Visual Track
+        rangeTrack.style.left = (minVal) + '%';
+        rangeTrack.style.width = (maxVal - minVal) + '%';
+
+        // Update Label
+        label.innerText = `${minVal} - ${maxVal}`;
+
+        // Trigger Render
+        renderSignals();
+    }
+
+    minInput.oninput = updateSlider;
+    maxInput.oninput = updateSlider;
+
+    // Initial run
+    updateSlider();
+}
 
 // --- Column Toggle Logic ---
 let tableColumnStates = {};
