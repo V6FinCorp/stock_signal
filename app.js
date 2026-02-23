@@ -744,7 +744,7 @@ function setupColumnToggle(tableSelector, containerId) {
     // Default all columns to visible if not state stored or config changed
     if (!tableColumnStates[tableSelector] || tableColumnStates[tableSelector].length !== headers.length) {
         tableColumnStates[tableSelector] = Array.from(headers).map(th => {
-            const text = th.innerText.trim();
+            const text = th.textContent.trim();
             // Default these specific columns to hidden
             return text !== 'Strategy' && text !== 'Trade Plan';
         });
@@ -759,7 +759,7 @@ function setupColumnToggle(tableSelector, containerId) {
     `;
 
     headers.forEach((th, index) => {
-        const headerText = th.innerText.trim() || `Col ${index + 1}`;
+        const headerText = th.textContent.trim() || `Col ${index + 1}`;
         const isChecked = tableColumnStates[tableSelector][index] ? 'checked' : '';
         html += `
             <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; gap: 8px;">
