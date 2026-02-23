@@ -106,6 +106,22 @@ function setMode(mode) {
     renderTimeframes();
     updateTableHeader();
     fetchAndRenderSignals();
+    fetchSystemStatus();
+}
+
+async function fetchSystemStatus() {
+    try {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+
+        let fetchTime = status[currentMode]?.last_fetch || 'Never';
+        let calcTime = status[currentMode]?.last_calc || 'Never';
+
+        document.getElementById('last-fetch-time').innerText = fetchTime;
+        document.getElementById('last-calc-time').innerText = calcTime;
+    } catch (e) {
+        console.error("Failed to fetch system status:", e);
+    }
 }
 
 function updateTableHeader() {
@@ -436,13 +452,73 @@ function toggleSidebar() {
     mainContent.classList.toggle('expanded');
 }
 
+async function fetchMarketData() {
+    const btn = document.getElementById('fetch-data-btn');
+    const container = document.getElementById('progress-container');
+    const fill = document.getElementById('progress-fill');
+    const percent = document.getElementById('progress-percent');
+    const progText = container.querySelector('.progress-info span:first-child');
+    const liveConsole = document.getElementById('live-console');
+    const track = document.getElementById('progress-track-element');
+
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+    btn.disabled = true;
+
+    container.classList.remove('hidden');
+    liveConsole.classList.remove('hidden');
+    track.classList.add('hidden'); // Hide fake bar
+    liveConsole.innerHTML = ''; // clear logs
+    if (progText) progText.innerText = `Streaming Upstox API Data (${currentMode.toUpperCase()})...`;
+
+    const evtSource = new EventSource(`/api/stream/fetch-data?mode=${currentMode}`);
+
+    evtSource.onmessage = function (event) {
+        if (event.data === "[DONE]") {
+            evtSource.close();
+            fetchSystemStatus();
+            setTimeout(() => {
+                container.classList.add('hidden');
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+                liveConsole.classList.add('hidden');
+                track.classList.remove('hidden');
+            }, 1000);
+            return;
+        }
+
+        const logLine = document.createElement('div');
+        logLine.innerText = event.data;
+        logLine.style.marginBottom = "4px";
+
+        // Color coding
+        if (event.data.includes("Planned:")) logLine.style.color = "var(--primary)";
+        else if (event.data.includes("✅")) logLine.style.color = "var(--success)";
+        else if (event.data.includes("Last available") || event.data.includes("No previous")) logLine.style.color = "var(--amber)";
+        else if (event.data.includes("ERROR:") || event.data.includes("WARNING:")) logLine.style.color = "var(--danger)";
+
+        liveConsole.appendChild(logLine);
+        liveConsole.scrollTop = liveConsole.scrollHeight;
+    };
+
+    evtSource.onerror = function () {
+        console.error("EventSource failed.");
+        evtSource.close();
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+        fetchSystemStatus();
+    };
+}
+
 async function refreshSignals() {
     const btnIcon = document.getElementById('refresh-icon');
     const container = document.getElementById('progress-container');
     const fill = document.getElementById('progress-fill');
     const percent = document.getElementById('progress-percent');
+    const progText = container.querySelector('.progress-info span:first-child');
 
     container.classList.remove('hidden');
+    if (progText) progText.innerText = 'Calculating Indicators & Strategies...';
     btnIcon.classList.add('fa-spin');
 
     // Simulate progress while API loads
@@ -458,12 +534,13 @@ async function refreshSignals() {
         const apiTf = TF_MAP[currentTimeframe] || '1d';
 
         // 1. Manually trigger the Pandas-TA calculating backend
-        await fetch(`/ api / calculate ? mode = ${currentMode}& timeframe=${apiTf} `, {
+        await fetch(`/api/calculate?mode=${currentMode}&timeframe=${apiTf}`, {
             method: 'POST'
         });
 
-        // 2. Fetch the newly injected signals from DB & force cache overwrite
-        await fetchAndRenderSignals(true);
+        // 2. Fetch the newly populated data back into the frontend cache & UI
+        await fetchAndRenderSignals(true); // force cache bust
+        fetchSystemStatus();
 
     } catch (e) {
         console.error("Failed to trigger engine:", e);

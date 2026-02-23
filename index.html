@@ -64,10 +64,20 @@
                     <h1 id="page-title">Swing Trading Dashboard</h1>
                     <p class="subtitle text-dim">Market Status: <span class="text-success">Live <i
                                 class="fas fa-circle blink"></i></span></p>
+                    <div style="margin-top: 8px; font-size: 11px; display: flex; gap: 15px;">
+                        <div><i class="fas fa-history"></i> Last Fetch: <span id="last-fetch-time"
+                                style="color:var(--text);font-weight:600;">Never</span></div>
+                        <div><i class="fas fa-bolt"></i> Last Calc: <span id="last-calc-time"
+                                style="color:var(--text);font-weight:600;">Never</span></div>
+                    </div>
                 </div>
-                <div class="header-right">
-                    <button class="btn btn-primary" onclick="refreshSignals()">
-                        <i class="fas fa-sync-alt" id="refresh-icon"></i> Refresh Signals
+                <div class="header-right" style="display: flex; gap: 12px;">
+                    <button class="btn btn-primary" onclick="fetchMarketData()" id="fetch-data-btn"
+                        style="background: var(--amber); border-color: var(--amber);">
+                        <i class="fas fa-download" id="fetch-icon"></i> Fetch Market Data
+                    </button>
+                    <button class="btn btn-primary" onclick="refreshSignals()" id="calc-signals-btn">
+                        <i class="fas fa-sync-alt" id="refresh-icon"></i> Calculate Signals
                     </button>
                 </div>
             </header>
@@ -110,8 +120,11 @@
                     <span>Analyzing Indicators & Price Action...</span>
                     <span id="progress-percent">0%</span>
                 </div>
-                <div class="progress-track">
+                <div class="progress-track" id="progress-track-element">
                     <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <div id="live-console" class="hidden"
+                    style="margin-top: 15px; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; max-height: 250px; overflow-y: auto; color: var(--text-dim); border: 1px solid var(--border);">
                 </div>
             </div>
 

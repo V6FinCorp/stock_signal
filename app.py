@@ -1,7 +1,7 @@
 import aiomysql
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from config import Config
 from indicator_engine import process_profile
@@ -138,7 +138,119 @@ async def calculate_signals(mode: str = "swing", timeframe: str = None):
     await app_pool.wait_closed()
     await datamart_pool.wait_closed()
     
+    # Save timestamp
+    try:
+        import json
+        from datetime import datetime
+        status_file = "status.json"
+        try:
+            with open(status_file, "r") as f:
+                status = json.load(f)
+        except FileNotFoundError:
+            status = {"swing": {}, "intraday": {}}
+            
+        status.setdefault(mode, {})
+        status[mode]["last_calc"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(status_file, "w") as f:
+            json.dump(status, f)
+    except Exception as e:
+        pass
+        
     return {"status": "success", "message": f"Successfully recalculated {mode} signals for {selected_timeframe}."}
+
+import asyncio
+import sys
+import subprocess
+
+@app.get("/api/stream/fetch-data")
+def stream_api_fetch_data(mode: str = "swing"):
+    """Streams the History Harvester console output via Server-Sent Events."""
+    if mode not in ["swing", "intraday"]:
+        raise HTTPException(status_code=400, detail="Invalid mode specified.")
+        
+    def log_generator():
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "fetch_history.py", "--mode", mode],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, # Merge stderr into stdout
+            text=True,
+            bufsize=1 # Line buffered
+        )
+        for line in iter(proc.stdout.readline, ''):
+            if not line:
+                break
+            # Only stream actual module logs, not library warnings
+            clean_line = line.strip()
+            if "INFO" in clean_line or "Planned:" in clean_line or "WARNING" in clean_line:
+                 # Clean up python log prefix for nicer UI reading
+                 if " - INFO - " in clean_line:
+                     clean_line = clean_line.split(" - INFO - ")[-1]
+                 elif " - WARNING - " in clean_line:
+                     clean_line = "WARNING: " + clean_line.split(" - WARNING - ")[-1]
+                 yield f"data: {clean_line}\n\n"
+            elif "ERROR" in clean_line:
+                 if " - ERROR - " in clean_line:
+                     clean_line = clean_line.split(" - ERROR - ")[-1]
+                 yield f"data: ERROR: {clean_line}\n\n"
+            
+        proc.stdout.close()
+        proc.wait()
+        
+        try:
+            import json
+            from datetime import datetime
+            status_file = "status.json"
+            try:
+                with open(status_file, "r") as f:
+                    status = json.load(f)
+            except FileNotFoundError:
+                status = {"swing": {}, "intraday": {}}
+                
+            status.setdefault(mode, {})
+            status[mode]["last_fetch"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(status_file, "w") as f:
+                json.dump(status, f)
+        except Exception as e:
+            yield f"data: WARNING: Failed to write status.json: {e}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(log_generator(), media_type="text/event-stream")
+
+# Keep the original POST for backwards compatibility if needed, though UI will use stream
+@app.post("/api/fetch-data")
+async def api_fetch_data(mode: str = "swing"):
+    """Triggers the History Harvester to fetch fresh Upstox data for the given mode."""
+    if mode not in ["swing", "intraday"]:
+        raise HTTPException(status_code=400, detail="Invalid mode specified.")
+        
+    try:
+        loop = asyncio.get_event_loop()
+        proc = await loop.run_in_executor(
+            None, 
+            lambda: subprocess.run(
+                [sys.executable, "-u", "fetch_history.py", "--mode", mode],
+                capture_output=True, text=True
+            )
+        )
+        
+        if proc.returncode != 0:
+            err_msg = proc.stderr if proc.stderr else "Unknown error"
+            raise HTTPException(status_code=500, detail=f"Fetch script failed: {err_msg}")
+            
+        return {"status": "success", "message": f"Successfully fetched fresh data for {mode} mode."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to execute fetch: {repr(e)}")
+
+@app.get("/api/status")
+async def api_status():
+    """Returns the last fetch and calculate execution timestamps."""
+    import json
+    try:
+        with open("status.json", "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"swing": {}, "intraday": {}}
 
 from typing import Optional
 

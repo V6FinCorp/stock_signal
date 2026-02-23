@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import aiomysql
 from datetime import datetime, timedelta
+import argparse
 from config import Config
 import logging
 
@@ -9,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Endpoints as discovered & outlined in IMPLEMENTATION_PLAN.md
 URL_DAILY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{to_date}/{from_date}"
-URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/minutes/5/{to_date}/{from_date_intraday}"
+URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5"
 
 async def fetch_data(client, url):
     """Fetch JSON data from Upstox endpoint natively."""
@@ -43,8 +44,8 @@ async def cleanup_old_data(app_pool):
     except Exception as e:
         logging.error(f"Cleanup failed: {e}")
 
-async def process_company(app_pool, client, isin, symbol, fetch_intraday=False):
-    logging.info(f"Processing {symbol} ({isin}) - Intraday: {fetch_intraday}")
+async def process_company(app_pool, client, isin, symbol, fetch_swing=True, fetch_intraday=False, current_idx=1, total_stocks=1):
+    logging.info(f"Currently processing {current_idx}/{total_stocks}: {symbol}")
     
     to_date = datetime.now().strftime("%Y-%m-%d")
     from_date = "2022-01-01"
@@ -57,10 +58,14 @@ async def process_company(app_pool, client, isin, symbol, fetch_intraday=False):
         async with app_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 # 1. Delta fetch for Swing (Daily)
-                await cur.execute("SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d'", (isin,))
-                latest_1d = await cur.fetchone()
-                if latest_1d and latest_1d[0]:
-                    from_date = latest_1d[0].strftime("%Y-%m-%d")
+                if fetch_swing:
+                    await cur.execute("SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d'", (isin,))
+                    latest_1d = await cur.fetchone()
+                    if latest_1d and latest_1d[0]:
+                        from_date = latest_1d[0].strftime("%Y-%m-%d")
+                        logging.info(f"Last available date (1d): {from_date}. Fetching missing data from {from_date} to {to_date}...")
+                    else:
+                        logging.info(f"No previous data found. Fetching full history from {from_date} to {to_date}...")
                 
                 # 2. Delta fetch for Intraday (5m)
                 if fetch_intraday:
@@ -70,13 +75,17 @@ async def process_company(app_pool, client, isin, symbol, fetch_intraday=False):
                         db_latest_5m = latest_5m[0].strftime("%Y-%m-%d")
                         # We must fetch the max (most recent) between the Database's latest date and the 30-day Upstox limit
                         from_date_intraday = max(from_date_intraday, db_latest_5m)
+                        logging.info(f"Last available date (5m): {db_latest_5m}. Fetching missing data from {from_date_intraday} to {to_date}...")
+                    else:
+                        logging.info(f"No previous data found (5m). Fetching full history from {from_date_intraday} to {to_date}...")
     except Exception as e:
          logging.warning(f"Delta fetch check failed for {symbol}: {e}")
 
-    daily_url = URL_DAILY.format(isin=isin, to_date=to_date, from_date=from_date)
-    
-    # Upstox candle format: [timestamp, open, high, low, close, volume, open_interest]
-    daily_candles = await fetch_data(client, daily_url)
+    daily_candles = []
+    if fetch_swing:
+        daily_url = URL_DAILY.format(isin=isin, to_date=to_date, from_date=from_date)
+        # Upstox candle format: [timestamp, open, high, low, close, volume, open_interest]
+        daily_candles = await fetch_data(client, daily_url)
     
     intraday_candles = []
     if fetch_intraday:
@@ -126,7 +135,12 @@ async def process_company(app_pool, client, isin, symbol, fetch_intraday=False):
     await asyncio.sleep(0.2)
 
 async def main():
-    logging.info("Starting History Harvester (Multi-DB Architecture)...")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", type=str, choices=["swing", "intraday", "all"], default="all")
+    args = parser.parse_args()
+    mode = args.mode
+
+    logging.info(f"Starting History Harvester in {mode.upper()} mode...")
     
     # 1. Initialize Datamart and App Database pools
     try:
@@ -164,21 +178,28 @@ async def main():
                 logging.warning(f"Failed to read 'vw_e_bs_companies_favourite_indices': {e}. Continuing without intraday flags.")
                 intraday_symbols = set()
                 
-            # Filter the active companies to ONLY be the 50 favourites for this testing phase
-            active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
+            # Filter the active companies based on mode
+            if mode == "intraday":
+                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
+            elif mode == "swing":
+                # Only process up to 5000 stocks, no intraday filter needed for swing
+                pass
+            else:
+                # "all" mode: fetch everything (can be heavy, originally limited to intraday)
+                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
             
     if not active_companies:
         logging.warning("No active companies found in Datamart DB.")
         return
 
-    logging.info(f"Loaded {len(active_companies)} active companies. {len(intraday_symbols)} marked for Intraday limits.")
+    logging.info(f"Planned: Fetching {len(active_companies)} {mode.capitalize()} Stocks")
     
     # 3. Process concurrently
     sem = asyncio.Semaphore(5)
     
-    async def sem_process(client, isin, symbol, fetch_intraday):
+    async def sem_process(client, isin, symbol, fetch_swing, fetch_intraday, current_idx, total_stocks):
         async with sem:
-            await process_company(app_pool, client, isin, symbol, fetch_intraday)
+            await process_company(app_pool, client, isin, symbol, fetch_swing, fetch_intraday, current_idx, total_stocks)
             
     headers = {
         "Accept": "application/json",
@@ -186,16 +207,26 @@ async def main():
     }
 
     async with httpx.AsyncClient(headers=headers) as client:
-        # Loop through all active companies. If symbol is in the intraday_symbols set, pass True to fetch_intraday
-        tasks = [
-            sem_process(
-                client, 
-                comp["isin"], 
-                comp["symbol"], 
-                fetch_intraday=(comp["symbol"] in intraday_symbols)
-            ) 
-            for comp in active_companies
-        ]
+        # Loop through all active companies.
+        tasks = []
+        total_len = len(active_companies)
+        for idx, comp in enumerate(active_companies, 1):
+            fetch_swing = (mode in ["swing", "all"])
+            fetch_intraday = False
+            if mode in ["intraday", "all"]:
+                 fetch_intraday = comp["symbol"] in intraday_symbols
+
+            tasks.append(
+                sem_process(
+                    client, 
+                    comp["isin"], 
+                    comp["symbol"], 
+                    fetch_swing=fetch_swing,
+                    fetch_intraday=fetch_intraday,
+                    current_idx=idx,
+                    total_stocks=total_len
+                ) 
+            )
         await asyncio.gather(*tasks)
 
     # Execute historical garbage collection

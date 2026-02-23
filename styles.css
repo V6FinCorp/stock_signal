@@ -572,8 +572,7 @@ h1 {
 }
 
 .st-value {
-    font-family: monospace;
-    font-size: 13px;
+    font-size: 10px;
     color: var(--text-dim);
 }
 
