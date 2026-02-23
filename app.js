@@ -30,7 +30,7 @@ const CONFIGS = {
         st: { enabled: true, period: 10, mult: 3.0 },
         ema: { enabled: true, fast_period: 9, slow_period: 20 },
         vol: { enabled: true, period: 20, threshold: 2.0 },
-        dma: { enabled: true, periods: [20, 50, 200] }
+        dma: { enabled: true, periods: [10, 20, 50, 200] }
     },
     intraday: {
         rsi: { enabled: true, period: 14, ob: 80, os: 20 },
@@ -473,7 +473,7 @@ function loadProfileSettings() {
 
     document.getElementById('setting-dma-enabled').checked = conf.dma.enabled;
     [10, 20, 50, 100, 200].forEach(p => {
-        const el = document.getElementById(`dma - ${p} `);
+        const el = document.getElementById(`dma-${p}`);
         if (el) el.checked = conf.dma.periods.includes(p);
     });
 }
@@ -504,7 +504,7 @@ function saveProfileSettings() {
     conf.dma.enabled = document.getElementById('setting-dma-enabled').checked;
     conf.dma.periods = [];
     [10, 20, 50, 100, 200].forEach(p => {
-        const el = document.getElementById(`dma - ${p} `);
+        const el = document.getElementById(`dma-${p}`);
         if (el && el.checked) conf.dma.periods.push(p);
     });
 
