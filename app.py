@@ -102,6 +102,8 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                         "sl": float(row['sl']) if row['sl'] is not None else None,
                         "target": float(row['target']) if row['target'] is not None else None,
                         "trade_strategy": row['trade_strategy'] or "NORMAL",
+                        "candlestick_pattern": row.get('candlestick_pattern'),
+                        "last_5_candles": json.loads(row['last_5_candles']) if row.get('last_5_candles') and row['last_5_candles'].startswith('[') else None,
                         "mtf_data": mtf_map.get(isin, {})
                     })
                     
@@ -360,6 +362,7 @@ from typing import Optional
 
 class BacktestParams(BaseModel):
     symbol: Optional[str] = None
+    symbols: Optional[list] = []
     start_date: str
     end_date: str
     primary_tf: str

@@ -92,6 +92,7 @@ async def run_scenario_backtest(pool, datamart_pool, params):
     sl_pct = params['stop_loss_pct'] / 100.0
 
     target_symbol = params.get('symbol')
+    target_symbols = params.get('symbols', [])
 
     # 1. Map Symbol to ISIN
     isins_to_test = {}
@@ -99,6 +100,10 @@ async def run_scenario_backtest(pool, datamart_pool, params):
         async with dm_conn.cursor() as dm_cur:
             if target_symbol and target_symbol.upper() != "ALL":
                 await dm_cur.execute("SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_all WHERE bs_SYMBOL = %s", (target_symbol,))
+            elif target_symbols and len(target_symbols) > 0:
+                # Limit to prevent massive queries if needed, though mostly IN is fine up to ~5k
+                format_strings = ','.join(['%s'] * len(target_symbols))
+                await dm_cur.execute(f"SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_all WHERE bs_SYMBOL IN ({format_strings})", tuple(target_symbols))
             else:
                 await dm_cur.execute("SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_favourite_indices")
             rows = await dm_cur.fetchall()

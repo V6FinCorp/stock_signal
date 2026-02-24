@@ -77,7 +77,16 @@
                         </div>
                     </div>
                 </div>
-                <div class="header-right" style="display: flex; gap: 12px;">
+                <div class="header-right" style="display: flex; gap: 12px; align-items: center;">
+                    <div class="auto-sync-toggle"
+                        style="display: flex; align-items: center; gap: 8px; margin-right: 15px;">
+                        <span class="text-dim" style="font-size: 13px; font-weight: 600;"
+                            id="auto-sync-label">Auto-Sync</span>
+                        <label class="switch" style="margin: 0;">
+                            <input type="checkbox" id="auto-sync-switch" onchange="toggleAutoSync()">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
                     <button class="btn btn-primary" onclick="fetchMarketData()" id="fetch-data-btn"
                         style="background: var(--amber); border-color: var(--amber);">
                         <i class="fas fa-download" id="fetch-icon"></i> Fetch Market Data
@@ -225,7 +234,9 @@
                             <label>Target Stock Symbol <span class="text-dim"
                                     style="font-weight: normal;">(Optional)</span></label>
                             <input type="text" id="sb-symbol" class="select-input"
-                                placeholder="Leave blank to scan ALL stocks">
+                                placeholder="Leave blank to scan ALL mapped dashboard stocks"
+                                list="sb-symbol-suggestions">
+                            <datalist id="sb-symbol-suggestions"></datalist>
                         </div>
                         <div class="control-field">
                             <label>Day Type / Volatility</label>
@@ -399,109 +410,204 @@
 
             <div class="modal-body">
                 <div class="settings-grid">
-                    <!-- Profile Group -->
-                    <div class="settings-group">
-                        <h3>Strategy Profile</h3>
-                        <div class="control-field">
-                            <label>Editing Configuration For:</label>
-                            <select class="select-input" id="config-profile-selector" onchange="loadProfileSettings()">
-                                <option value="swing">Swing Portfolio (Daily/Weekly)</option>
-                                <option value="intraday">Intraday Momentum (5m/15m)</option>
-                            </select>
-                            <p class="text-dim" style="font-size: 11px; margin-top: 5px;">Settings are independent for
-                                each mode.</p>
-                        </div>
-                        <div class="control-field">
-                            <label>Watchlist Generation</label>
-                            <div class="radio-group">
-                                <label><input type="radio" name="watchlist" value="top"> Top by Volume</label>
-                                <label><input type="radio" name="watchlist" value="manual" checked> Manual
-                                    Picker</label>
+                    <div class="settings-col-left">
+                        <!-- Profile Group -->
+                        <div class="settings-group">
+                            <h3>Strategy Profile</h3>
+                            <div class="control-field">
+                                <label>Editing Configuration For:</label>
+                                <select class="select-input" id="config-profile-selector"
+                                    onchange="loadProfileSettings()">
+                                    <option value="swing">Swing Portfolio (Daily/Weekly)</option>
+                                    <option value="intraday">Intraday Momentum (5m/15m)</option>
+                                </select>
+                                <p class="text-dim" style="font-size: 11px; margin-top: 5px;">Settings are independent
+                                    for
+                                    each mode.</p>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Indicator Group -->
-                    <div class="settings-group">
-                        <h3>Indicator Tuning</h3>
-
-                        <!-- RSI -->
-                        <div class="indicator-config-card">
-                            <div class="ind-header">
-                                <strong>RSI (Strength)</strong>
-                                <label class="switch"><input type="checkbox" id="setting-rsi-enabled" checked><span
-                                        class="slider round"></span></label>
-                            </div>
-                            <div class="ind-params">
-                                <div class="param"><span>Period</span><input type="number" id="setting-rsi-period"
-                                        value="14"></div>
-                                <div class="param"><span>OB</span><input type="number" id="setting-rsi-ob" value="70">
-                                </div>
-                                <div class="param"><span>OS</span><input type="number" id="setting-rsi-os" value="30">
+                            <div class="control-field">
+                                <label>Watchlist Generation</label>
+                                <div class="radio-group">
+                                    <label><input type="radio" name="watchlist" value="top"> Top by Volume</label>
+                                    <label><input type="radio" name="watchlist" value="manual" checked> Manual
+                                        Picker</label>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Supertrend -->
-                        <div class="indicator-config-card">
-                            <div class="ind-header">
-                                <strong>Supertrend</strong>
-                                <label class="switch"><input type="checkbox" id="setting-st-enabled" checked><span
-                                        class="slider round"></span></label>
+                        <!-- Automation Settings Group -->
+                        <div class="settings-group">
+                            <h3>Automation Settings</h3>
+                            <div class="control-field" style="margin-bottom: 12px;">
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                    <input type="checkbox" id="setting-auto-fetch" checked
+                                        style="accent-color: var(--primary);">
+                                    Auto-Fetch Market Data
+                                </label>
                             </div>
-                            <div class="ind-params">
-                                <div class="param"><span>ATR</span><input type="number" id="setting-st-period"
-                                        value="10"></div>
-                                <div class="param"><span>Mult</span><input type="number" id="setting-st-mult" value="3"
-                                        step="0.1"></div>
+                            <div class="control-field" style="margin-bottom: 12px;">
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                    <input type="checkbox" id="setting-auto-calc" checked
+                                        style="accent-color: var(--primary);">
+                                    Auto-Calculate Indicators
+                                </label>
+                            </div>
+                            <div class="control-field" id="auto-interval-container-swing">
+                                <label>Refresh Interval (Swing)</label>
+                                <select class="select-input" id="setting-auto-interval-swing">
+                                    <option value="1800000">Every 30 Minutes</option>
+                                    <option value="3600000">Every 1 Hour</option>
+                                    <option value="7200000">Every 2 Hours</option>
+                                    <option value="14400000">Every 4 Hours</option>
+                                    <option value="86400000">Daily</option>
+                                </select>
+                            </div>
+                            <div class="control-field" id="auto-interval-container-intraday" style="display: none;">
+                                <label>Refresh Interval (Intraday)</label>
+                                <select class="select-input" id="setting-auto-interval-intraday">
+                                    <option value="300000">Every 5 Minutes</option>
+                                    <option value="600000">Every 10 Minutes</option>
+                                    <option value="900000">Every 15 Minutes</option>
+                                    <option value="1200000">Every 20 Minutes</option>
+                                    <option value="1800000">Every 30 Minutes</option>
+                                    <option value="2700000">Every 45 Minutes</option>
+                                    <option value="3600000">Every 60 Minutes</option>
+                                </select>
+                            </div>
+                            <div class="control-field" style="margin-bottom: 12px; margin-top: 12px;">
+                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                    <input type="checkbox" id="setting-auto-market-hours" checked
+                                        style="accent-color: var(--primary);">
+                                    Only Sync within Market Hours
+                                </label>
+                                AM -
+                                3:30 PM IST)</p>
                             </div>
                         </div>
 
-                        <div class="indicator-config-card">
-                            <div class="ind-header">
-                                <strong>EMA (Crossover)</strong>
-                                <label class="switch"><input type="checkbox" id="setting-ema-enabled" checked><span
-                                        class="slider round"></span></label>
-                            </div>
-                            <div class="ind-params">
-                                <div class="param"><span>Fast</span><input type="number" id="setting-ema-fast"
-                                        value="9"></div>
-                                <div class="param"><span>Slow</span><input type="number" id="setting-ema-slow"
-                                        value="20"></div>
+                        <!-- Price Action / Patterns Group -->
+                        <div class="settings-group" style="margin-top: 24px;">
+                            <h3>Price Action & Patterns</h3>
+
+                            <div class="indicator-config-card" style="margin-bottom: 0;">
+                                <div class="ind-header">
+                                    <strong>Candlestick Engine</strong>
+                                    <label class="switch"><input type="checkbox" id="setting-pattern-enabled"
+                                            checked><span class="slider round"></span></label>
+                                </div>
+                                <div class="control-field" style="margin-top: 12px; margin-bottom: 8px;">
+                                    <label
+                                        style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--success); font-weight: normal;">
+                                        <input type="checkbox" id="setting-pattern-bullish" checked
+                                            style="accent-color: var(--success);">
+                                        Bullish Reversals (Hammer, Engulfing...)
+                                    </label>
+                                </div>
+                                <div class="control-field" style="margin-bottom: 8px;">
+                                    <label
+                                        style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--danger); font-weight: normal;">
+                                        <input type="checkbox" id="setting-pattern-bearish" checked
+                                            style="accent-color: var(--danger);">
+                                        Bearish Reversals (Shooting Star...)
+                                    </label>
+                                </div>
+                                <div class="control-field" style="margin-bottom: 0;">
+                                    <label
+                                        style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text-dim); font-weight: normal;">
+                                        <input type="checkbox" id="setting-pattern-neutral" style="accent-color: gray;">
+                                        Neutral / Indecision (Dojis)
+                                    </label>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- VOLUME -->
-                        <div class="indicator-config-card">
-                            <div class="ind-header">
-                                <strong>Volume Spike</strong>
-                                <label class="switch"><input type="checkbox" id="setting-vol-enabled" checked><span
-                                        class="slider round"></span></label>
-                            </div>
-                            <div class="ind-params">
-                                <div class="param"><span>SMA</span><input type="number" id="setting-vol-period"
-                                        value="20"></div>
-                                <div class="param"><span>Threshold</span><input type="number" id="setting-vol-threshold"
-                                        value="2.0" step="0.1"></div>
-                            </div>
-                        </div>
+                    </div> <!-- End of left column -->
 
-                        <!-- DMA -->
-                        <div class="indicator-config-card">
-                            <div class="ind-header">
-                                <strong>DMA (Daily Moving Avg)</strong>
-                                <label class="switch"><input type="checkbox" id="setting-dma-enabled" checked><span
-                                        class="slider round"></span></label>
+                    <div class="settings-col-right">
+                        <!-- Indicator Group -->
+                        <div class="settings-group">
+                            <h3>Indicator Tuning</h3>
+
+                            <!-- RSI -->
+                            <div class="indicator-config-card">
+                                <div class="ind-header">
+                                    <strong>RSI (Strength)</strong>
+                                    <label class="switch"><input type="checkbox" id="setting-rsi-enabled" checked><span
+                                            class="slider round"></span></label>
+                                </div>
+                                <div class="ind-params">
+                                    <div class="param"><span>Period</span><input type="number" id="setting-rsi-period"
+                                            value="14"></div>
+                                    <div class="param"><span>OB</span><input type="number" id="setting-rsi-ob"
+                                            value="70">
+                                    </div>
+                                    <div class="param"><span>OS</span><input type="number" id="setting-rsi-os"
+                                            value="30">
+                                    </div>
+                                </div>
                             </div>
-                            <div class="ind-params-multi">
-                                <label><input type="checkbox" id="dma-10" checked> 10</label>
-                                <label><input type="checkbox" id="dma-20" checked> 20</label>
-                                <label><input type="checkbox" id="dma-50" checked> 50</label>
-                                <label><input type="checkbox" id="dma-100" checked> 100</label>
-                                <label><input type="checkbox" id="dma-200" checked> 200</label>
+
+                            <!-- Supertrend -->
+                            <div class="indicator-config-card">
+                                <div class="ind-header">
+                                    <strong>Supertrend</strong>
+                                    <label class="switch"><input type="checkbox" id="setting-st-enabled" checked><span
+                                            class="slider round"></span></label>
+                                </div>
+                                <div class="ind-params">
+                                    <div class="param"><span>ATR</span><input type="number" id="setting-st-period"
+                                            value="10"></div>
+                                    <div class="param"><span>Mult</span><input type="number" id="setting-st-mult"
+                                            value="3" step="0.1"></div>
+                                </div>
+                            </div>
+
+                            <div class="indicator-config-card">
+                                <div class="ind-header">
+                                    <strong>EMA (Crossover)</strong>
+                                    <label class="switch"><input type="checkbox" id="setting-ema-enabled" checked><span
+                                            class="slider round"></span></label>
+                                </div>
+                                <div class="ind-params">
+                                    <div class="param"><span>Fast</span><input type="number" id="setting-ema-fast"
+                                            value="9"></div>
+                                    <div class="param"><span>Slow</span><input type="number" id="setting-ema-slow"
+                                            value="20"></div>
+                                </div>
+                            </div>
+
+                            <!-- VOLUME -->
+                            <div class="indicator-config-card">
+                                <div class="ind-header">
+                                    <strong>Volume Spike</strong>
+                                    <label class="switch"><input type="checkbox" id="setting-vol-enabled" checked><span
+                                            class="slider round"></span></label>
+                                </div>
+                                <div class="ind-params">
+                                    <div class="param"><span>SMA</span><input type="number" id="setting-vol-period"
+                                            value="20"></div>
+                                    <div class="param"><span>Threshold</span><input type="number"
+                                            id="setting-vol-threshold" value="2.0" step="0.1"></div>
+                                </div>
+                            </div>
+
+                            <!-- DMA -->
+                            <div class="indicator-config-card">
+                                <div class="ind-header">
+                                    <strong>DMA (Daily Moving Avg)</strong>
+                                    <label class="switch"><input type="checkbox" id="setting-dma-enabled" checked><span
+                                            class="slider round"></span></label>
+                                </div>
+                                <div class="ind-params-multi">
+                                    <label><input type="checkbox" id="dma-10" checked> 10</label>
+                                    <label><input type="checkbox" id="dma-20" checked> 20</label>
+                                    <label><input type="checkbox" id="dma-50" checked> 50</label>
+                                    <label><input type="checkbox" id="dma-100" checked> 100</label>
+                                    <label><input type="checkbox" id="dma-200" checked> 200</label>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </div> <!-- End of right column -->
                 </div>
             </div>
 

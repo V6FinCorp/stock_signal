@@ -30,14 +30,18 @@ const CONFIGS = {
         st: { enabled: true, period: 10, mult: 3.0 },
         ema: { enabled: true, fast_period: 9, slow_period: 20 },
         vol: { enabled: true, period: 20, threshold: 2.0 },
-        dma: { enabled: true, periods: [10, 20, 50, 200] }
+        dma: { enabled: true, periods: [10, 20, 50, 200] },
+        patterns: { enabled: true, bullish: true, bearish: true, neutral: false },
+        auto: { fetch: true, calc: true, interval: 1800000, marketHoursOnly: true }
     },
     intraday: {
         rsi: { enabled: true, period: 14, ob: 80, os: 20 },
         st: { enabled: true, period: 10, mult: 2.5 },
         ema: { enabled: true, fast_period: 9, slow_period: 21 },
         vol: { enabled: true, period: 20, threshold: 1.5 },
-        dma: { enabled: false, periods: [10, 20] }
+        dma: { enabled: false, periods: [10, 20] },
+        patterns: { enabled: true, bullish: true, bearish: true, neutral: false },
+        auto: { fetch: true, calc: true, interval: 300000, marketHoursOnly: true }
     }
 };
 
@@ -49,6 +53,9 @@ let signalCache = {};
 let activeStatFilter = 'all';
 let currentSortColumn = 'rsi'; // Default sort by RSI
 let currentSortDirection = 'desc'; // Default desc
+
+let autoSyncTimerId = null;
+let isAutoSyncEnabled = false;
 
 // --- Core API Logic ---
 
@@ -163,6 +170,10 @@ function updateTableHeader() {
     }
 
     thead.appendChild(createHeader('Strategy', 'trade_strategy', false));
+
+    if (conf.patterns && conf.patterns.enabled) {
+        thead.appendChild(createHeader('Formation', 'candlestick_pattern', false));
+    }
 
     if (conf.dma.enabled) {
         conf.dma.periods.forEach(p => {
@@ -366,6 +377,105 @@ function renderSignals() {
             <td>
                 <div class="strategy-badge ${stratClass}">${stratLabel}</div>
             </td>`;
+
+        // Formation Column
+        if (conf.patterns && conf.patterns.enabled) {
+            let colHtml = `<td><div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">`;
+
+            const l5_data = stock.last_5_candles;
+            let svgHtml = '';
+            let rawDataJson = '';
+
+            if (Array.isArray(l5_data) && l5_data.length > 0) {
+                rawDataJson = encodeURIComponent(JSON.stringify(l5_data));
+
+                let minLow = Infinity;
+                let maxHigh = -Infinity;
+                l5_data.forEach(c => {
+                    if (c.l < minLow) minLow = c.l;
+                    if (c.h > maxHigh) maxHigh = c.h;
+                });
+
+                // Safety buffer
+                let range = maxHigh - minLow;
+                if (range === 0) range = maxHigh * 0.01 || 1;
+
+                // TradingView Aesthetic Adjustments
+                const svgHeight = 28; // slightly taller for main row
+                const candleWidth = 8;
+                const gap = 4;
+                const svgWidth = (candleWidth * 5) + (gap * 4);
+                const pad = 2; // pixel padding top/bottom
+                const usableHeight = svgHeight - (pad * 2);
+
+                let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup(this.dataset.candles, '${stock.symbol}')" data-candles="${rawDataJson}">`;
+
+                l5_data.forEach((c, i) => {
+                    const isGreen = c.c > c.o;
+                    // Exact TradingView Hex Colors
+                    const color = isGreen ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
+                    const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2);
+
+                    // Normalize coordinates (invert Y axis for SVG)
+                    const yHigh = pad + usableHeight - ((c.h - minLow) / range) * usableHeight;
+                    const yLow = pad + usableHeight - ((c.l - minLow) / range) * usableHeight;
+                    const yOpen = pad + usableHeight - ((c.o - minLow) / range) * usableHeight;
+                    const yClose = pad + usableHeight - ((c.c - minLow) / range) * usableHeight;
+
+                    const topBody = Math.min(yOpen, yClose);
+                    const bottomBody = Math.max(yOpen, yClose);
+                    let bodyHeight = bottomBody - topBody;
+
+                    if (Math.abs(c.c - c.o) < 0.0001) {
+                        bodyHeight = Math.max(1.5, usableHeight * 0.02);
+                    } else if (bodyHeight < 1) {
+                        bodyHeight = 1;
+                    }
+
+                    svgContent += `<line x1="${xCenter}" y1="${yHigh}" x2="${xCenter}" y2="${yLow}" stroke="${color}" stroke-width="1.2" opacity="1.0" shape-rendering="crispEdges"/>`;
+
+                    const rectX = xCenter - (candleWidth / 2);
+                    svgContent += `<rect x="${rectX}" y="${topBody}" width="${candleWidth}" height="${bodyHeight}" fill="${color}" opacity="1.0" shape-rendering="crispEdges"/>`;
+                });
+                svgContent += `</svg>`;
+
+                svgHtml = `
+                <div title="Click to enlarge" style="
+                    background: rgba(14, 21, 31, 0.4); 
+                    border: 1px solid rgba(255,255,255,0.05); 
+                    border-radius: 4px; 
+                    padding: 6px 8px; 
+                    display: inline-block;
+                    transition: all 0.2s;
+                " class="hover-scale">
+                    ${svgContent}
+                </div>`;
+            }
+
+            // Textual subtext logic
+            const pattern = stock.candlestick_pattern;
+            let textHtml = '';
+            if (pattern) {
+                let textColor = "var(--text-dim)";
+                if (pattern.includes("Bullish")) textColor = "var(--success)";
+                else if (pattern.includes("Bearish")) textColor = "var(--danger)";
+
+                textHtml = `<div style="font-size: 11px; font-weight: 500; color: ${textColor}; line-height: 1.2; text-align: left;">${pattern}</div>`;
+            }
+
+            if (svgHtml) {
+                colHtml += svgHtml;
+                if (textHtml) colHtml += textHtml;
+            } else if (textHtml) {
+                colHtml += textHtml;
+            } else {
+                colHtml += `<div style="font-size: 13px; color: var(--text-dim);">-</div>`;
+            }
+
+            colHtml += `</div></td>`;
+            rowHtml += colHtml;
+        }
+
         if (conf.dma.enabled) {
             conf.dma.periods.forEach(p => {
                 const dmaVal = stock.dma_data ? stock.dma_data[`SMA_${p}`] : null;
@@ -452,6 +562,27 @@ function loadProfileSettings() {
     const profile = document.getElementById('config-profile-selector').value;
     const conf = CONFIGS[profile];
 
+    if (conf.auto) {
+        document.getElementById('setting-auto-fetch').checked = conf.auto.fetch;
+        document.getElementById('setting-auto-calc').checked = conf.auto.calc;
+
+        // Modal UI Switching
+        if (profile === 'swing') {
+            document.getElementById('auto-interval-container-swing').style.display = 'block';
+            document.getElementById('auto-interval-container-intraday').style.display = 'none';
+            document.getElementById('setting-auto-interval-swing').value = conf.auto.interval;
+        } else {
+            document.getElementById('auto-interval-container-swing').style.display = 'none';
+            document.getElementById('auto-interval-container-intraday').style.display = 'block';
+            document.getElementById('setting-auto-interval-intraday').value = conf.auto.interval;
+        }
+
+        const marketHoursEl = document.getElementById('setting-auto-market-hours');
+        if (marketHoursEl) {
+            marketHoursEl.checked = conf.auto.marketHoursOnly !== false; // Default to true
+        }
+    }
+
     document.getElementById('setting-rsi-enabled').checked = conf.rsi.enabled;
     document.getElementById('setting-rsi-period').value = conf.rsi.period;
     document.getElementById('setting-rsi-ob').value = conf.rsi.ob;
@@ -476,11 +607,32 @@ function loadProfileSettings() {
         const el = document.getElementById(`dma-${p}`);
         if (el) el.checked = conf.dma.periods.includes(p);
     });
+
+    if (!conf.patterns) conf.patterns = { enabled: true, bullish: true, bearish: true, neutral: false };
+    document.getElementById('setting-pattern-enabled').checked = conf.patterns.enabled;
+    document.getElementById('setting-pattern-bullish').checked = conf.patterns.bullish;
+    document.getElementById('setting-pattern-bearish').checked = conf.patterns.bearish;
+    document.getElementById('setting-pattern-neutral').checked = conf.patterns.neutral;
 }
 
 function saveProfileSettings() {
     const profile = document.getElementById('config-profile-selector').value;
     const conf = CONFIGS[profile];
+
+    if (!conf.auto) conf.auto = {};
+    conf.auto.fetch = document.getElementById('setting-auto-fetch').checked;
+    conf.auto.calc = document.getElementById('setting-auto-calc').checked;
+
+    if (profile === 'swing') {
+        conf.auto.interval = parseInt(document.getElementById('setting-auto-interval-swing').value);
+    } else {
+        conf.auto.interval = parseInt(document.getElementById('setting-auto-interval-intraday').value);
+    }
+
+    const marketHoursEl = document.getElementById('setting-auto-market-hours');
+    if (marketHoursEl) {
+        conf.auto.marketHoursOnly = marketHoursEl.checked;
+    }
 
     conf.rsi.enabled = document.getElementById('setting-rsi-enabled').checked;
     conf.rsi.period = parseInt(document.getElementById('setting-rsi-period').value);
@@ -508,9 +660,19 @@ function saveProfileSettings() {
         if (el && el.checked) conf.dma.periods.push(p);
     });
 
+    if (!conf.patterns) conf.patterns = {};
+    conf.patterns.enabled = document.getElementById('setting-pattern-enabled').checked;
+    conf.patterns.bullish = document.getElementById('setting-pattern-bullish').checked;
+    conf.patterns.bearish = document.getElementById('setting-pattern-bearish').checked;
+    conf.patterns.neutral = document.getElementById('setting-pattern-neutral').checked;
+
     if (currentMode === profile) {
         updateTableHeader();
         renderSignals();
+    }
+
+    if (isAutoSyncEnabled) {
+        startAutoSync();
     }
 
     toggleSettings();
@@ -529,6 +691,91 @@ function toggleSidebar() {
     const mainContent = document.querySelector('.main-content');
     sidebar.classList.toggle('collapsed');
     mainContent.classList.toggle('expanded');
+}
+
+// --- Auto Sync Logic ---
+
+function toggleAutoSync() {
+    isAutoSyncEnabled = document.getElementById('auto-sync-switch').checked;
+    const label = document.getElementById('auto-sync-label');
+
+    if (isAutoSyncEnabled) {
+        label.innerText = "Auto-Sync: ON";
+        label.style.color = "var(--primary)";
+        startAutoSync();
+        // Immediately trigger first cycle
+        runAutoSyncLoop();
+    } else {
+        label.innerText = "Auto-Sync";
+        label.style.color = "var(--text-dim)";
+        if (autoSyncTimerId) {
+            clearTimeout(autoSyncTimerId);
+            autoSyncTimerId = null;
+        }
+    }
+}
+
+function startAutoSync() {
+    if (autoSyncTimerId) clearTimeout(autoSyncTimerId);
+    if (!isAutoSyncEnabled) return;
+
+    const interval = CONFIGS[currentMode].auto.interval || 180000;
+    autoSyncTimerId = setTimeout(runAutoSyncLoop, interval);
+}
+
+function runAutoSyncLoop() {
+    if (!isAutoSyncEnabled) return;
+
+    // Reschedule next cycle
+    startAutoSync();
+
+    const conf = CONFIGS[currentMode];
+
+    // Check Market Hours if enabled
+    if (conf.auto && conf.auto.marketHoursOnly) {
+        // Simple client-side time check (assuming user is in IST or checking against local system time)
+        // A more robust implementation would fetch server time, but this suffices for the UI toggle
+        const now = new Date();
+
+        // Adjust system date to IST for calculation
+        // IST is UTC + 5:30 -> (5 * 60 + 30) = 330 minutes
+        const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+        const istDate = new Date(utc + (3600000 * 5.5));
+
+        const day = istDate.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
+        const hours = istDate.getHours();
+        const minutes = istDate.getMinutes();
+
+        // Check if weekend
+        if (day === 0 || day === 6) {
+            console.log("Auto-Sync skipped: Market is closed (Weekend).");
+            return;
+        }
+
+        // Check if outside 9:15 AM - 3:30 PM (15:30)
+        const timeInMinutes = (hours * 60) + minutes;
+        const marketOpen = (9 * 60) + 15; // 555
+        const marketClose = (15 * 60) + 30; // 930
+
+        if (timeInMinutes < marketOpen || timeInMinutes > marketClose) {
+            console.log("Auto-Sync skipped: Outside of market hours (9:15 AM - 3:30 PM).");
+            return;
+        }
+    }
+
+    const fetchBtn = document.getElementById('fetch-data-btn');
+    const refreshIcon = document.getElementById('refresh-icon');
+
+    // Safety check to prevent overlapping runs or triggering during manual runs
+    if (fetchEvtSource || fetchBtn.disabled || (refreshIcon && refreshIcon.classList.contains('fa-spin'))) {
+        return;
+    }
+
+    if (conf.auto.fetch) {
+        fetchMarketData();
+    } else if (conf.auto.calc) {
+        refreshSignals();
+    }
 }
 
 async function fetchMarketData() {
@@ -568,6 +815,10 @@ async function fetchMarketData() {
                 btn.disabled = false;
                 liveConsole.classList.add('hidden');
                 track.classList.remove('hidden');
+
+                if (isAutoSyncEnabled && CONFIGS[currentMode] && CONFIGS[currentMode].auto.calc) {
+                    refreshSignals();
+                }
             }, 1000);
             return;
         }
@@ -701,6 +952,19 @@ function switchTab(tabId) {
         document.getElementById('scenario-builder-view').classList.remove('hidden');
         document.getElementById('nav-dashboard').classList.remove('active');
         document.getElementById('nav-scenario-builder').classList.add('active');
+
+        // Populate Auto-suggest datalist based on active mapped mode
+        const dataList = document.getElementById('sb-symbol-suggestions');
+        if (dataList) {
+            dataList.innerHTML = '';
+            liveSignals.forEach(item => {
+                if (item.symbol) {
+                    const opt = document.createElement('option');
+                    opt.value = item.symbol;
+                    dataList.appendChild(opt);
+                }
+            });
+        }
     }
 }
 
@@ -747,8 +1011,14 @@ async function runAdvancedBacktest() {
     const tr2_price = parseFloat(document.getElementById('sb-tr2-price')?.value || 0.1);
     const tr3_price = parseFloat(document.getElementById('sb-tr3-price')?.value || 0.1);
 
+    let symbolsList = [];
+    if (!symbol || symbol.trim() === '') {
+        symbolsList = liveSignals.map(s => s.symbol).filter(s => !!s);
+    }
+
     const payload = {
         symbol: symbol,
+        symbols: symbolsList,
         start_date: startDate,
         end_date: endDate,
         primary_tf: primary_tf,
@@ -772,7 +1042,8 @@ async function runAdvancedBacktest() {
         });
 
         const result = await response.json();
-        renderBacktestResults(result);
+        lastBacktestData = result.status === 'success' ? (result.data || []) : [];
+        drawBacktestGrid('ALL');
 
     } catch (err) {
         console.error(err);
@@ -783,9 +1054,11 @@ async function runAdvancedBacktest() {
     }
 }
 
-function renderBacktestResults(result) {
+let lastBacktestData = [];
+
+function drawBacktestGrid(symbolFilter = 'ALL') {
     const grid = document.getElementById('sb-results-grid');
-    if (result.status !== 'success' || !result.data || result.data.length === 0) {
+    if (!lastBacktestData || lastBacktestData.length === 0) {
         grid.innerHTML = `
             <div style="background: rgba(0,0,0,0.2); border: 1px dashed var(--border-color); border-radius: 12px; padding: 60px; text-align: center; color: var(--text-dim);">
                 <i class="fas fa-exclamation-triangle fa-3x" style="margin-bottom: 16px; opacity: 0.5;"></i>
@@ -796,17 +1069,37 @@ function renderBacktestResults(result) {
         return;
     }
 
-    const data = result.data;
+    // Apply Filter
+    let displayData = symbolFilter === 'ALL' ? lastBacktestData : lastBacktestData.filter(d => d.symbol === symbolFilter);
 
     // Compute stats
-    const totalTrades = data.length;
-    const winners = data.filter(d => d.pnl_pct > 0).length;
-    const winRate = ((winners / totalTrades) * 100).toFixed(1);
+    const totalTrades = displayData.length;
+    const winners = displayData.filter(d => d.pnl_pct > 0).length;
+    const winRate = totalTrades > 0 ? ((winners / totalTrades) * 100).toFixed(1) : 0;
     let totalPnl = 0;
-    data.forEach(d => totalPnl += d.pnl_pct);
+    displayData.forEach(d => totalPnl += d.pnl_pct);
+
+    // Get unique symbols for the filter dropdown
+    const uniqueSymbols = [...new Set(lastBacktestData.map(d => d.symbol))].sort();
+    let filterOptionsHtml = `<option value="ALL" ${symbolFilter === 'ALL' ? 'selected' : ''}>All Symbols</option>`;
+    uniqueSymbols.forEach(sym => {
+        filterOptionsHtml += `<option value="${sym}" ${symbolFilter === sym ? 'selected' : ''}>${sym}</option>`;
+    });
 
     // Create new stats container at top of grid
     let html = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; background: var(--card-bg); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <i class="fas fa-filter text-dim"></i>
+            <span style="font-size: 13px; font-weight: 600;">Symbol Filter:</span>
+            <select class="select-input" style="width: auto; padding: 6px 12px; font-size: 13px;" onchange="drawBacktestGrid(this.value)">
+                ${filterOptionsHtml}
+            </select>
+        </div>
+        <div style="font-size: 12px; color: var(--text-dim);">
+            Filtering <strong class="text-main">${totalTrades}</strong> trades out of <strong class="text-main">${lastBacktestData.length}</strong> total.
+        </div>
+    </div>
     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
         <div style="background: var(--card-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); text-align: center;">
             <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 4px;">Total Trades</div>
@@ -818,7 +1111,7 @@ function renderBacktestResults(result) {
         </div>
         <div style="background: var(--card-bg); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); text-align: center;">
             <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 4px;">Net Profit</div>
-            <div style="font-size: 20px; font-weight: 700;" class="${totalPnl > 0 ? 'text-success' : 'text-danger'}">${totalPnl > 0 ? '+' : ''}${totalPnl.toFixed(2)}%</div>
+            <div style="font-size: 20px; font-weight: 700;" class="${totalPnl > 0 ? 'text-success' : (totalPnl < 0 ? 'text-danger' : '')}">${totalPnl > 0 ? '+' : ''}${totalPnl.toFixed(2)}%</div>
         </div>
     </div>
     <table class="signal-table" id="bt-signal-table" style="width: 100%; text-align: left; font-size: 13px;">
@@ -837,7 +1130,7 @@ function renderBacktestResults(result) {
             <tbody>
     `;
 
-    data.forEach(d => {
+    displayData.forEach(d => {
         const pnlColor = d.pnl_pct > 0 ? 'var(--success)' : 'var(--danger)';
         const dateObj = new Date(d.timestamp);
         const dateStr = dateObj.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -1001,3 +1294,232 @@ document.addEventListener('click', function (event) {
         document.querySelectorAll('.column-toggle-dropdown').forEach(d => d.classList.add('hidden'));
     }
 });
+
+function showCandlesPopup(candlesJsonStr, symbol) {
+    let candles = [];
+    try {
+        candles = JSON.parse(decodeURIComponent(candlesJsonStr));
+    } catch (e) {
+        console.error("Failed to parse candle JSON", e);
+        return;
+    }
+
+    if (!candles || candles.length === 0) return;
+
+    let minLow = Infinity;
+    let maxHigh = -Infinity;
+    candles.forEach(c => {
+        if (c.l < minLow) minLow = c.l;
+        if (c.h > maxHigh) maxHigh = c.h;
+    });
+
+    let range = maxHigh - minLow;
+    if (range === 0) range = maxHigh * 0.01 || 1;
+
+    const svgHeight = 280; // Buffer space
+    const candleWidth = 36;
+    const gap = 16;
+    const svgWidth = (candleWidth * 5) + (gap * 4) + 80; // Add padding for price labels
+    const padTop = 20;
+    const padBottom = 40;
+    const usableHeight = svgHeight - padTop - padBottom;
+
+    let svgContent = `<svg width="100%" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background: rgba(14, 21, 31, 1); border-radius: 8px;">`;
+
+    // Draw Grid & Price Labels
+    const steps = 4;
+    for (let i = 0; i <= steps; i++) {
+        const yLine = padTop + (usableHeight / steps) * i;
+        const priceVal = maxHigh - (range / steps) * i;
+        svgContent += `<line x1="0" y1="${yLine}" x2="${svgWidth - 60}" y2="${yLine}" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4 4" />`;
+        svgContent += `<text x="${svgWidth - 50}" y="${yLine + 4}" fill="var(--text-dim)" font-size="12" font-family="sans-serif">${priceVal.toFixed(2)}</text>`;
+    }
+
+    // Draw Candles
+    candles.forEach((c, i) => {
+        const isGreen = c.c > c.o;
+        const color = isGreen ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
+        const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2) + 20; // Offset from left edge
+
+        const yHigh = padTop + usableHeight - ((c.h - minLow) / range) * usableHeight;
+        const yLow = padTop + usableHeight - ((c.l - minLow) / range) * usableHeight;
+        const yOpen = padTop + usableHeight - ((c.o - minLow) / range) * usableHeight;
+        const yClose = padTop + usableHeight - ((c.c - minLow) / range) * usableHeight;
+
+        const topBody = Math.min(yOpen, yClose);
+        const bottomBody = Math.max(yOpen, yClose);
+        let bodyHeight = bottomBody - topBody;
+
+        if (Math.abs(c.c - c.o) < 0.0001) {
+            bodyHeight = Math.max(2, usableHeight * 0.01);
+        } else if (bodyHeight < 1) {
+            bodyHeight = 1;
+        }
+
+        svgContent += `<line x1="${xCenter}" y1="${yHigh}" x2="${xCenter}" y2="${yLow}" stroke="${color}" stroke-width="2" opacity="1.0" shape-rendering="crispEdges"/>`;
+        const rectX = xCenter - (candleWidth / 2);
+        svgContent += `<rect x="${rectX}" y="${topBody}" width="${candleWidth}" height="${bodyHeight}" fill="${color}" opacity="1.0" shape-rendering="crispEdges"/>`;
+    });
+    // Add crosshair elements
+    svgContent += `<line id="crosshair-x" x1="0" y1="0" x2="0" y2="${svgHeight}" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display: none; pointer-events: none;" />`;
+    svgContent += `<line id="crosshair-y" x1="0" y1="0" x2="${svgWidth}" y2="0" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display: none; pointer-events: none;" />`;
+
+    // Add Price label background and text for y-axis
+    svgContent += `<rect id="crosshair-y-bg" x="${svgWidth - 60}" y="0" width="60" height="20" fill="#1E222D" stroke="rgba(255,255,255,0.1)" stroke-width="1" rx="2" style="display: none; pointer-events: none;" />`;
+    svgContent += `<text id="crosshair-y-label" x="${svgWidth - 30}" y="14" fill="#ffffff" font-size="12" font-family="sans-serif" text-anchor="middle" style="display: none; pointer-events: none;"></text>`;
+
+    // Add OHLC tooltip overlay
+    svgContent += `<text id="crosshair-ohlc" x="10" y="20" fill="var(--text-dim)" font-size="12" font-family="sans-serif" style="display: none; pointer-events: none;"></text>`;
+
+    // Add Date label background and text for x-axis
+    svgContent += `<rect id="crosshair-x-bg" x="0" y="${svgHeight - 25}" width="140" height="24" fill="#1E222D" stroke="rgba(255,255,255,0.1)" stroke-width="1" rx="2" style="display: none; pointer-events: none;" />`;
+    svgContent += `<text id="crosshair-x-label" x="0" y="${svgHeight - 8}" fill="#ffffff" font-size="11" font-family="sans-serif" text-anchor="middle" style="display: none; pointer-events: none;"></text>`;
+
+    svgContent += `</svg>`;
+
+    // Create/Reuse Modal
+    let modal = document.getElementById('candle-zoom-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'candle-zoom-modal';
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(4px);
+            z-index: 9999; display: flex; align-items: center; justify-content: center;
+        `;
+        document.body.appendChild(modal);
+
+        // Close on background click
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.style.display = 'none';
+        };
+    }
+
+    // Determine timeframe string based on active mode
+    let tfDisplay = "1 Day";
+    if (activeStatFilter && activeStatFilter.includes("min")) {
+        tfDisplay = activeStatFilter; // Fallback to current filtered if passed somehow differently
+    } else {
+        tfDisplay = (currentMode === 'intraday') ? currentTimeframe : "1 Day";
+    }
+
+    modal.innerHTML = `
+        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 500px; max-width: 90vw; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 18px;">${symbol}</h3>
+                    <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Last 5 Candles (${tfDisplay})</div>
+                </div>
+                <button onclick="document.getElementById('candle-zoom-modal').style.display='none'" style="background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 20px;">&times;</button>
+            </div>
+            <div style="width: 100%; display: flex; justify-content: center; position: relative;">
+                <div id="candle-svg-wrapper" style="width: 100%; max-width: ${svgWidth}px; position: relative;">
+                    ${svgContent}
+                </div>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+
+    // Crosshair logic
+    const wrapper = document.getElementById('candle-svg-wrapper');
+    const svgEl = wrapper.querySelector('svg');
+    const chX = document.getElementById('crosshair-x');
+    const chY = document.getElementById('crosshair-y');
+    const chYBg = document.getElementById('crosshair-y-bg');
+    const chYLabel = document.getElementById('crosshair-y-label');
+    const chOhlc = document.getElementById('crosshair-ohlc');
+    const chXBg = document.getElementById('crosshair-x-bg');
+    const chXLabel = document.getElementById('crosshair-x-label');
+
+    svgEl.addEventListener('mousemove', (e) => {
+        const rect = svgEl.getBoundingClientRect();
+
+        // SVG intrinsic coordinates
+        const scaleX = svgWidth / rect.width;
+        const scaleY = svgHeight / rect.height;
+
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        // Show crosshairs
+        chX.style.display = 'block';
+        chY.style.display = 'block';
+        chYBg.style.display = 'block';
+        chYLabel.style.display = 'block';
+        chOhlc.style.display = 'block';
+        chXBg.style.display = 'block';
+        chXLabel.style.display = 'block';
+
+        chX.setAttribute('x1', x);
+        chX.setAttribute('x2', x);
+        chY.setAttribute('y1', y);
+        chY.setAttribute('y2', y);
+
+        // Price calc based on Y
+        const inverseY = usableHeight - (y - padTop);
+        let ratio = inverseY / usableHeight;
+        if (ratio < 0) ratio = 0;
+        if (ratio > 1) ratio = 1;
+        const priceAtCursor = minLow + (ratio * range);
+
+        chYBg.setAttribute('y', y - 10);
+        chYLabel.setAttribute('y', y + 4);
+        chYLabel.textContent = priceAtCursor.toFixed(2);
+
+        // Find nearest candle for OHLC
+        let nearestIdx = -1;
+        let minDist = Infinity;
+        candles.forEach((c, i) => {
+            const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2) + 20;
+            const dist = Math.abs(x - xCenter);
+            if (dist < minDist) {
+                minDist = dist;
+                nearestIdx = i;
+            }
+        });
+
+        if (nearestIdx !== -1) {
+            const c = candles[nearestIdx];
+            const isG = c.c > c.o;
+            const color = isG ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
+            chOhlc.innerHTML = `O:<tspan fill="${color}">${c.o.toFixed(2)}</tspan> H:<tspan fill="${color}">${c.h.toFixed(2)}</tspan> L:<tspan fill="${color}">${c.l.toFixed(2)}</tspan> C:<tspan fill="${color}">${c.c.toFixed(2)}</tspan>`;
+
+            // Snap X crosshair to candle center
+            const snapX = (nearestIdx * (candleWidth + gap)) + (candleWidth / 2) + 20;
+            chX.setAttribute('x1', snapX);
+            chX.setAttribute('x2', snapX);
+
+            // X Axis Time label
+            if (c.t) {
+                try {
+                    const dt = new Date(c.t);
+                    const formattedDate = dt.toLocaleString('en-US', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+                    chXLabel.textContent = formattedDate;
+
+                    const labelHalfWidth = 65; // Approx half width of the 140px background box
+                    let rectXPos = snapX - labelHalfWidth;
+
+                    // Keep rectangle within viewport
+                    if (rectXPos < 0) rectXPos = 0;
+                    if (rectXPos + (labelHalfWidth * 2) > svgWidth) rectXPos = svgWidth - (labelHalfWidth * 2);
+
+                    chXBg.setAttribute('x', rectXPos);
+                    chXLabel.setAttribute('x', rectXPos + labelHalfWidth);
+                } catch (e) {
+                    chXLabel.textContent = c.t;
+                }
+            }
+        }
+    });
+
+    svgEl.addEventListener('mouseleave', () => {
+        chX.style.display = 'none';
+        chY.style.display = 'none';
+        chYBg.style.display = 'none';
+        chYLabel.style.display = 'none';
+        chOhlc.style.display = 'none';
+        chXBg.style.display = 'none';
+        chXLabel.style.display = 'none';
+    });
+}

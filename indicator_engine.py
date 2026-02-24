@@ -20,7 +20,8 @@ DEFAULT_CONFIGS = {
         'SUPERTREND': {'period': 10, 'mult': 3.0, 'enabled': True},
         'ATR': {'period': 14, 'enabled': True},
         'DMA': {'periods': [10, 20, 50, 200], 'enabled': True},
-        'VOLUME': {'period': 20, 'threshold': 2.0, 'enabled': True}
+        'VOLUME': {'period': 20, 'threshold': 2.0, 'enabled': True},
+        'patterns': {'enabled': True, 'bullish': True, 'bearish': True, 'neutral': False}
     },
     'intraday': {
         'RSI': {'period': 14, 'ob': 80, 'os': 20, 'enabled': True},
@@ -28,7 +29,8 @@ DEFAULT_CONFIGS = {
         'SUPERTREND': {'period': 10, 'mult': 2.5, 'enabled': True},
         'ATR': {'period': 14, 'enabled': True},
         'DMA': {'periods': [10, 20], 'enabled': False},
-        'VOLUME': {'period': 20, 'threshold': 1.5, 'enabled': True}
+        'VOLUME': {'period': 20, 'threshold': 1.5, 'enabled': True},
+        'patterns': {'enabled': True, 'bullish': True, 'bearish': True, 'neutral': False}
     }
 }
 
@@ -124,6 +126,16 @@ def calculate_indicators(df, settings):
         df.loc[(df['vol_ratio'] > vol_threshold) & (df['close'] > df['open']), 'vol_signal'] = 'BULL_SPIKE'
         df.loc[(df['vol_ratio'] > vol_threshold) & (df['close'] < df['open']), 'vol_signal'] = 'BEAR_SPIKE'
         
+    # CANDLESTICK PATTERNS
+    if settings.get('patterns', {}).get('enabled'):
+        try:
+            cdl_df = df.ta.cdl_pattern(name="all")
+            if cdl_df is not None and not cdl_df.empty:
+                for col in cdl_df.columns:
+                    df[col] = cdl_df[col]
+        except Exception:
+            pass
+            
     return df.iloc[-1] # Return the latest row
 
 async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cache=None):
@@ -344,6 +356,48 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         if isin not in shared_cache:
                             shared_cache[isin] = {}
                         shared_cache[isin]['dma_data'] = dma_data
+
+                # --- Candlestick Patterns ---
+                pattern_str = None
+                patterns_opts = settings.get('patterns', {})
+                if patterns_opts.get('enabled'):
+                    bullish_patterns = []
+                    bearish_patterns = []
+                    neutral_patterns = []
+                    
+                    bullish_cols = ['CDL_ENGULFING', 'CDL_HAMMER', 'CDL_MORNINGSTAR', 'CDL_PIERCING', 'CDL_MORNINGDOJISTAR', 'CDL_3WHITESOLDIERS', 'CDL_DRAGONFLYDOJI']
+                    bearish_cols = ['CDL_ENGULFING', 'CDL_SHOOTINGSTAR', 'CDL_EVENINGSTAR', 'CDL_DARKCLOUDCOVER', 'CDL_EVENINGDOJISTAR', 'CDL_HANGINGMAN', 'CDL_3BLACKCROWS', 'CDL_GRAVESTONEDOJI']
+                    neutral_cols = ['CDL_DOJI_10_0.1', 'CDL_SPINNINGTOP', 'CDL_HIGHWAVE', 'CDL_RICKSHAWMAN', 'CDL_LONGLEGGEDDOJI']
+                    
+                    for key, val in latest_data.items():
+                        if not isinstance(key, str) or not key.startswith("CDL_") or pd.isna(val) or val == 0:
+                            continue
+                        
+                        pattern_name = key.replace("CDL_", "").split("_")[0].title()
+                        
+                        if val > 0:
+                            if key in neutral_cols:
+                                neutral_patterns.append(pattern_name)
+                            elif key in bearish_cols and key not in bullish_cols:
+                                bearish_patterns.append(pattern_name)
+                            else:
+                                bullish_patterns.append(pattern_name)
+                        elif val < 0:
+                            if key in bullish_cols and key not in bearish_cols:
+                                bullish_patterns.append(pattern_name)
+                            else:
+                                bearish_patterns.append(pattern_name)
+                                
+                    active_found = []
+                    if patterns_opts.get('bullish') and bullish_patterns:
+                        active_found.append("Bullish " + "/".join(bullish_patterns))
+                    if patterns_opts.get('bearish') and bearish_patterns:
+                        active_found.append("Bearish " + "/".join(bearish_patterns))
+                    if patterns_opts.get('neutral') and neutral_patterns:
+                        active_found.append("Neutral " + "/".join(neutral_patterns))
+                        
+                    if active_found:
+                        pattern_str = " | ".join(active_found)
                 
                 # --- Confluence Ranking Logic ---
                 # Example basic logic: 
@@ -402,6 +456,21 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 if ema_slow and ltp > (ema_slow * 1.12):
                     trade_strategy = "OVEREXTENDED"
 
+                # Last 5 candles visualizer
+                last_5_candles = None
+                if len(df) >= 5:
+                    recent_5 = df.iloc[-5:]
+                    candles_list = []
+                    for _, r in recent_5.iterrows():
+                        candles_list.append({
+                            "t": str(r['timestamp']),
+                            "o": float(r['open']),
+                            "h": float(r['high']),
+                            "l": float(r['low']),
+                            "c": float(r['close'])
+                        })
+                    last_5_candles = json.dumps(candles_list)
+
                 signals_to_insert.append((
                     isin, profile_id, timeframe, timestamp, ltp, rsi_val, 
                     rsi_day_high, rsi_day_low,
@@ -409,15 +478,15 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     vol_signal, vol_ratio,
                     ema_fast, # Using ema_fast as legacy ema_value
                     st_dir, st_value, json.dumps(dma_data), rank,
-                    sl, target, trade_strategy
+                    sl, target, trade_strategy, pattern_str, last_5_candles
                 ))
             
             # Upsert into database
             if signals_to_insert:
                 upsert_query = """
                     INSERT INTO app_sg_calculated_signals 
-                    (isin, profile_id, timeframe, timestamp, ltp, rsi, rsi_day_high, rsi_day_low, ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, trade_strategy)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (isin, profile_id, timeframe, timestamp, ltp, rsi, rsi_day_high, rsi_day_low, ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, trade_strategy, candlestick_pattern, last_5_candles)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         timestamp=VALUES(timestamp), ltp=VALUES(ltp), rsi=VALUES(rsi), 
                         rsi_day_high=VALUES(rsi_day_high), rsi_day_low=VALUES(rsi_day_low),
@@ -426,7 +495,9 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         ema_value=VALUES(ema_value),
                         supertrend_dir=VALUES(supertrend_dir), supertrend_value=VALUES(supertrend_value),
                         dma_data=VALUES(dma_data), confluence_rank=VALUES(confluence_rank),
-                        sl=VALUES(sl), target=VALUES(target), trade_strategy=VALUES(trade_strategy)
+                        sl=VALUES(sl), target=VALUES(target), trade_strategy=VALUES(trade_strategy),
+                        candlestick_pattern=VALUES(candlestick_pattern),
+                        last_5_candles=VALUES(last_5_candles)
                 """
                 await cur.executemany(upsert_query, signals_to_insert)
                 logging.info(f"✅ Successfully updated {len(signals_to_insert)} signals for {profile_id} ({timeframe}).")
