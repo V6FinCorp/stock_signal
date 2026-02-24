@@ -277,7 +277,11 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         '60m': '60min'
                     }.get(timeframe)
                     
-                    df = df.resample(resample_rule).agg({
+                    resample_kwargs = {}
+                    if timeframe in ['15m', '30m', '60m'] and pd.to_timedelta('15min') is not None:
+                        resample_kwargs['offset'] = '15min'
+                    
+                    df = df.resample(resample_rule, **resample_kwargs).agg({
                         'open': 'first',
                         'high': 'max',
                         'low': 'min',
