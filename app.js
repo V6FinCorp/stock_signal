@@ -667,10 +667,8 @@ async function refreshSignals() {
     }, 150);
 
     try {
-        const apiTf = TF_MAP[currentTimeframe] || '1d';
-
-        // 1. Manually trigger the Pandas-TA calculating backend
-        await fetch(`/api/calculate?mode=${currentMode}&timeframe=${apiTf}`, {
+        // 1. Manually trigger the Pandas-TA calculating backend for all timeframes
+        await fetch(`/api/calculate?mode=${currentMode}`, {
             method: 'POST'
         });
 

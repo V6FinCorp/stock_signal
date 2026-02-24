@@ -118,10 +118,9 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
     return {"status": "success", "data": signals}
 
 @app.post("/api/calculate")
-async def calculate_signals(mode: str = "swing", timeframe: str = None):
-    """Manually triggers the Pandas-TA Indicator Engine from the frontend."""
-    default_timeframe = "5m" if mode == "intraday" else "1d"
-    selected_timeframe = timeframe if timeframe else default_timeframe
+async def calculate_signals(mode: str = "swing"):
+    """Manually triggers the Pandas-TA Indicator Engine from the frontend for all timeframes."""
+    timeframes = ['1d', '1w', '1mo'] if mode == "swing" else ['5m', '15m', '30m', '60m']
     
     try:
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
@@ -130,7 +129,9 @@ async def calculate_signals(mode: str = "swing", timeframe: str = None):
         raise HTTPException(status_code=500, detail=f"Database Connection Failed: {str(e)}")
         
     try:
-        await process_profile(app_pool, datamart_pool, mode, selected_timeframe)
+        shared_cache = {}
+        for tf in timeframes:
+            await process_profile(app_pool, datamart_pool, mode, tf, shared_cache)
     except Exception as e:
         app_pool.close()
         datamart_pool.close()
@@ -159,7 +160,7 @@ async def calculate_signals(mode: str = "swing", timeframe: str = None):
     except Exception as e:
         pass
         
-    return {"status": "success", "message": f"Successfully recalculated {mode} signals for {selected_timeframe}."}
+    return {"status": "success", "message": f"Successfully recalculated {mode} signals for all timeframes."}
 
 import asyncio
 import sys

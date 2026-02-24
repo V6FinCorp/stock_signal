@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Endpoints as discovered & outlined in IMPLEMENTATION_PLAN.md
 URL_DAILY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{to_date}/{from_date}"
-URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/minutes/5/{to_date}/{from_date_intraday}"
+URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5/"
 
 async def fetch_data(client, url):
     """Fetch JSON data from Upstox endpoint natively."""
@@ -89,7 +89,7 @@ async def process_company(app_pool, client, isin, symbol, fetch_swing=True, fetc
     
     intraday_candles = []
     if fetch_intraday:
-        intraday_url = URL_INTRADAY.format(isin=isin, to_date=to_date, from_date_intraday=from_date_intraday)
+        intraday_url = URL_INTRADAY.format(isin=isin)
         intraday_candles = await fetch_data(client, intraday_url)
     
     # Write OHLCV data to APP DATABASE
