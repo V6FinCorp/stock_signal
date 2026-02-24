@@ -261,12 +261,12 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     continue
                     
                 df = pd.DataFrame(rows)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df = df.sort_values('timestamp').reset_index(drop=True)
                 df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
                 
                 # Resampling Logic
                 if timeframe != base_timeframe:
-                    df['timestamp'] = pd.to_datetime(df['timestamp'])
-                    df = df.sort_values('timestamp')
                     df.set_index('timestamp', inplace=True)
                     
                     resample_rule = {
