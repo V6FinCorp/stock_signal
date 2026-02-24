@@ -64,7 +64,7 @@ async function fetchAndRenderSignals(forceFetch = false) {
     }
 
     const tbody = document.getElementById('signal-tbody');
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-circle-notch fa-spin fa-2x"></i><br><br>Loading live signals from App DB...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-circle-notch fa-spin fa-2x"></i><br><br>Analyzing latest market signals...</td></tr>';
 
     try {
         const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${apiTf}`);
