@@ -191,7 +191,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         async with dm_conn.cursor(aiomysql.DictCursor) as dm_cur:
                             # Using executemany isn't applicable for SELECT IN, constructing batch query
                             format_strings = ','.join(['%s'] * len(available_isins))
-                            await dm_cur.execute(f"SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_all WHERE bs_ISIN IN ({format_strings})", tuple(available_isins))
+                            await dm_cur.execute(f"SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_all WHERE BINARY bs_Status = 'Active' AND bs_ISIN IN ({format_strings})", tuple(available_isins))
                             for row in await dm_cur.fetchall():
                                 isin_to_symbol[row['bs_ISIN']] = row['bs_SYMBOL']
                 except Exception as e:
@@ -514,6 +514,72 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 """
                 await cur.executemany(upsert_query, signals_to_insert)
                 logging.info(f"✅ Successfully updated {len(signals_to_insert)} signals for {profile_id} ({timeframe}).")
+
+async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30):
+    """Calculates full technical indicators for a chart range. Used for zoomed modal charts."""
+    settings = await get_profile_settings(app_pool, profile_id)
+    
+    async with app_pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            # Need enough data for indicator calculation (e.g. 200 DMA)
+            lookback = max(250, bars + 50) 
+            await cur.execute(
+                "SELECT timestamp, open, high, low, close, volume FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = %s ORDER BY timestamp DESC LIMIT %s",
+                (isin, timeframe, lookback)
+            )
+            rows = await cur.fetchall()
+            if not rows: return []
+            
+            df = pd.DataFrame(rows)
+            df = df.iloc[::-1].reset_index(drop=True)
+            df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+            
+            # Calculate Indicators for the enrichment
+            # --- EMA ---
+            if settings['EMA']['enabled']:
+                fast_len = settings['EMA']['fast_period']
+                slow_len = settings['EMA']['slow_period']
+                df[f'EMA_{fast_len}'] = ta.ema(df['close'], length=fast_len)
+                df[f'EMA_{slow_len}'] = ta.ema(df['close'], length=slow_len)
+            
+            # --- Supertrend ---
+            if settings.get('SUPERTREND', {}).get('enabled'):
+                st_len = settings['SUPERTREND']['period']
+                st_mult = settings['SUPERTREND']['mult']
+                st_df = ta.supertrend(df['high'], df['low'], df['close'], length=st_len, multiplier=st_mult)
+                if st_df is not None:
+                    df['ST_value'] = st_df.iloc[:, 0]
+                    df['ST_dir'] = st_df.iloc[:, 1]
+            
+            # --- DMA ---
+            if settings['DMA']['enabled']:
+                await cur.execute(
+                    "SELECT close FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d' ORDER BY timestamp DESC LIMIT 250",
+                    (isin,)
+                )
+                rows_1d = await cur.fetchall()
+                if rows_1d:
+                    df_1d = pd.DataFrame(rows_1d).iloc[::-1].reset_index(drop=True)
+                    df_1d['close'] = df_1d['close'].astype(float)
+                    for p in settings['DMA']['periods']:
+                        if len(df_1d) >= p:
+                            sma_s = ta.sma(df_1d['close'], length=p)
+                            if sma_s is not None and not pd.isna(sma_s.iloc[-1]):
+                                # Attach only latest DMA as a horizontal line reference
+                                df[f"DMA_{p}"] = float(sma_s.iloc[-1])
+            
+            # Return requested window
+            df = df.tail(bars).copy()
+            df = df.replace({np.nan: None})
+            
+            # Format and rename columns for frontend compatibility
+            df['t'] = df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            df = df.rename(columns={
+                'open': 'o', 'high': 'h', 'low': 'l', 'close': 'c', 'volume': 'v'
+            })
+            
+            # Keep indicator columns as is (e.g., ST_value, EMA_9)
+            return df.to_dict(orient='records')
 
 async def main():
     logging.info("Starting Indicator Engine (Testing Phase - Favourites Only)...")

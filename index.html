@@ -41,7 +41,10 @@
                         class="fas fa-th-large"></i> <span>Dashboard</span></a>
                 <a href="#" class="nav-item" id="nav-scenario-builder" onclick="switchTab('scenario-builder')"><i
                         class="fas fa-flask"></i> <span>Scenario Backtester</span></a>
-                <a href="#" class="nav-item" onclick="toggleSettings()"><i class="fas fa-cog"></i>
+                <a href="#" class="nav-item" id="nav-db-manager" onclick="switchTab('db-manager')"><i
+                        class="fas fa-database"></i> <span>Database Manager</span></a>
+                <a href="#" class="nav-item" id="nav-settings" onclick="switchTab('settings')"><i
+                        class="fas fa-cog"></i>
                     <span>Settings</span></a>
                 <a href="#" class="nav-item"><i class="fas fa-history"></i> <span>Signal History</span></a>
             </nav>
@@ -222,7 +225,7 @@
 
             <div class="strategy-builder-form bg-card"
                 style="background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
-                <div <div
+                <div
                     style="padding: 24px; border-bottom: 1px solid var(--border-color); background: rgba(14, 165, 233, 0.05);">
                     <h3 style="font-size: 18px; display: flex; align-items: center; gap: 8px; color: var(--primary);"><i
                             class="fas fa-calendar-alt"></i> Step 1: Scenario Context</h3>
@@ -398,227 +401,398 @@
             </div>
 
         </main>
-    </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="modal-overlay hidden">
-        <div class="modal-content glass">
-            <div class="modal-header">
-                <h2><i class="fas fa-cog"></i> Engine Configuration</h2>
-                <button class="close-btn" onclick="toggleSettings()">&times;</button>
-            </div>
+        <main class="main-content hidden" id="db-manager-view">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 id="page-title-db">Database Management</h1>
+                    <p class="subtitle text-dim">Storage Health & Data Coverage Overview</p>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-primary" onclick="fetchDbStats()" style="background: var(--primary);">
+                        <i class="fas fa-sync-alt"></i> Refresh Stats
+                    </button>
+                </div>
+            </header>
 
-            <div class="modal-body">
-                <div class="settings-grid">
-                    <div class="settings-col-left">
-                        <!-- Profile Group -->
-                        <div class="settings-group">
-                            <h3>Strategy Profile</h3>
-                            <div class="control-field">
-                                <label>Editing Configuration For:</label>
-                                <select class="select-input" id="config-profile-selector"
-                                    onchange="loadProfileSettings()">
-                                    <option value="swing">Swing Portfolio (Daily/Weekly)</option>
-                                    <option value="intraday">Intraday Momentum (5m/15m)</option>
-                                </select>
-                                <p class="text-dim" style="font-size: 11px; margin-top: 5px;">Settings are independent
-                                    for
-                                    each mode.</p>
-                            </div>
-                            <div class="control-field">
-                                <label>Watchlist Generation</label>
-                                <div class="radio-group">
-                                    <label><input type="radio" name="watchlist" value="top"> Top by Volume</label>
-                                    <label><input type="radio" name="watchlist" value="manual" checked> Manual
-                                        Picker</label>
-                                </div>
+            <div style="height: calc(100vh - 80px); overflow-y: auto;">
+                <div
+                    style="background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border-color); padding: 32px; backdrop-filter: blur(10px);">
+                    <section class="stats-grid" style="margin-bottom: 24px;">
+                        <div class="stat-card">
+                            <div class="stat-icon bg-blue-trans"><i class="fas fa-database"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Raw OHLCV Logs</span>
+                                <span class="stat-value" id="db-raw-rows">-</span>
                             </div>
                         </div>
-
-                        <!-- Automation Settings Group -->
-                        <div class="settings-group">
-                            <h3>Automation Settings</h3>
-                            <div class="control-field" style="margin-bottom: 12px;">
-                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                                    <input type="checkbox" id="setting-auto-fetch" checked
-                                        style="accent-color: var(--primary);">
-                                    Auto-Fetch Market Data
-                                </label>
-                            </div>
-                            <div class="control-field" style="margin-bottom: 12px;">
-                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                                    <input type="checkbox" id="setting-auto-calc" checked
-                                        style="accent-color: var(--primary);">
-                                    Auto-Calculate Indicators
-                                </label>
-                            </div>
-                            <div class="control-field" id="auto-interval-container-swing">
-                                <label>Refresh Interval (Swing)</label>
-                                <select class="select-input" id="setting-auto-interval-swing">
-                                    <option value="1800000">Every 30 Minutes</option>
-                                    <option value="3600000">Every 1 Hour</option>
-                                    <option value="7200000">Every 2 Hours</option>
-                                    <option value="14400000">Every 4 Hours</option>
-                                    <option value="86400000">Daily</option>
-                                </select>
-                            </div>
-                            <div class="control-field" id="auto-interval-container-intraday" style="display: none;">
-                                <label>Refresh Interval (Intraday)</label>
-                                <select class="select-input" id="setting-auto-interval-intraday">
-                                    <option value="300000">Every 5 Minutes</option>
-                                    <option value="600000">Every 10 Minutes</option>
-                                    <option value="900000">Every 15 Minutes</option>
-                                    <option value="1200000">Every 20 Minutes</option>
-                                    <option value="1800000">Every 30 Minutes</option>
-                                    <option value="2700000">Every 45 Minutes</option>
-                                    <option value="3600000">Every 60 Minutes</option>
-                                </select>
-                            </div>
-                            <div class="control-field" style="margin-bottom: 12px; margin-top: 12px;">
-                                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                                    <input type="checkbox" id="setting-auto-market-hours" checked
-                                        style="accent-color: var(--primary);">
-                                    Only Sync within Market Hours
-                                </label>
-                                AM -
-                                3:30 PM IST)</p>
+                        <div class="stat-card">
+                            <div class="stat-icon bg-amber-trans"><i class="fas fa-calculator"></i></div>
+                            <div class="stat-info">
+                                <span class="stat-label">Calculated Formulas</span>
+                                <span class="stat-value" id="db-calc-rows">-</span>
                             </div>
                         </div>
+                    </section>
 
-                        <!-- Price Action / Patterns Group -->
-                        <div class="settings-group" style="margin-top: 24px;">
-                            <h3>Price Action & Patterns</h3>
+                    <div class="bg-card"
+                        style="border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; margin-bottom: 24px;">
+                        <div
+                            style="padding: 16px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
+                            <h3 style="margin: 0; font-size: 16px;">Data Coverage Matrix</h3>
+                        </div>
+                        <table class="signal-table" style="margin: 0;">
+                            <thead>
+                                <tr>
+                                    <th>Timeframe</th>
+                                    <th>Earliest Date</th>
+                                    <th>Latest Date</th>
+                                    <th># Days</th>
+                                    <th>Row Count</th>
+                                </tr>
+                            </thead>
+                            <tbody id="db-coverage-tbody">
+                                <tr>
+                                    <td colspan="5" style="text-align:center;">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
 
-                            <div class="indicator-config-card" style="margin-bottom: 0;">
-                                <div class="ind-header">
-                                    <strong>Candlestick Engine</strong>
-                                    <label class="switch"><input type="checkbox" id="setting-pattern-enabled"
-                                            checked><span class="slider round"></span></label>
+                    <div class="bg-card"
+                        style="border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
+                        <div
+                            style="padding: 16px; border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
+                            <h3 style="margin: 0; font-size: 16px; color: var(--danger);">Danger Zone - Targeted Purge
+                            </h3>
+                        </div>
+                        <div style="padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--border-color);">
+                                <div>
+                                    <h4 style="margin: 0 0 4px 0;">Clear Calculated Formulas</h4>
+                                    <p style="margin: 0; font-size: 13px; color: var(--text-dim);">Soft clear. Deletes
+                                        all
+                                        Pandas-TA signal outputs. Engine will recalculate everything on next run.</p>
                                 </div>
-                                <div class="control-field" style="margin-top: 12px; margin-bottom: 8px;">
-                                    <label
-                                        style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--success); font-weight: normal;">
-                                        <input type="checkbox" id="setting-pattern-bullish" checked
-                                            style="accent-color: var(--success);">
-                                        Bullish Reversals (Hammer, Engulfing...)
-                                    </label>
+                                <button class="btn btn-dim" onclick="clearDbData('calculated')"
+                                    style="color: var(--warning); border-color: rgba(245, 158, 11, 0.3);">Clear
+                                    Signals</button>
+                            </div>
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--border-color);">
+                                <div>
+                                    <h4 style="margin: 0 0 4px 0;">Clear Raw OHLCV History</h4>
+                                    <p style="margin: 0; font-size: 13px; color: var(--text-dim);">Deep clean. Deletes
+                                        all
+                                        downloaded market data. Harvester will redownload everything from scratch.</p>
                                 </div>
-                                <div class="control-field" style="margin-bottom: 8px;">
-                                    <label
-                                        style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--danger); font-weight: normal;">
-                                        <input type="checkbox" id="setting-pattern-bearish" checked
-                                            style="accent-color: var(--danger);">
-                                        Bearish Reversals (Shooting Star...)
-                                    </label>
+                                <button class="btn btn-dim" onclick="clearDbData('raw')"
+                                    style="color: var(--danger); border-color: rgba(239, 68, 68, 0.3);">Clear Raw
+                                    Data</button>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <h4 style="margin: 0 0 4px 0; color: var(--danger);">Purge All Data</h4>
+                                    <p style="margin: 0; font-size: 13px; color: var(--text-dim);">Nuke option. Empties
+                                        both
+                                        raw
+                                        prices and calculated signals completely.</p>
                                 </div>
-                                <div class="control-field" style="margin-bottom: 0;">
-                                    <label
-                                        style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text-dim); font-weight: normal;">
-                                        <input type="checkbox" id="setting-pattern-neutral" style="accent-color: gray;">
-                                        Neutral / Indecision (Dojis)
-                                    </label>
-                                </div>
+                                <button class="btn btn-primary" onclick="clearDbData('all')"
+                                    style="background: var(--danger); border: none;">Purge Everything</button>
                             </div>
                         </div>
-
-                    </div> <!-- End of left column -->
-
-                    <div class="settings-col-right">
-                        <!-- Indicator Group -->
-                        <div class="settings-group">
-                            <h3>Indicator Tuning</h3>
-
-                            <!-- RSI -->
-                            <div class="indicator-config-card">
-                                <div class="ind-header">
-                                    <strong>RSI (Strength)</strong>
-                                    <label class="switch"><input type="checkbox" id="setting-rsi-enabled" checked><span
-                                            class="slider round"></span></label>
-                                </div>
-                                <div class="ind-params">
-                                    <div class="param"><span>Period</span><input type="number" id="setting-rsi-period"
-                                            value="14"></div>
-                                    <div class="param"><span>OB</span><input type="number" id="setting-rsi-ob"
-                                            value="70">
-                                    </div>
-                                    <div class="param"><span>OS</span><input type="number" id="setting-rsi-os"
-                                            value="30">
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Supertrend -->
-                            <div class="indicator-config-card">
-                                <div class="ind-header">
-                                    <strong>Supertrend</strong>
-                                    <label class="switch"><input type="checkbox" id="setting-st-enabled" checked><span
-                                            class="slider round"></span></label>
-                                </div>
-                                <div class="ind-params">
-                                    <div class="param"><span>ATR</span><input type="number" id="setting-st-period"
-                                            value="10"></div>
-                                    <div class="param"><span>Mult</span><input type="number" id="setting-st-mult"
-                                            value="3" step="0.1"></div>
-                                </div>
-                            </div>
-
-                            <div class="indicator-config-card">
-                                <div class="ind-header">
-                                    <strong>EMA (Crossover)</strong>
-                                    <label class="switch"><input type="checkbox" id="setting-ema-enabled" checked><span
-                                            class="slider round"></span></label>
-                                </div>
-                                <div class="ind-params">
-                                    <div class="param"><span>Fast</span><input type="number" id="setting-ema-fast"
-                                            value="9"></div>
-                                    <div class="param"><span>Slow</span><input type="number" id="setting-ema-slow"
-                                            value="20"></div>
-                                </div>
-                            </div>
-
-                            <!-- VOLUME -->
-                            <div class="indicator-config-card">
-                                <div class="ind-header">
-                                    <strong>Volume Spike</strong>
-                                    <label class="switch"><input type="checkbox" id="setting-vol-enabled" checked><span
-                                            class="slider round"></span></label>
-                                </div>
-                                <div class="ind-params">
-                                    <div class="param"><span>SMA</span><input type="number" id="setting-vol-period"
-                                            value="20"></div>
-                                    <div class="param"><span>Threshold</span><input type="number"
-                                            id="setting-vol-threshold" value="2.0" step="0.1"></div>
-                                </div>
-                            </div>
-
-                            <!-- DMA -->
-                            <div class="indicator-config-card">
-                                <div class="ind-header">
-                                    <strong>DMA (Daily Moving Avg)</strong>
-                                    <label class="switch"><input type="checkbox" id="setting-dma-enabled" checked><span
-                                            class="slider round"></span></label>
-                                </div>
-                                <div class="ind-params-multi">
-                                    <label><input type="checkbox" id="dma-10" checked> 10</label>
-                                    <label><input type="checkbox" id="dma-20" checked> 20</label>
-                                    <label><input type="checkbox" id="dma-50" checked> 50</label>
-                                    <label><input type="checkbox" id="dma-100" checked> 100</label>
-                                    <label><input type="checkbox" id="dma-200" checked> 200</label>
-                                </div>
-                            </div>
-                        </div>
-                    </div> <!-- End of right column -->
+                    </div>
                 </div>
             </div>
+        </main>
 
+        <main class="main-content hidden" id="settings-view">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 id="page-title-settings">Engine Configuration</h1>
+                    <p class="subtitle text-dim">Algorithm and behavior settings</p>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-primary" onclick="saveProfileSettings()">
+                        <i class="fas fa-save"></i> Save Configuration
+                    </button>
+                </div>
+            </header>
+
+            <div style="height: calc(100vh - 80px); overflow-y: auto;">
+                <div
+                    style="background: var(--card-bg); border-radius: 16px; border: 1px solid var(--border-color); padding: 32px; backdrop-filter: blur(10px);">
+                    <div class="settings-grid"
+                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1200px;">
+                        <div class="settings-col-left">
+                            <!-- Profile Group -->
+                            <div class="settings-group">
+                                <h3>Strategy Profile</h3>
+                                <div class="control-field">
+                                    <label>Editing Configuration For:</label>
+                                    <select class="select-input" id="config-profile-selector"
+                                        onchange="loadProfileSettings()">
+                                        <option value="swing">Swing Portfolio (Daily/Weekly)</option>
+                                        <option value="intraday">Intraday Momentum (5m/15m)</option>
+                                    </select>
+                                    <p class="text-dim" style="font-size: 11px; margin-top: 5px;">Settings are
+                                        independent
+                                        for
+                                        each mode.</p>
+                                </div>
+                                <div class="control-field">
+                                    <label>Watchlist Generation</label>
+                                    <div class="radio-group" style="display: flex; gap: 16px;">
+                                        <label><input type="radio" name="watchlist" value="top"> Top by Volume</label>
+                                        <label><input type="radio" name="watchlist" value="manual" checked> Manual
+                                            Picker</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Automation Settings Group -->
+                            <div class="settings-group">
+                                <h3>Automation Settings</h3>
+                                <div class="control-field" style="margin-bottom: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                        <input type="checkbox" id="setting-auto-fetch" checked
+                                            style="accent-color: var(--primary);">
+                                        Auto-Fetch Market Data
+                                    </label>
+                                </div>
+                                <div class="control-field" style="margin-bottom: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                        <input type="checkbox" id="setting-auto-calc" checked
+                                            style="accent-color: var(--primary);">
+                                        Auto-Calculate Indicators
+                                    </label>
+                                </div>
+                                <div class="control-field" id="auto-interval-container-swing">
+                                    <label>Refresh Interval (Swing)</label>
+                                    <select class="select-input" id="setting-auto-interval-swing">
+                                        <option value="1800000">Every 30 Minutes</option>
+                                        <option value="3600000">Every 1 Hour</option>
+                                        <option value="7200000">Every 2 Hours</option>
+                                        <option value="14400000">Every 4 Hours</option>
+                                        <option value="86400000">Daily</option>
+                                    </select>
+                                </div>
+                                <div class="control-field" id="auto-interval-container-intraday" style="display: none;">
+                                    <label>Refresh Interval (Intraday)</label>
+                                    <select class="select-input" id="setting-auto-interval-intraday">
+                                        <option value="300000">Every 5 Minutes</option>
+                                        <option value="600000">Every 10 Minutes</option>
+                                        <option value="900000">Every 15 Minutes</option>
+                                        <option value="1200000">Every 20 Minutes</option>
+                                        <option value="1800000">Every 30 Minutes</option>
+                                        <option value="2700000">Every 45 Minutes</option>
+                                        <option value="3600000">Every 60 Minutes</option>
+                                    </select>
+                                </div>
+                                <div class="control-field" style="margin-bottom: 12px; margin-top: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                        <input type="checkbox" id="setting-auto-market-hours" checked
+                                            style="accent-color: var(--primary);">
+                                        Only Sync within Market Hours
+                                    </label>
+                                    <p class="text-dim" style="font-size: 11px; margin-top: 5px; margin-left: 24px;">
+                                        (9:15
+                                        AM -
+                                        3:30 PM IST)</p>
+                                </div>
+                            </div>
+
+                            <!-- Chart Visualization settings -->
+                            <div class="settings-group" style="margin-top: 24px;">
+                                <h3>Chart Visualization (Modal)</h3>
+                                <div class="control-field">
+                                    <label>Candles to Display</label>
+                                    <input type="number" id="setting-chart-bars" value="30" min="5" max="100"
+                                        class="select-input">
+                                    <p class="text-dim" style="font-size: 11px; margin-top: 5px;">Higher values provide
+                                        more context but may take longer to load.</p>
+                                </div>
+                                <div class="control-field" style="margin-top: 16px;">
+                                    <label>Show Indicators in Modal:</label>
+                                    <div
+                                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+                                        <label
+                                            style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                                            <input type="checkbox" id="setting-chart-ema" checked> EMA Lines
+                                        </label>
+                                        <label
+                                            style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                                            <input type="checkbox" id="setting-chart-st" checked> Supertrend
+                                        </label>
+                                        <label
+                                            style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                                            <input type="checkbox" id="setting-chart-dma" checked> DMA References
+                                        </label>
+                                        <label
+                                            style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                                            <input type="checkbox" id="setting-chart-vol" checked> Volume Bars
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Price Action / Patterns Group -->
+                            <div class="settings-group" style="margin-top: 24px;">
+                                <h3>Price Action & Patterns</h3>
+
+                                <div class="indicator-config-card" style="margin-bottom: 0;">
+                                    <div class="ind-header">
+                                        <strong>Candlestick Engine</strong>
+                                        <label class="switch"><input type="checkbox" id="setting-pattern-enabled"
+                                                checked><span class="slider round"></span></label>
+                                    </div>
+                                    <div class="control-field" style="margin-top: 12px; margin-bottom: 8px;">
+                                        <label
+                                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--success); font-weight: normal;">
+                                            <input type="checkbox" id="setting-pattern-bullish" checked
+                                                style="accent-color: var(--success);">
+                                            Bullish Reversals (Hammer, Engulfing...)
+                                        </label>
+                                    </div>
+                                    <div class="control-field" style="margin-bottom: 8px;">
+                                        <label
+                                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--danger); font-weight: normal;">
+                                            <input type="checkbox" id="setting-pattern-bearish" checked
+                                                style="accent-color: var(--danger);">
+                                            Bearish Reversals (Shooting Star...)
+                                        </label>
+                                    </div>
+                                    <div class="control-field" style="margin-bottom: 0;">
+                                        <label
+                                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text-dim); font-weight: normal;">
+                                            <input type="checkbox" id="setting-pattern-neutral"
+                                                style="accent-color: gray;">
+                                            Neutral / Indecision (Dojis)
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div> <!-- End of left column -->
+
+                        <div class="settings-col-right">
+                            <!-- Indicator Group -->
+                            <div class="settings-group">
+                                <h3>Indicator Tuning</h3>
+
+                                <!-- RSI -->
+                                <div class="indicator-config-card">
+                                    <div class="ind-header">
+                                        <strong>RSI (Strength)</strong>
+                                        <label class="switch"><input type="checkbox" id="setting-rsi-enabled"
+                                                checked><span class="slider round"></span></label>
+                                    </div>
+                                    <div class="ind-params">
+                                        <div class="param"><span>Period</span><input type="number"
+                                                id="setting-rsi-period" value="14"></div>
+                                        <div class="param"><span>OB</span><input type="number" id="setting-rsi-ob"
+                                                value="70">
+                                        </div>
+                                        <div class="param"><span>OS</span><input type="number" id="setting-rsi-os"
+                                                value="30">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Supertrend -->
+                                <div class="indicator-config-card">
+                                    <div class="ind-header">
+                                        <strong>Supertrend</strong>
+                                        <label class="switch"><input type="checkbox" id="setting-st-enabled"
+                                                checked><span class="slider round"></span></label>
+                                    </div>
+                                    <div class="ind-params">
+                                        <div class="param"><span>ATR</span><input type="number" id="setting-st-period"
+                                                value="10"></div>
+                                        <div class="param"><span>Mult</span><input type="number" id="setting-st-mult"
+                                                value="3" step="0.1"></div>
+                                    </div>
+                                </div>
+
+                                <div class="indicator-config-card">
+                                    <div class="ind-header">
+                                        <strong>EMA (Crossover)</strong>
+                                        <label class="switch"><input type="checkbox" id="setting-ema-enabled"
+                                                checked><span class="slider round"></span></label>
+                                    </div>
+                                    <div class="ind-params">
+                                        <div class="param"><span>Fast</span><input type="number" id="setting-ema-fast"
+                                                value="9"></div>
+                                        <div class="param"><span>Slow</span><input type="number" id="setting-ema-slow"
+                                                value="20"></div>
+                                    </div>
+                                </div>
+
+                                <!-- VOLUME -->
+                                <div class="indicator-config-card">
+                                    <div class="ind-header">
+                                        <strong>Volume Spike</strong>
+                                        <label class="switch"><input type="checkbox" id="setting-vol-enabled"
+                                                checked><span class="slider round"></span></label>
+                                    </div>
+                                    <div class="ind-params">
+                                        <div class="param"><span>SMA</span><input type="number" id="setting-vol-period"
+                                                value="20"></div>
+                                        <div class="param"><span>Threshold</span><input type="number"
+                                                id="setting-vol-threshold" value="2.0" step="0.1"></div>
+                                    </div>
+                                </div>
+
+                                <!-- DMA -->
+                                <div class="indicator-config-card">
+                                    <div class="ind-header">
+                                        <strong>DMA (Daily Moving Avg)</strong>
+                                        <label class="switch"><input type="checkbox" id="setting-dma-enabled"
+                                                checked><span class="slider round"></span></label>
+                                    </div>
+                                    <div class="ind-params-multi">
+                                        <label><input type="checkbox" id="dma-10" checked> 10</label>
+                                        <label><input type="checkbox" id="dma-20" checked> 20</label>
+                                        <label><input type="checkbox" id="dma-50" checked> 50</label>
+                                        <label><input type="checkbox" id="dma-100" checked> 100</label>
+                                        <label><input type="checkbox" id="dma-200" checked> 200</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div> <!-- End of right column -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal-overlay hidden">
+        <div class="modal-content glass" style="max-width: 400px; border: 1px solid var(--danger);">
+            <div class="modal-header">
+                <h2 style="color: var(--danger);"><i class="fas fa-exclamation-triangle"></i> Security Check</h2>
+                <button class="close-btn" onclick="closeConfirmModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-modal-msg"
+                    style="margin-bottom: 20px; font-size: 14px; color: var(--text-main); line-height: 1.5;"></p>
+                <div class="control-field">
+                    <label id="confirm-type-label" style="font-weight: 700;">Type "PURGE" to authorize:</label>
+                    <input type="text" id="confirm-input" class="select-input"
+                        style="width: 100%; border-color: var(--danger); background: rgba(0,0,0,0.3);"
+                        placeholder="...">
+                </div>
+            </div>
             <div class="modal-footer">
-                <button class="btn btn-dim" onclick="toggleSettings()">Cancel</button>
-                <button class="btn btn-primary" onclick="saveProfileSettings()">Save Configuration</button>
+                <button class="btn btn-dim" onclick="closeConfirmModal()">Cancel</button>
+                <button class="btn btn-primary" id="confirm-action-btn"
+                    style="background: var(--danger); border: none;">Execute Action</button>
             </div>
         </div>
     </div>
 
-    <script src="/static/app.js" onerror="this.src='app.js'"></script>
+    <script src="/static/app.js?v=2" onerror="this.src='app.js?v=2'"></script>
 </body>
 
 </html>

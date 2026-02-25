@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from config import Config
-from indicator_engine import process_profile
+from indicator_engine import process_profile, get_enriched_chart_data
 from scenario_engine import run_scenario_backtest
 from pydantic import BaseModel
 import json
@@ -118,6 +118,24 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
     await datamart_pool.wait_closed()
     
     return {"status": "success", "data": signals}
+
+@app.get("/api/chart/details")
+async def api_chart_details(isin: str, timeframe: str, profile: str = "swing", bars: int = 30):
+    """Fetches high-detail chart data including indicators for a specific ISIN/Timeframe."""
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database Connection Failed: {str(e)}")
+
+    try:
+        data = await get_enriched_chart_data(app_pool, isin, timeframe, profile, bars)
+        app_pool.close()
+        await app_pool.wait_closed()
+        return {"status": "success", "data": data}
+    except Exception as e:
+        app_pool.close()
+        await app_pool.wait_closed()
+        raise HTTPException(status_code=500, detail=f"Chart Enrichment Failed: {str(e)}")
 
 @app.post("/api/calculate")
 async def calculate_signals(mode: str = "swing"):
@@ -397,6 +415,77 @@ async def api_run_backtest(params: BacktestParams):
     await app_pool.wait_closed()
     await datamart_pool.wait_closed()
     return results
+
+class DbClearParams(BaseModel):
+    target: str
+
+@app.get("/api/db/stats")
+async def api_db_stats():
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database Connection Failed: {str(e)}")
+
+    try:
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                # Get total rows
+                await cur.execute("SELECT COUNT(*) as raw_rows FROM app_sg_ohlcv_prices")
+                raw_rows = (await cur.fetchone())['raw_rows']
+                
+                await cur.execute("SELECT COUNT(*) as calc_rows FROM app_sg_calculated_signals")
+                calc_rows = (await cur.fetchone())['calc_rows']
+
+                # Get dataset coverage by timeframe
+                await cur.execute("""
+                    SELECT timeframe, MIN(timestamp) as min_date, MAX(timestamp) as max_date, 
+                           COUNT(*) as c, COUNT(DISTINCT DATE(timestamp)) as days
+                    FROM app_sg_ohlcv_prices
+                    GROUP BY timeframe
+                """)
+                coverage_data = await cur.fetchall()
+                coverage = {}
+                for row in coverage_data:
+                    coverage[row['timeframe']] = {
+                        "min_date": row['min_date'].strftime("%Y-%m-%d %H:%M:%S") if row['min_date'] else None,
+                        "max_date": row['max_date'].strftime("%Y-%m-%d %H:%M:%S") if row['max_date'] else None,
+                        "count": row['c'],
+                        "days": row['days']
+                    }
+
+    except Exception as e:
+        app_pool.close()
+        raise HTTPException(status_code=500, detail=f"Stats Query Failed: {str(e)}")
+
+    app_pool.close()
+    await app_pool.wait_closed()
+    return {"status": "success", "data": {"raw_rows": raw_rows, "calc_rows": calc_rows, "coverage": coverage}}
+
+@app.post("/api/db/clear")
+async def api_db_clear(params: DbClearParams):
+    target = params.target
+    if target not in ['raw', 'calculated', 'all']:
+        raise HTTPException(status_code=400, detail="Invalid target")
+
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database Connection Failed: {str(e)}")
+
+    try:
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                if target in ['calculated', 'all']:
+                    await cur.execute("TRUNCATE TABLE app_sg_calculated_signals")
+                if target in ['raw', 'all']:
+                    await cur.execute("TRUNCATE TABLE app_sg_ohlcv_prices")
+    except Exception as e:
+        app_pool.close()
+        raise HTTPException(status_code=500, detail=f"Clear Query Failed: {str(e)}")
+
+    app_pool.close()
+    await app_pool.wait_closed()
+    return {"status": "success", "message": f"Successfully cleared {target} data."}
 
 if __name__ == "__main__":
     import uvicorn

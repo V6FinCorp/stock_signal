@@ -32,7 +32,8 @@ const CONFIGS = {
         vol: { enabled: true, period: 20, threshold: 2.0 },
         dma: { enabled: true, periods: [10, 20, 50, 200] },
         patterns: { enabled: true, bullish: true, bearish: true, neutral: false },
-        auto: { fetch: true, calc: true, interval: 1800000, marketHoursOnly: true }
+        auto: { fetch: true, calc: true, interval: 1800000, marketHoursOnly: true },
+        chart: { bars: 30, ema: true, st: true, dma: true, vol: true }
     },
     intraday: {
         rsi: { enabled: true, period: 14, ob: 80, os: 20 },
@@ -41,7 +42,8 @@ const CONFIGS = {
         vol: { enabled: true, period: 20, threshold: 1.5 },
         dma: { enabled: false, periods: [10, 20] },
         patterns: { enabled: true, bullish: true, bearish: true, neutral: false },
-        auto: { fetch: true, calc: true, interval: 300000, marketHoursOnly: true }
+        auto: { fetch: true, calc: true, interval: 300000, marketHoursOnly: true },
+        chart: { bars: 30, ema: true, st: true, dma: true, vol: true }
     }
 };
 
@@ -157,10 +159,10 @@ function updateTableHeader() {
         return th;
     };
 
-    thead.appendChild(createHeader('Rank', 'confluence_rank', true));
-    thead.appendChild(createHeader('Stock Detail', 'symbol', true));
-    thead.appendChild(createHeader('LTP', 'ltp', true));
-    thead.appendChild(createHeader('RSI', 'rsi', true));
+    thead.appendChild(createHeader('Rank', 'confluence_rank', true)).classList.add('col-rank');
+    thead.appendChild(createHeader('Stock Detail', 'symbol', true)).classList.add('col-symbol');
+    thead.appendChild(createHeader('LTP', 'ltp', true)).classList.add('col-ltp');
+    thead.appendChild(createHeader('RSI', 'rsi', true)).classList.add('col-rsi');
 
     if (conf.ema.enabled) {
         thead.appendChild(createHeader(`EMA (${conf.ema.fast_period}/${conf.ema.slow_period})`, 'ema_signal', false));
@@ -169,10 +171,12 @@ function updateTableHeader() {
         thead.appendChild(createHeader(`Volume (${conf.vol.threshold}x)`, 'volume_ratio', true));
     }
 
-    thead.appendChild(createHeader('Strategy', 'trade_strategy', false));
+    thead.appendChild(createHeader('Strategy', 'trade_strategy', false)).classList.add('col-strategy');
 
     if (conf.patterns && conf.patterns.enabled) {
-        thead.appendChild(createHeader('Formation', 'candlestick_pattern', false));
+        const th = createHeader('Formation', 'candlestick_pattern', false);
+        th.classList.add('formation-col');
+        thead.appendChild(th);
     }
 
     if (conf.dma.enabled) {
@@ -306,12 +310,12 @@ function renderSignals() {
         const row = document.createElement('tr');
 
         let rowHtml = `
-            <td><div class="rank-badge ${score >= 3 ? 'rank-high' : ''}" style="margin-top: 2px;">${score}</div></td>
-            <td>
-                <div class="symbol-name">${stock.symbol}</div>
+            <td class="col-rank"><div class="rank-badge ${score >= 3 ? 'rank-high' : ''}" style="margin-top: 2px;">${score}</div></td>
+            <td class="col-symbol">
+                <div class="symbol-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stock.symbol}</div>
                 <div class="isin-code">${stock.isin}</div>
             </td>
-            <td><div style="font-weight: 700; font-size: 15px;">₹${(stock.ltp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></td>
+            <td class="col-ltp"><div style="font-weight: 700; font-size: 15px;">₹${(stock.ltp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></td>
         `;
 
         // RSI
@@ -321,7 +325,7 @@ function renderSignals() {
             const rsiL = stock.rsi_day_low;
             if (rsi !== null && rsi !== undefined) {
                 rowHtml += `
-                    <td>
+                    <td class="col-rsi">
                         <div class="${rsi > conf.rsi.ob ? 'text-success' : (rsi < conf.rsi.os ? 'text-danger' : '')}" style="font-weight: 600; font-size: 15px;">${rsi.toFixed(1)}</div>
                         <div style="font-size: 10px; color: var(--text-dim); margin-top: 3px; display: flex; gap: 6px;">
                             <span title="Day High" style="color: rgba(34, 197, 94, 0.7)">H: ${rsiH ? rsiH.toFixed(1) : '-'}</span>
@@ -329,7 +333,7 @@ function renderSignals() {
                         </div>
                     </td>`;
             } else {
-                rowHtml += `<td><div style="font-size: 15px; color: var(--text-dim);">-</div></td>`;
+                rowHtml += `<td class="col-rsi"><div style="font-size: 15px; color: var(--text-dim);">-</div></td>`;
             }
         }
 
@@ -374,13 +378,13 @@ function renderSignals() {
         else if (strat === 'OVEREXTENDED') { stratClass = 'bg-stretch'; stratLabel = 'Stretched'; }
 
         rowHtml += `
-            <td>
+            <td class="col-strategy">
                 <div class="strategy-badge ${stratClass}">${stratLabel}</div>
             </td>`;
 
         // Formation Column
         if (conf.patterns && conf.patterns.enabled) {
-            let colHtml = `<td><div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">`;
+            let colHtml = `<td class="formation-col"><div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; overflow: hidden;">`;
 
             const l5_data = stock.last_5_candles;
             let svgHtml = '';
@@ -408,7 +412,8 @@ function renderSignals() {
                 const pad = 2; // pixel padding top/bottom
                 const usableHeight = svgHeight - (pad * 2);
 
-                let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup(this.dataset.candles, '${stock.symbol}')" data-candles="${rawDataJson}">`;
+                const patternLabel = stock.candlestick_pattern || '';
+                let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup('${stock.isin}', '${stock.symbol}', this.dataset.pattern, this.dataset.candles)" data-candles="${rawDataJson}" data-pattern="${patternLabel}">`;
 
                 l5_data.forEach((c, i) => {
                     const isGreen = c.c > c.o;
@@ -460,7 +465,7 @@ function renderSignals() {
                 if (pattern.includes("Bullish")) textColor = "var(--success)";
                 else if (pattern.includes("Bearish")) textColor = "var(--danger)";
 
-                textHtml = `<div style="font-size: 11px; font-weight: 500; color: ${textColor}; line-height: 1.2; text-align: left;">${pattern}</div>`;
+                textHtml = `<div class="pattern-text" style="color: ${textColor};" title="${pattern}">${pattern}</div>`;
             }
 
             if (svgHtml) {
@@ -613,6 +618,13 @@ function loadProfileSettings() {
     document.getElementById('setting-pattern-bullish').checked = conf.patterns.bullish;
     document.getElementById('setting-pattern-bearish').checked = conf.patterns.bearish;
     document.getElementById('setting-pattern-neutral').checked = conf.patterns.neutral;
+
+    if (!conf.chart) conf.chart = { bars: 30, ema: true, st: true, dma: true, vol: true };
+    document.getElementById('setting-chart-bars').value = conf.chart.bars;
+    document.getElementById('setting-chart-ema').checked = conf.chart.ema;
+    document.getElementById('setting-chart-st').checked = conf.chart.st;
+    document.getElementById('setting-chart-dma').checked = conf.chart.dma;
+    document.getElementById('setting-chart-vol').checked = conf.chart.vol;
 }
 
 function saveProfileSettings() {
@@ -666,6 +678,13 @@ function saveProfileSettings() {
     conf.patterns.bearish = document.getElementById('setting-pattern-bearish').checked;
     conf.patterns.neutral = document.getElementById('setting-pattern-neutral').checked;
 
+    if (!conf.chart) conf.chart = {};
+    conf.chart.bars = parseInt(document.getElementById('setting-chart-bars').value) || 30;
+    conf.chart.ema = document.getElementById('setting-chart-ema').checked;
+    conf.chart.st = document.getElementById('setting-chart-st').checked;
+    conf.chart.dma = document.getElementById('setting-chart-dma').checked;
+    conf.chart.vol = document.getElementById('setting-chart-vol').checked;
+
     if (currentMode === profile) {
         updateTableHeader();
         renderSignals();
@@ -675,16 +694,150 @@ function saveProfileSettings() {
         startAutoSync();
     }
 
-    toggleSettings();
+    // Return to dashboard after save
+    switchTab('dashboard');
 }
 
-function toggleSettings() {
-    const modal = document.getElementById('settings-modal');
-    const isHidden = modal.classList.toggle('hidden');
-    if (!isHidden) {
+function switchTab(tabId) {
+    // Hide all main content views
+    document.querySelectorAll('.main-content').forEach(el => el.classList.add('hidden'));
+
+    // Show target view
+    const target = document.getElementById(tabId + '-view');
+    if (target) {
+        target.classList.remove('hidden');
+    }
+
+    // Update sidebar navigation active state
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    const navItem = document.getElementById('nav-' + tabId);
+    if (navItem) {
+        navItem.classList.add('active');
+    }
+
+    // Trigger tab-specific logic
+    if (tabId === 'settings') {
         loadProfileSettings();
+    } else if (tabId === 'db-manager') {
+        fetchDbStats();
+    } else if (tabId === 'scenario-builder') {
+        // Populate Auto-suggest datalist based on active mapped mode context
+        const dataList = document.getElementById('sb-symbol-suggestions');
+        if (dataList) {
+            dataList.innerHTML = '';
+            liveSignals.forEach(item => {
+                if (item.symbol) {
+                    const opt = document.createElement('option');
+                    opt.value = item.symbol;
+                    dataList.appendChild(opt);
+                }
+            });
+        }
     }
 }
+
+async function fetchDbStats() {
+    document.getElementById('db-coverage-tbody').innerHTML = '<tr><td colspan="5" style="text-align: center;"><i class="fas fa-spinner fa-spin"></i> Loading stats...</td></tr>';
+
+    try {
+        const res = await fetch('/api/db/stats');
+        const result = await res.json();
+
+        if (result.status === 'success') {
+            document.getElementById('db-raw-rows').innerText = (result.data.raw_rows || 0).toLocaleString();
+            document.getElementById('db-calc-rows').innerText = (result.data.calc_rows || 0).toLocaleString();
+
+            const tbody = document.getElementById('db-coverage-tbody');
+            tbody.innerHTML = '';
+
+            if (Object.keys(result.data.coverage).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;" class="text-dim">No raw OHLCV data found.</td></tr>';
+            } else {
+                for (const [tf, stats] of Object.entries(result.data.coverage)) {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td style="font-weight: 600;">${tf}</td>
+                            <td>${stats.min_date || '-'}</td>
+                            <td>${stats.max_date || '-'}</td>
+                            <td style="color: var(--primary); font-weight: 700;">${stats.days || 0}</td>
+                            <td>${(stats.count || 0).toLocaleString()}</td>
+                        </tr>
+                    `;
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load DB Stats", e);
+        document.getElementById('db-coverage-tbody').innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger);">Failed to load stats</td></tr>';
+    }
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirm-modal').classList.add('hidden');
+    document.getElementById('confirm-input').value = '';
+}
+
+async function clearDbData(type) {
+    const modal = document.getElementById('confirm-modal');
+    const msgEl = document.getElementById('confirm-modal-msg');
+    const input = document.getElementById('confirm-input');
+    const btn = document.getElementById('confirm-action-btn');
+    const label = document.getElementById('confirm-type-label');
+
+    let msg = "";
+    let code = "CONFIRM";
+
+    if (type === 'calculated') {
+        msg = "You are about to delete all <strong>Calculated Indicator Signals</strong>. Market history will remain intact, but indicators will need to be recalculated on the next run.";
+        code = "CLEAN";
+    } else if (type === 'raw') {
+        msg = "You are about to delete all <strong>Raw OHLCV Market Data</strong>. This will force the system to redownload everything from the Upstox API.";
+        code = "DELETE";
+    } else if (type === 'all') {
+        msg = "<strong>CRITICAL WARNING:</strong> You are about to completely wipe the entire application database (Both signals and history). This action is irreversible.";
+        code = "PURGE";
+    }
+
+    msgEl.innerHTML = msg;
+    label.innerText = `Type "${code}" to authorize:`;
+    input.placeholder = `Enter ${code}...`;
+    modal.classList.remove('hidden');
+    input.focus();
+
+    btn.onclick = async () => {
+        if (input.value.toUpperCase() !== code) {
+            alert("Authorization code mismatch. Action cancelled.");
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
+        try {
+            const res = await fetch('/api/db/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target: type })
+            });
+            const result = await res.json();
+
+            if (result.status === 'success') {
+                closeConfirmModal();
+                alert("Database task completed successfully.");
+                fetchDbStats();
+            } else {
+                alert("Error: " + result.message);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Failed to communicate with the server.");
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Execute Action';
+        }
+    };
+}
+
 
 function toggleSidebar() {
     const sidebar = document.getElementById('main-sidebar');
@@ -940,33 +1093,7 @@ async function refreshSignals() {
     }
 }
 
-// --- Strategy Builder UI Logic ---
-function switchTab(tabId) {
-    if (tabId === 'dashboard') {
-        document.getElementById('dashboard-view').classList.remove('hidden');
-        document.getElementById('scenario-builder-view').classList.add('hidden');
-        document.getElementById('nav-dashboard').classList.add('active');
-        document.getElementById('nav-scenario-builder').classList.remove('active');
-    } else if (tabId === 'scenario-builder') {
-        document.getElementById('dashboard-view').classList.add('hidden');
-        document.getElementById('scenario-builder-view').classList.remove('hidden');
-        document.getElementById('nav-dashboard').classList.remove('active');
-        document.getElementById('nav-scenario-builder').classList.add('active');
-
-        // Populate Auto-suggest datalist based on active mapped mode
-        const dataList = document.getElementById('sb-symbol-suggestions');
-        if (dataList) {
-            dataList.innerHTML = '';
-            liveSignals.forEach(item => {
-                if (item.symbol) {
-                    const opt = document.createElement('option');
-                    opt.value = item.symbol;
-                    dataList.appendChild(opt);
-                }
-            });
-        }
-    }
-}
+// Consolidated switchTab logic above. Removed duplicate definition here.
 
 async function runAdvancedBacktest() {
     const btn = document.getElementById('run-scenario-btn');
@@ -1160,18 +1287,7 @@ function drawBacktestGrid(symbolFilter = 'ALL') {
     setTimeout(() => setupColumnToggle('#bt-signal-table', 'bt-col-toggle-container'), 0);
 }
 
-// --- Initialize ---
-window.onload = () => {
-    setMode('swing');
-    setupRSISlider(); // Initialize Dual RSI Slider
-
-    window.onclick = function (event) {
-        const modal = document.getElementById('settings-modal');
-        if (event.target == modal) {
-            toggleSettings();
-        }
-    }
-};
+// Initialized via DOMContentLoaded below.
 
 function setupRSISlider() {
     const minInput = document.getElementById('filter-rsi-min');
@@ -1295,87 +1411,18 @@ document.addEventListener('click', function (event) {
     }
 });
 
-function showCandlesPopup(candlesJsonStr, symbol) {
-    let candles = [];
-    try {
-        candles = JSON.parse(decodeURIComponent(candlesJsonStr));
-    } catch (e) {
-        console.error("Failed to parse candle JSON", e);
-        return;
-    }
+// --- Candle Zoom Modal with Indicators ---
+if (typeof fullChartCache === 'undefined') {
+    var fullChartCache = {};
+}
 
-    if (!candles || candles.length === 0) return;
+async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJson = '') {
+    const config = CONFIGS[currentMode];
+    const chartOpts = config.chart || { bars: 30, ema: true, st: true, dma: true, vol: true };
+    const barsRequested = chartOpts.bars || 30;
 
-    let minLow = Infinity;
-    let maxHigh = -Infinity;
-    candles.forEach(c => {
-        if (c.l < minLow) minLow = c.l;
-        if (c.h > maxHigh) maxHigh = c.h;
-    });
-
-    let range = maxHigh - minLow;
-    if (range === 0) range = maxHigh * 0.01 || 1;
-
-    const svgHeight = 280; // Buffer space
-    const candleWidth = 36;
-    const gap = 16;
-    const svgWidth = (candleWidth * 5) + (gap * 4) + 80; // Add padding for price labels
-    const padTop = 20;
-    const padBottom = 40;
-    const usableHeight = svgHeight - padTop - padBottom;
-
-    let svgContent = `<svg width="100%" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background: rgba(14, 21, 31, 1); border-radius: 8px;">`;
-
-    // Draw Grid & Price Labels
-    const steps = 4;
-    for (let i = 0; i <= steps; i++) {
-        const yLine = padTop + (usableHeight / steps) * i;
-        const priceVal = maxHigh - (range / steps) * i;
-        svgContent += `<line x1="0" y1="${yLine}" x2="${svgWidth - 60}" y2="${yLine}" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4 4" />`;
-        svgContent += `<text x="${svgWidth - 50}" y="${yLine + 4}" fill="var(--text-dim)" font-size="12" font-family="sans-serif">${priceVal.toFixed(2)}</text>`;
-    }
-
-    // Draw Candles
-    candles.forEach((c, i) => {
-        const isGreen = c.c > c.o;
-        const color = isGreen ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
-        const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2) + 20; // Offset from left edge
-
-        const yHigh = padTop + usableHeight - ((c.h - minLow) / range) * usableHeight;
-        const yLow = padTop + usableHeight - ((c.l - minLow) / range) * usableHeight;
-        const yOpen = padTop + usableHeight - ((c.o - minLow) / range) * usableHeight;
-        const yClose = padTop + usableHeight - ((c.c - minLow) / range) * usableHeight;
-
-        const topBody = Math.min(yOpen, yClose);
-        const bottomBody = Math.max(yOpen, yClose);
-        let bodyHeight = bottomBody - topBody;
-
-        if (Math.abs(c.c - c.o) < 0.0001) {
-            bodyHeight = Math.max(2, usableHeight * 0.01);
-        } else if (bodyHeight < 1) {
-            bodyHeight = 1;
-        }
-
-        svgContent += `<line x1="${xCenter}" y1="${yHigh}" x2="${xCenter}" y2="${yLow}" stroke="${color}" stroke-width="2" opacity="1.0" shape-rendering="crispEdges"/>`;
-        const rectX = xCenter - (candleWidth / 2);
-        svgContent += `<rect x="${rectX}" y="${topBody}" width="${candleWidth}" height="${bodyHeight}" fill="${color}" opacity="1.0" shape-rendering="crispEdges"/>`;
-    });
-    // Add crosshair elements
-    svgContent += `<line id="crosshair-x" x1="0" y1="0" x2="0" y2="${svgHeight}" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display: none; pointer-events: none;" />`;
-    svgContent += `<line id="crosshair-y" x1="0" y1="0" x2="${svgWidth}" y2="0" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display: none; pointer-events: none;" />`;
-
-    // Add Price label background and text for y-axis
-    svgContent += `<rect id="crosshair-y-bg" x="${svgWidth - 60}" y="0" width="60" height="20" fill="#1E222D" stroke="rgba(255,255,255,0.1)" stroke-width="1" rx="2" style="display: none; pointer-events: none;" />`;
-    svgContent += `<text id="crosshair-y-label" x="${svgWidth - 30}" y="14" fill="#ffffff" font-size="12" font-family="sans-serif" text-anchor="middle" style="display: none; pointer-events: none;"></text>`;
-
-    // Add OHLC tooltip overlay
-    svgContent += `<text id="crosshair-ohlc" x="10" y="20" fill="var(--text-dim)" font-size="12" font-family="sans-serif" style="display: none; pointer-events: none;"></text>`;
-
-    // Add Date label background and text for x-axis
-    svgContent += `<rect id="crosshair-x-bg" x="0" y="${svgHeight - 25}" width="140" height="24" fill="#1E222D" stroke="rgba(255,255,255,0.1)" stroke-width="1" rx="2" style="display: none; pointer-events: none;" />`;
-    svgContent += `<text id="crosshair-x-label" x="0" y="${svgHeight - 8}" fill="#ffffff" font-size="11" font-family="sans-serif" text-anchor="middle" style="display: none; pointer-events: none;"></text>`;
-
-    svgContent += `</svg>`;
+    // Determine timeframe string for display
+    const tfDisplay = currentTimeframe || "Daily";
 
     // Create/Reuse Modal
     let modal = document.getElementById('candle-zoom-modal');
@@ -1384,142 +1431,262 @@ function showCandlesPopup(candlesJsonStr, symbol) {
         modal.id = 'candle-zoom-modal';
         modal.style.cssText = `
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.8); backdrop-filter: blur(4px);
+            background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
             z-index: 9999; display: flex; align-items: center; justify-content: center;
         `;
         document.body.appendChild(modal);
-
-        // Close on background click
-        modal.onclick = (e) => {
-            if (e.target === modal) modal.style.display = 'none';
-        };
+        modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
     }
 
-    // Determine timeframe string based on active mode
-    let tfDisplay = "1 Day";
-    if (activeStatFilter && activeStatFilter.includes("min")) {
-        tfDisplay = activeStatFilter; // Fallback to current filtered if passed somehow differently
-    } else {
-        tfDisplay = (currentMode === 'intraday') ? currentTimeframe : "1 Day";
-    }
-
+    // Initial Loading UI
     modal.innerHTML = `
-        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 12px; padding: 24px; width: 500px; max-width: 90vw; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; width: 900px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.6); position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
                 <div>
-                    <h3 style="margin: 0; font-size: 18px;">${symbol}</h3>
-                    <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Last 5 Candles (${tfDisplay})</div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <h3 style="margin: 0; font-size: 22px; font-weight: 700;">${symbol}</h3>
+                        <span style="padding: 2px 8px; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 11px; color: var(--text-dim); border: 1px solid var(--border-color);">${tfDisplay}</span>
+                    </div>
+                     ${patternName ? `
+                        <div style="margin-top: 6px; font-size: 14px; font-weight: 600; color: ${patternName.includes('Bullish') ? 'var(--success)' : (patternName.includes('Bearish') ? 'var(--danger)' : 'var(--text-main)')};">
+                            Condition: ${patternName}
+                        </div>
+                    ` : ''}
                 </div>
-                <button onclick="document.getElementById('candle-zoom-modal').style.display='none'" style="background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 20px;">&times;</button>
+                <button onclick="document.getElementById('candle-zoom-modal').style.display='none'" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-dim); cursor: pointer; font-size: 20px; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">&times;</button>
             </div>
-            <div style="width: 100%; display: flex; justify-content: center; position: relative;">
-                <div id="candle-svg-wrapper" style="width: 100%; max-width: ${svgWidth}px; position: relative;">
-                    ${svgContent}
+            
+            <div id="zoom-chart-content" style="min-height: 400px; display: flex; align-items: center; justify-content: center;">
+                <div style="text-align: center; color: var(--text-dim);">
+                    <i class="fas fa-spinner fa-spin fa-2x" style="margin-bottom: 12px; color: var(--primary);"></i>
+                    <p>Loading High-Detail Chart...</p>
                 </div>
             </div>
+            
+            <div id="zoom-chart-legend" style="margin-top: 16px; display: flex; gap: 16px; font-size: 11px; flex-wrap: wrap;"></div>
         </div>
     `;
     modal.style.display = 'flex';
 
-    // Crosshair logic
-    const wrapper = document.getElementById('candle-svg-wrapper');
-    const svgEl = wrapper.querySelector('svg');
-    const chX = document.getElementById('crosshair-x');
-    const chY = document.getElementById('crosshair-y');
-    const chYBg = document.getElementById('crosshair-y-bg');
-    const chYLabel = document.getElementById('crosshair-y-label');
-    const chOhlc = document.getElementById('crosshair-ohlc');
-    const chXBg = document.getElementById('crosshair-x-bg');
-    const chXLabel = document.getElementById('crosshair-x-label');
+    // Fetch Enriched Data
+    const cacheKey = `${isin}_${tfDisplay}_${barsRequested}`;
+    let chartData = fullChartCache[cacheKey];
 
-    svgEl.addEventListener('mousemove', (e) => {
-        const rect = svgEl.getBoundingClientRect();
-
-        // SVG intrinsic coordinates
-        const scaleX = svgWidth / rect.width;
-        const scaleY = svgHeight / rect.height;
-
-        const x = (e.clientX - rect.left) * scaleX;
-        const y = (e.clientY - rect.top) * scaleY;
-
-        // Show crosshairs
-        chX.style.display = 'block';
-        chY.style.display = 'block';
-        chYBg.style.display = 'block';
-        chYLabel.style.display = 'block';
-        chOhlc.style.display = 'block';
-        chXBg.style.display = 'block';
-        chXLabel.style.display = 'block';
-
-        chX.setAttribute('x1', x);
-        chX.setAttribute('x2', x);
-        chY.setAttribute('y1', y);
-        chY.setAttribute('y2', y);
-
-        // Price calc based on Y
-        const inverseY = usableHeight - (y - padTop);
-        let ratio = inverseY / usableHeight;
-        if (ratio < 0) ratio = 0;
-        if (ratio > 1) ratio = 1;
-        const priceAtCursor = minLow + (ratio * range);
-
-        chYBg.setAttribute('y', y - 10);
-        chYLabel.setAttribute('y', y + 4);
-        chYLabel.textContent = priceAtCursor.toFixed(2);
-
-        // Find nearest candle for OHLC
-        let nearestIdx = -1;
-        let minDist = Infinity;
-        candles.forEach((c, i) => {
-            const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2) + 20;
-            const dist = Math.abs(x - xCenter);
-            if (dist < minDist) {
-                minDist = dist;
-                nearestIdx = i;
+    if (!chartData) {
+        try {
+            const apiTf = TF_MAP[currentTimeframe] || '1d';
+            const res = await fetch(`/api/chart/details?isin=${isin}&timeframe=${apiTf}&profile=${currentMode}&bars=${barsRequested}`);
+            const result = await res.json();
+            if (result.status === 'success') {
+                chartData = result.data;
+                fullChartCache[cacheKey] = chartData;
             }
-        });
+        } catch (err) {
+            console.error("Chart fetch failed", err);
+        }
+    }
 
-        if (nearestIdx !== -1) {
-            const c = candles[nearestIdx];
-            const isG = c.c > c.o;
-            const color = isG ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
-            chOhlc.innerHTML = `O:<tspan fill="${color}">${c.o.toFixed(2)}</tspan> H:<tspan fill="${color}">${c.h.toFixed(2)}</tspan> L:<tspan fill="${color}">${c.l.toFixed(2)}</tspan> C:<tspan fill="${color}">${c.c.toFixed(2)}</tspan>`;
+    if (!chartData && fallbackCandlesJson) {
+        chartData = JSON.parse(decodeURIComponent(fallbackCandlesJson));
+    }
 
-            // Snap X crosshair to candle center
-            const snapX = (nearestIdx * (candleWidth + gap)) + (candleWidth / 2) + 20;
-            chX.setAttribute('x1', snapX);
-            chX.setAttribute('x2', snapX);
+    if (chartData && chartData.length > 0) {
+        renderEnrichedChart(chartData, symbol, chartOpts, tfDisplay);
+    } else {
+        document.getElementById('zoom-chart-content').innerHTML = `
+            <div style="color: var(--danger); text-align: center;">
+                <i class="fas fa-exclamation-triangle fa-2x" style="margin-bottom: 12px;"></i>
+                <p>Failed to load detailed chart data.</p>
+            </div>
+        `;
+    }
+}
 
-            // X Axis Time label
-            if (c.t) {
-                try {
-                    const dt = new Date(c.t);
-                    const formattedDate = dt.toLocaleString('en-US', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-                    chXLabel.textContent = formattedDate;
+function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
+    const container = document.getElementById('zoom-chart-content');
+    const legend = document.getElementById('zoom-chart-legend');
+    container.innerHTML = '';
+    legend.innerHTML = '';
 
-                    const labelHalfWidth = 65; // Approx half width of the 140px background box
-                    let rectXPos = snapX - labelHalfWidth;
+    // 1. Calculate Scaling
+    let minL = Infinity;
+    let maxH = -Infinity;
+    let maxV = 0;
 
-                    // Keep rectangle within viewport
-                    if (rectXPos < 0) rectXPos = 0;
-                    if (rectXPos + (labelHalfWidth * 2) > svgWidth) rectXPos = svgWidth - (labelHalfWidth * 2);
+    candles.forEach(c => {
+        if (c.l < minL) minL = c.l;
+        if (c.h > maxH) maxH = c.h;
+        if (c.v > maxV) maxV = c.v;
 
-                    chXBg.setAttribute('x', rectXPos);
-                    chXLabel.setAttribute('x', rectXPos + labelHalfWidth);
-                } catch (e) {
-                    chXLabel.textContent = c.t;
+        // Include indicator values in scale
+        if (opts.ema) {
+            Object.keys(c).forEach(key => {
+                if (key.startsWith('EMA_') && c[key]) {
+                    if (c[key] < minL) minL = c[key];
+                    if (c[key] > maxH) maxH = c[key];
                 }
-            }
+            });
+        }
+        if (opts.st && c.ST_value) {
+            if (c.ST_value < minL) minL = c.ST_value;
+            if (c.ST_value > maxH) maxH = c.ST_value;
         }
     });
 
-    svgEl.addEventListener('mouseleave', () => {
-        chX.style.display = 'none';
-        chY.style.display = 'none';
-        chYBg.style.display = 'none';
-        chYLabel.style.display = 'none';
-        chOhlc.style.display = 'none';
-        chXBg.style.display = 'none';
-        chXLabel.style.display = 'none';
+    let priceRange = maxH - minL;
+    if (priceRange === 0) priceRange = maxH * 0.05 || 1;
+    maxH += priceRange * 0.08;
+    minL -= priceRange * 0.08;
+    priceRange = maxH - minL;
+
+    // 2. SVG Dimensions
+    const svgWidth = container.clientWidth || 850;
+    const svgHeight = 400;
+    const chartPaddingRight = 70;
+    const chartAreaWidth = svgWidth - chartPaddingRight;
+    const padTop = 30;
+    const padBottom = 50;
+    const usableHeight = svgHeight - padTop - padBottom;
+
+    const candleCount = candles.length;
+    const barWidth = (chartAreaWidth / candleCount) * 0.75;
+    const gap = (chartAreaWidth / candleCount) * 0.25;
+
+    let svg = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background: #0d1117; border-radius: 8px;">`;
+
+    // 3. Grid Lines & Price Labels
+    const steps = 5;
+    for (let i = 0; i <= steps; i++) {
+        const yLine = padTop + (usableHeight / steps) * i;
+        const priceVal = maxH - (priceRange / steps) * i;
+        svg += `<line x1="0" y1="${yLine}" x2="${chartAreaWidth}" y2="${yLine}" stroke="rgba(255,255,255,0.05)" stroke-width="1" />`;
+        svg += `<text x="${chartAreaWidth + 10}" y="${yLine + 4}" fill="var(--text-dim)" font-size="11" font-family="sans-serif">${priceVal.toFixed(2)}</text>`;
+    }
+
+    // 4. Draw Indicators (Polylines)
+    // EMA Lines
+    if (opts.ema) {
+        const emaKeys = Object.keys(candles[0]).filter(k => k.startsWith('EMA_'));
+        const colors = ['#2962FF', '#FF9800', '#E91E63'];
+        emaKeys.forEach((key, idx) => {
+            let points = "";
+            candles.forEach((c, i) => {
+                const val = c[key];
+                if (val) {
+                    const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
+                    const y = padTop + usableHeight - ((val - minL) / priceRange) * usableHeight;
+                    points += `${x},${y} `;
+                }
+            });
+            const color = colors[idx % colors.length];
+            svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.8" />`;
+            legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; border-radius:3px; background:${color}"></div>${key}</div>`;
+        });
+    }
+
+    // Supertrend
+    if (opts.st) {
+        let stPoints = "";
+        candles.forEach((c, i) => {
+            if (c.ST_value) {
+                const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
+                const y = padTop + usableHeight - ((c.ST_value - minL) / priceRange) * usableHeight;
+                stPoints += `${x},${y} `;
+            }
+        });
+        if (stPoints) {
+            svg += `<polyline points="${stPoints}" fill="none" stroke="rgba(245, 158, 11, 1.0)" stroke-width="2" stroke-dasharray="4 2" />`;
+            legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:2px; background:#f59e0b"></div>Supertrend</div>`;
+        }
+    }
+
+    // DMA References (Horizontal Lines)
+    if (opts.dma) {
+        const dmaKeys = Object.keys(candles[0]).filter(k => k.startsWith('DMA_'));
+        dmaKeys.forEach((key) => {
+            const val = candles[0][key];
+            if (val && val >= minL && val <= maxH) {
+                const y = padTop + usableHeight - ((val - minL) / priceRange) * usableHeight;
+                svg += `<line x1="0" y1="${y}" x2="${chartAreaWidth}" y2="${y}" stroke="rgba(168, 85, 247, 0.4)" stroke-width="1" stroke-dasharray="8 4" />`;
+                svg += `<text x="5" y="${y - 4}" fill="rgba(168, 85, 247, 0.8)" font-size="9">${key}</text>`;
+            }
+        });
+    }
+
+    // 5. Volume Bars (Background)
+    if (opts.vol && maxV > 0) {
+        candles.forEach((c, i) => {
+            const vHeight = (c.v / maxV) * (usableHeight * 0.2);
+            const x = (i * (barWidth + gap)) + 5;
+            const y = svgHeight - padBottom - vHeight;
+            const color = c.c >= c.o ? 'rgba(8, 153, 129, 0.15)' : 'rgba(242, 54, 69, 0.15)';
+            svg += `<rect x="${x}" y="${y}" width="${barWidth}" height="${vHeight}" fill="${color}" />`;
+        });
+    }
+
+    // 6. Draw Candles
+    candles.forEach((c, i) => {
+        const isGreen = c.c >= c.o;
+        const color = isGreen ? '#089981' : '#F23645';
+        const xCenter = (i * (barWidth + gap)) + (barWidth / 2) + 5;
+
+        const yHigh = padTop + usableHeight - ((c.h - minL) / priceRange) * usableHeight;
+        const yLow = padTop + usableHeight - ((c.l - minL) / priceRange) * usableHeight;
+        const yOpen = padTop + usableHeight - ((c.o - minL) / priceRange) * usableHeight;
+        const yClose = padTop + usableHeight - ((c.c - minL) / priceRange) * usableHeight;
+
+        const topBody = Math.min(yOpen, yClose);
+        const bottomBody = Math.max(yOpen, yClose);
+        let bodyH = Math.max(1, bottomBody - topBody);
+
+        svg += `<line x1="${xCenter}" y1="${yHigh}" x2="${xCenter}" y2="${yLow}" stroke="${color}" stroke-width="1.5" />`;
+        svg += `<rect x="${xCenter - (barWidth / 2)}" y="${topBody}" width="${barWidth}" height="${bodyH}" fill="${color}" />`;
     });
+
+    // 7. Crosshair interactivity
+    svg += `<line id="ch-x" x1="0" y1="0" x2="0" y2="${svgHeight}" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display:none; pointer-events:none;"/>`;
+    svg += `<line id="ch-y" x1="0" y1="0" x2="${svgWidth}" y2="0" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display:none; pointer-events:none;"/>`;
+    svg += `<text id="ch-ohlc" x="10" y="20" fill="var(--text-dim)" font-size="12" font-family="sans-serif"></text>`;
+
+    svg += `</svg>`;
+    container.innerHTML = svg;
+
+    const svgEl = container.querySelector('svg');
+    const chX = document.getElementById('ch-x');
+    const chY = document.getElementById('ch-y');
+    const chOhlc = document.getElementById('ch-ohlc');
+
+    svgEl.onmousemove = (e) => {
+        const r = svgEl.getBoundingClientRect();
+        const x = e.clientX - r.left;
+        const y = e.clientY - r.top;
+
+        chX.style.display = 'block';
+        chY.style.display = 'block';
+        chX.setAttribute('x1', x); chX.setAttribute('x2', x);
+        chY.setAttribute('y1', y); chY.setAttribute('y2', y);
+
+        // Nearest Candle
+        const idx = Math.floor(x / (barWidth + gap));
+        if (idx >= 0 && idx < candles.length) {
+            const c = candles[idx];
+            const color = c.c >= c.o ? '#089981' : '#F23645';
+            chOhlc.innerHTML = `${c.t} | O:${c.o.toFixed(1)} H:${c.h.toFixed(1)} L:${c.l.toFixed(1)} C:<tspan fill="${color}">${c.c.toFixed(1)}</tspan>`;
+
+            // Snap X
+            const snapX = (idx * (barWidth + gap)) + (barWidth / 2) + 5;
+            chX.setAttribute('x1', snapX); chX.setAttribute('x2', snapX);
+        }
+    };
+    svgEl.onmouseleave = () => {
+        chX.style.display = 'none'; chY.style.display = 'none';
+    };
 }
+
+// --- App Initialization ---
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("App Initialized. Defaulting to Swing Dashboard.");
+    setMode('swing');
+    switchTab('dashboard');
+    setupRSISlider(); // Initialize Dual RSI Slider
+});
