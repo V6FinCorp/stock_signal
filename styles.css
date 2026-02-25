@@ -470,9 +470,15 @@ h1 {
 }
 
 .formation-col {
-    width: 180px;
-    min-width: 180px;
-    max-width: 180px;
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+}
+
+.pattern-name-col {
+    width: 160px;
+    min-width: 160px;
+    max-width: 160px;
 }
 
 .pattern-text {

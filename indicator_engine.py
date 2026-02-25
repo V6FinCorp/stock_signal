@@ -519,23 +519,66 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
     """Calculates full technical indicators for a chart range. Used for zoomed modal charts."""
     settings = await get_profile_settings(app_pool, profile_id)
     
+    # Determine base timeframe and required limit
+    if timeframe in ['1w', '1mo']:
+        base_timeframe = '1d'
+        limit = 1500
+    elif timeframe in ['15m', '30m', '60m']:
+        base_timeframe = '5m'
+        limit = 1000 # 30 bars of 60m = 360 base candles
+    else:
+        base_timeframe = timeframe
+        limit = max(250, bars + 100)
+
     async with app_pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            # Need enough data for indicator calculation (e.g. 200 DMA)
-            lookback = max(250, bars + 50) 
             await cur.execute(
-                "SELECT timestamp, open, high, low, close, volume FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = %s ORDER BY timestamp DESC LIMIT %s",
-                (isin, timeframe, lookback)
+                """
+                SELECT timestamp, open, high, low, close, volume 
+                FROM app_sg_ohlcv_prices 
+                WHERE isin = %s AND timeframe = %s 
+                ORDER BY timestamp DESC LIMIT %s
+                """,
+                (isin, base_timeframe, limit)
             )
             rows = await cur.fetchall()
             if not rows: return []
             
             df = pd.DataFrame(rows)
-            df = df.iloc[::-1].reset_index(drop=True)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df = df.sort_values('timestamp').reset_index(drop=True)
             df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
             
+            # Resampling Logic (Matches process_profile)
+            if timeframe != base_timeframe:
+                df.set_index('timestamp', inplace=True)
+                resample_rule = {
+                    '1w': 'W-FRI',
+                    '1mo': 'ME',
+                    '15m': '15min',
+                    '30m': '30min',
+                    '60m': '60min'
+                }.get(timeframe)
+                
+                resample_kwargs = {}
+                if timeframe in ['15m', '30m', '60m']:
+                    resample_kwargs['offset'] = '15min'
+                
+                df = df.resample(resample_rule, **resample_kwargs).agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+                df.reset_index(inplace=True)
+
             # Calculate Indicators for the enrichment
             # --- EMA ---
+            if settings['RSI']['enabled']:
+                rsi_len = settings['RSI']['period']
+                df[f'RSI_{rsi_len}'] = ta.rsi(df['close'], length=rsi_len)
+
             if settings['EMA']['enabled']:
                 fast_len = settings['EMA']['fast_period']
                 slow_len = settings['EMA']['slow_period']
@@ -565,7 +608,6 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                         if len(df_1d) >= p:
                             sma_s = ta.sma(df_1d['close'], length=p)
                             if sma_s is not None and not pd.isna(sma_s.iloc[-1]):
-                                # Attach only latest DMA as a horizontal line reference
                                 df[f"DMA_{p}"] = float(sma_s.iloc[-1])
             
             # Return requested window
@@ -578,7 +620,6 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                 'open': 'o', 'high': 'h', 'low': 'l', 'close': 'c', 'volume': 'v'
             })
             
-            # Keep indicator columns as is (e.g., ST_value, EMA_9)
             return df.to_dict(orient='records')
 
 async def main():

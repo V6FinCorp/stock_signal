@@ -177,6 +177,10 @@ function updateTableHeader() {
         const th = createHeader('Formation', 'candlestick_pattern', false);
         th.classList.add('formation-col');
         thead.appendChild(th);
+
+        const thText = createHeader('Pattern Name', 'candlestick_pattern', false);
+        thText.classList.add('pattern-name-col');
+        thead.appendChild(thText);
     }
 
     if (conf.dma.enabled) {
@@ -382,9 +386,10 @@ function renderSignals() {
                 <div class="strategy-badge ${stratClass}">${stratLabel}</div>
             </td>`;
 
-        // Formation Column
+        // Formation & Pattern Columns
         if (conf.patterns && conf.patterns.enabled) {
-            let colHtml = `<td class="formation-col"><div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; overflow: hidden;">`;
+            let sparklineHtml = `<td class="formation-col"><div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; overflow: hidden;">`;
+            let patternNameHtml = `<td class="pattern-name-col">`;
 
             const l5_data = stock.last_5_candles;
             let svgHtml = '';
@@ -405,11 +410,11 @@ function renderSignals() {
                 if (range === 0) range = maxHigh * 0.01 || 1;
 
                 // TradingView Aesthetic Adjustments
-                const svgHeight = 28; // slightly taller for main row
+                const svgHeight = 28;
                 const candleWidth = 8;
                 const gap = 4;
                 const svgWidth = (candleWidth * 5) + (gap * 4);
-                const pad = 2; // pixel padding top/bottom
+                const pad = 2;
                 const usableHeight = svgHeight - (pad * 2);
 
                 const patternLabel = stock.candlestick_pattern || '';
@@ -417,11 +422,9 @@ function renderSignals() {
 
                 l5_data.forEach((c, i) => {
                     const isGreen = c.c > c.o;
-                    // Exact TradingView Hex Colors
                     const color = isGreen ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
                     const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2);
 
-                    // Normalize coordinates (invert Y axis for SVG)
                     const yHigh = pad + usableHeight - ((c.h - minLow) / range) * usableHeight;
                     const yLow = pad + usableHeight - ((c.l - minLow) / range) * usableHeight;
                     const yOpen = pad + usableHeight - ((c.o - minLow) / range) * usableHeight;
@@ -438,7 +441,6 @@ function renderSignals() {
                     }
 
                     svgContent += `<line x1="${xCenter}" y1="${yHigh}" x2="${xCenter}" y2="${yLow}" stroke="${color}" stroke-width="1.2" opacity="1.0" shape-rendering="crispEdges"/>`;
-
                     const rectX = xCenter - (candleWidth / 2);
                     svgContent += `<rect x="${rectX}" y="${topBody}" width="${candleWidth}" height="${bodyHeight}" fill="${color}" opacity="1.0" shape-rendering="crispEdges"/>`;
                 });
@@ -457,7 +459,7 @@ function renderSignals() {
                 </div>`;
             }
 
-            // Textual subtext logic
+            // Textual pattern logic
             const pattern = stock.candlestick_pattern;
             let textHtml = '';
             if (pattern) {
@@ -468,17 +470,23 @@ function renderSignals() {
                 textHtml = `<div class="pattern-text" style="color: ${textColor};" title="${pattern}">${pattern}</div>`;
             }
 
+            // Populate Sparkline Column
             if (svgHtml) {
-                colHtml += svgHtml;
-                if (textHtml) colHtml += textHtml;
-            } else if (textHtml) {
-                colHtml += textHtml;
+                sparklineHtml += svgHtml;
             } else {
-                colHtml += `<div style="font-size: 13px; color: var(--text-dim);">-</div>`;
+                sparklineHtml += `<div style="font-size: 13px; color: var(--text-dim);">-</div>`;
             }
+            sparklineHtml += `</div></td>`;
 
-            colHtml += `</div></td>`;
-            rowHtml += colHtml;
+            // Populate Pattern Name Column
+            if (textHtml) {
+                patternNameHtml += textHtml;
+            } else {
+                patternNameHtml += `<div style="font-size: 13px; color: var(--text-dim);">-</div>`;
+            }
+            patternNameHtml += `</td>`;
+
+            rowHtml += sparklineHtml + patternNameHtml;
         }
 
         if (conf.dma.enabled) {
@@ -1346,7 +1354,7 @@ function setupColumnToggle(tableSelector, containerId) {
         tableColumnStates[tableSelector] = Array.from(headers).map(th => {
             const text = th.textContent.trim();
             // Default these specific columns to hidden
-            return text !== 'Strategy' && text !== 'Trade Plan';
+            return text !== 'Strategy' && text !== 'Trade Plan' && text !== 'Pattern Name';
         });
     }
 
