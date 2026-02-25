@@ -157,36 +157,28 @@ async def main():
             # Fetch all Active companies
             try:
                 await cur.execute("""
-                    SELECT bs_ISIN as isin, bs_SYMBOL as symbol 
-                    FROM vw_e_bs_companies_all 
-                    WHERE BINARY bs_Status = 'Active'
+                    SELECT c.bs_ISIN as isin, c.bs_SYMBOL as symbol, f.dim_favourites
+                    FROM vw_e_bs_companies_all c
+                    LEFT JOIN vw_e_bs_companies_favourite_indices f ON c.bs_SYMBOL = f.bs_symbol
+                    WHERE BINARY c.bs_Status = 'Active'
                 """)
                 active_companies = await cur.fetchall()
             except Exception as e:
-                logging.error(f"Failed to read 'vw_e_bs_companies_all' from Datamart DB: {e}")
+                logging.error(f"Failed to read companies from Datamart DB: {e}")
                 return
             
-            # Fetch Favourite Intraday Companies (to flag which ones get 5m data)
-            try:
-                await cur.execute("""
-                    SELECT bs_symbol as symbol 
-                    FROM vw_e_bs_companies_favourite_indices
-                """)
-                favourite_rows = await cur.fetchall()
-                intraday_symbols = {row['symbol'] for row in favourite_rows}
-            except Exception as e:
-                logging.warning(f"Failed to read 'vw_e_bs_companies_favourite_indices': {e}. Continuing without intraday flags.")
-                intraday_symbols = set()
-                
+            # Setup lists based on dim_favourites
+            intraday_symbols = {c['symbol'] for c in active_companies if c['dim_favourites'] == 1}
+            swing_symbols = {c['symbol'] for c in active_companies if c['dim_favourites'] == 2}
+            
             # Filter the active companies based on mode
             if mode == "intraday":
                 active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
             elif mode == "swing":
-                # User requested to limit Swing mode to favorites for now to save time
-                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
+                active_companies = [c for c in active_companies if c['symbol'] in swing_symbols]
             else:
-                # "all" mode: fetch everything (can be heavy, originally limited to intraday)
-                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
+                # "all" mode: fetch both
+                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols or c['symbol'] in swing_symbols]
             
     if not active_companies:
         logging.warning("No active companies found in Datamart DB.")

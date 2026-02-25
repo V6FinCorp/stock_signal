@@ -89,9 +89,13 @@ def calculate_indicators(df, settings):
         df[f'EMA_{slow_len}'] = ta.ema(df['close'], length=slow_len)
         
         # Determine signal based on current values
-        # We can also detect crossover by comparing with previous values if we wanted to
-        # For simplicity, BUY if Fast > Slow, else SELL
-        df['ema_signal'] = np.where(df[f'EMA_{fast_len}'] > df[f'EMA_{slow_len}'], 'BUY', 'SELL')
+        fast_s = pd.to_numeric(df[f'EMA_{fast_len}'], errors='coerce')
+        slow_s = pd.to_numeric(df[f'EMA_{slow_len}'], errors='coerce')
+        
+        df['ema_signal'] = 'SELL'
+        valid_mask = fast_s.notna() & slow_s.notna()
+        df.loc[valid_mask, 'ema_signal'] = np.where(fast_s[valid_mask] > slow_s[valid_mask], 'BUY', 'SELL')
+        df.loc[~valid_mask, 'ema_signal'] = None
         
     # DMA (Simple Moving Averages)
     # (DMA is explicitly handled in process_profile to remain anchored to the 1d timeframe)
@@ -144,12 +148,16 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
     logging.info(f"--- Processing Profile: {profile_id.upper()} (Timeframe: {timeframe}) ---")
     settings = await get_profile_settings(pool, profile_id)
     
-    # 1. Fetch exactly the 50 Favourite Companies from Datamart DB
+    # 1. Fetch the exact Companies aligned with dim_favourites from Datamart DB
+    target_dim = 1 if profile_id == 'intraday' else 2
     favourite_symbols = set()
     try:
         async with datamart_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT bs_symbol FROM vw_e_bs_companies_favourite_indices")
+                await cur.execute(
+                    "SELECT bs_symbol FROM vw_e_bs_companies_favourite_indices WHERE dim_favourites = %s",
+                    (target_dim,)
+                )
                 rows = await cur.fetchall()
                 favourite_symbols = {row[0] for row in rows}
     except Exception as e:
@@ -257,7 +265,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                                 rows.insert(0, live_candle)
                                 logging.info(f"Synthesized live 1d candle for {isin} for date {latest_5m_date}")
 
-                if len(rows) < 14: # Minimum rows for basic RSI
+                if len(rows) < 1: # Minimum rows to generate a signal record
                     continue
                     
                 df = pd.DataFrame(rows)
@@ -323,7 +331,8 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 vol_ratio = 1.0
                 if settings.get('VOLUME', {}).get('enabled'):
                     vol_signal = latest_data.get('vol_signal', 'NORMAL')
-                    vol_ratio = float(latest_data.get('vol_ratio', 1.0))
+                    vr = latest_data.get('vol_ratio')
+                    vol_ratio = float(vr) if pd.notna(vr) else 1.0
                     
                 st_value = None
                 st_dir = None
