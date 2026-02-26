@@ -1424,19 +1424,20 @@ if (typeof fullChartCache === 'undefined') {
     var fullChartCache = {};
 }
 
-async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJson = '') {
+async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJson = '', requestedTf = null) {
     const config = CONFIGS[currentMode];
     // Default visibility options
     const chartOpts = {
         bars: 30, ema: true, st: true, dma: true, vol: true,
-        dayLines: true, emaMarkers: true,
+        dayLines: true, emaMarkers: true, rsi: true,
         ...(config.chart || {})
     };
     const barsRequested = chartOpts.bars || 30;
 
     // Determine timeframe string for display
-    const tfDisplay = currentTimeframe || "Daily";
+    const tfDisplay = requestedTf || currentTimeframe || "Daily";
     const isIntraday = ["5m", "15m", "30m", "60m"].includes(tfDisplay);
+    const allTfs = ["5m", "15m", "30m", "60m", "Daily", "Weekly", "Monthly"];
 
     // Create/Reuse Modal
     let modal = document.getElementById('candle-zoom-modal');
@@ -1466,12 +1467,24 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
                             Condition: ${patternName}
                         </div>
                     ` : ''}
+                    <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+                        ${allTfs.map(tf => `
+                            <button onclick="showCandlesPopup('${isin}', '${symbol}', '${patternName}', '', '${tf}')" 
+                                style="background: ${tf === tfDisplay ? 'var(--primary)' : 'rgba(255,255,255,0.05)'}; 
+                                color: ${tf === tfDisplay ? '#fff' : 'var(--text-dim)'}; 
+                                border: 1px solid ${tf === tfDisplay ? 'var(--primary)' : 'var(--border-color)'}; 
+                                padding: 4px 12px; border-radius: 12px; font-size: 11px; cursor: pointer; transition: all 0.2s;">
+                                ${tf}
+                            </button>
+                        `).join('')}
+                    </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 16px;">
-                    <div id="chart-controls-toggle" style="display: flex; gap: 12px; font-size: 10px; color: var(--text-dim); background: rgba(0,0,0,0.2); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border-color);">
+                    <div id="chart-controls-toggle" style="display: flex; gap: 12px; font-size: 10px; color: var(--text-dim); background: rgba(0,0,0,0.2); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border-color); flex-wrap: wrap; justify-content: flex-end; max-width: 400px;">
                         <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-ema" ${chartOpts.ema ? 'checked' : ''}> EMA</label>
                         <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-st" ${chartOpts.st ? 'checked' : ''}> SuperTrend</label>
                         <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-dma" ${chartOpts.dma ? 'checked' : ''}> DMA</label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-rsi" ${chartOpts.rsi ? 'checked' : ''}> RSI</label>
                         <label style="display: ${isIntraday ? 'flex' : 'none'}; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-daylines" ${chartOpts.dayLines ? 'checked' : ''}> Sessions</label>
                         <label style="display: ${isIntraday ? 'flex' : 'none'}; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-markers" ${chartOpts.emaMarkers ? 'checked' : ''}> Markers</label>
                     </div>
@@ -1479,7 +1492,7 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
                 </div>
             </div>
             
-            <div id="zoom-chart-content" style="min-height: 400px; display: flex; align-items: center; justify-content: center;">
+            <div id="zoom-chart-content" style="height: 500px; display: flex; align-items: center; justify-content: center;">
                 <div style="text-align: center; color: var(--text-dim);">
                     <i class="fas fa-spinner fa-spin fa-2x" style="margin-bottom: 12px; color: var(--primary);"></i>
                     <p>Loading High-Detail Chart...</p>
@@ -1497,7 +1510,8 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
 
     if (!chartData) {
         try {
-            const apiTf = TF_MAP[currentTimeframe] || '1d';
+            const apiTf = TF_MAP[tfDisplay] || '1d';
+            // Use current mode unless it's strictly mismatched (we can just pass currentMode for settings fallback)
             const res = await fetch(`/api/chart/details?isin=${isin}&timeframe=${apiTf}&profile=${currentMode}&bars=${barsRequested}`);
             const result = await res.json();
             if (result.status === 'success') {
@@ -1520,15 +1534,18 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
                 ema: document.getElementById('toggle-ema').checked,
                 st: document.getElementById('toggle-st').checked,
                 dma: document.getElementById('toggle-dma').checked,
-                dayLines: document.getElementById('toggle-daylines').checked,
-                emaMarkers: document.getElementById('toggle-markers').checked
+                rsi: document.getElementById('toggle-rsi').checked,
+                dayLines: document.getElementById('toggle-daylines') ? document.getElementById('toggle-daylines').checked : false,
+                emaMarkers: document.getElementById('toggle-markers') ? document.getElementById('toggle-markers').checked : false
             };
             renderEnrichedChart(chartData, symbol, currentOpts, tfDisplay);
         };
 
-        ['toggle-ema', 'toggle-st', 'toggle-dma', 'toggle-daylines', 'toggle-markers'].forEach(id => {
-            document.getElementById(id).onchange = redraw;
+        ['toggle-ema', 'toggle-st', 'toggle-dma', 'toggle-rsi'].forEach(id => {
+            if (document.getElementById(id)) document.getElementById(id).onchange = redraw;
         });
+        if (document.getElementById('toggle-daylines')) document.getElementById('toggle-daylines').onchange = redraw;
+        if (document.getElementById('toggle-markers')) document.getElementById('toggle-markers').onchange = redraw;
 
         redraw();
     } else {
@@ -1580,12 +1597,17 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
 
     // 2. SVG Dimensions
     const svgWidth = container.clientWidth || 950;
-    const svgHeight = 400;
+    const rsiKey = Object.keys(candles[0] || {}).find(k => k.startsWith('RSI_'));
+    const showRSI = opts.rsi && rsiKey;
+
+    const mainChartHeight = 400;
+    const rsiHeight = showRSI ? 100 : 0;
+    const svgHeight = mainChartHeight + rsiHeight;
     const chartPaddingRight = 70;
     const chartAreaWidth = svgWidth - chartPaddingRight;
     const padTop = 30;
-    const padBottom = 50;
-    const usableHeight = svgHeight - padTop - padBottom;
+    const padBottom = 35; // Space for volume bars within main chart
+    const usableHeight = mainChartHeight - padTop - padBottom;
 
     const candleCount = candles.length;
     const barWidth = (chartAreaWidth / candleCount) * 0.75;
@@ -1682,7 +1704,8 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
                 svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2.5" stroke-dasharray="4 2" />`;
             }
         }
-        legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:2px; background:#10b981"></div>Supertrend</div>`;
+        const stConfig = CONFIGS[currentMode].st;
+        legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:2px; background:#10b981"></div>Supertrend (${stConfig.period}, ${stConfig.mult})</div>`;
     }
 
     // DMA References (Horizontal Lines)
@@ -1703,7 +1726,7 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
         candles.forEach((c, i) => {
             const vHeight = (c.v / maxV) * (usableHeight * 0.2);
             const x = (i * (barWidth + gap)) + 5;
-            const y = svgHeight - padBottom - vHeight;
+            const y = mainChartHeight - padBottom - vHeight;
             const color = c.c >= c.o ? 'rgba(8, 153, 129, 0.12)' : 'rgba(242, 54, 69, 0.12)';
             svg += `<rect x="${x}" y="${y}" width="${barWidth}" height="${vHeight}" fill="${color}" />`;
         });
@@ -1728,9 +1751,43 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
         svg += `<rect x="${xCenter - (barWidth / 2)}" y="${topBody}" width="${barWidth}" height="${bodyH}" fill="${color}" />`;
     });
 
+    // RSI Subplot
+    if (showRSI) {
+        const rsiTop = mainChartHeight;
+        const rsiUsable = rsiHeight - 15;
+
+        // Separator line
+        svg += `<line x1="0" y1="${rsiTop}" x2="${svgWidth}" y2="${rsiTop}" stroke="rgba(255,255,255,0.2)" stroke-width="1" />`;
+
+        // RSI Bounds (30, 70)
+        const y70 = rsiTop + rsiUsable - ((70 / 100) * rsiUsable);
+        const y30 = rsiTop + rsiUsable - ((30 / 100) * rsiUsable);
+
+        svg += `<rect x="0" y="${y70}" width="${chartAreaWidth}" height="${y30 - y70}" fill="rgba(168, 85, 247, 0.05)" />`;
+        svg += `<line x1="0" y1="${y70}" x2="${chartAreaWidth}" y2="${y70}" stroke="rgba(168, 85, 247, 0.3)" stroke-width="1" stroke-dasharray="4 4" />`;
+        svg += `<line x1="0" y1="${y30}" x2="${chartAreaWidth}" y2="${y30}" stroke="rgba(168, 85, 247, 0.3)" stroke-width="1" stroke-dasharray="4 4" />`;
+
+        svg += `<text x="${chartAreaWidth + 10}" y="${y70 + 4}" fill="var(--text-dim)" font-size="9">70</text>`;
+        svg += `<text x="${chartAreaWidth + 10}" y="${y30 + 4}" fill="var(--text-dim)" font-size="9">30</text>`;
+
+        // RSI Line
+        let rsiPoints = "";
+        candles.forEach((c, i) => {
+            const val = c[rsiKey];
+            if (val) {
+                const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
+                const y = rsiTop + rsiUsable - ((val / 100) * rsiUsable);
+                rsiPoints += `${x},${y} `;
+            }
+        });
+        svg += `<polyline points="${rsiPoints}" fill="none" stroke="#A855F7" stroke-width="1.5" />`;
+        legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:2px; background:#A855F7"></div>${rsiKey}</div>`;
+    }
+
     // 8. Crosshair & Dynamic Labels
     svg += `<line id="ch-x" x1="0" y1="0" x2="0" y2="${svgHeight}" stroke="rgba(255,255,255,0.4)" stroke-dasharray="2 2" style="display:none; pointer-events:none;"/>`;
     svg += `<line id="ch-y" x1="0" y1="0" x2="${svgWidth}" y2="0" stroke="rgba(255,255,255,0.4)" stroke-dasharray="2 2" style="display:none; pointer-events:none;"/>`;
+    svg += `<line id="ch-y-rsi" x1="0" y1="0" x2="${svgWidth}" y2="0" stroke="rgba(168,85,247,0.4)" stroke-dasharray="2 2" style="display:none; pointer-events:none;"/>`;
 
     svg += `<rect id="ch-y-lbl-bg" x="${chartAreaWidth}" y="0" width="70" height="20" fill="var(--primary)" rx="4" style="display:none; pointer-events:none;"/>`;
     svg += `<text id="ch-y-lbl-txt" x="${chartAreaWidth + 5}" y="0" fill="white" font-size="10" font-weight="600" style="display:none; pointer-events:none;"></text>`;
@@ -1744,8 +1801,8 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
     container.innerHTML = svg;
 
     const svgEl = container.querySelector('svg');
-    const [chX, chY, chYbg, chYtxt, chXbg, chXtxt, chOhlc] = [
-        'ch-x', 'ch-y', 'ch-y-lbl-bg', 'ch-y-lbl-txt', 'ch-x-lbl-bg', 'ch-x-lbl-txt', 'ch-ohlc'
+    const [chX, chY, chYRsi, chYbg, chYtxt, chXbg, chXtxt, chOhlc] = [
+        'ch-x', 'ch-y', 'ch-y-rsi', 'ch-y-lbl-bg', 'ch-y-lbl-txt', 'ch-x-lbl-bg', 'ch-x-lbl-txt', 'ch-ohlc'
     ].map(id => document.getElementById(id));
 
     svgEl.onmousemove = (e) => {
@@ -1757,7 +1814,11 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
         if (idx >= 0 && idx < candles.length) {
             const c = candles[idx];
             const color = c.c >= c.o ? '#089981' : '#F23645';
-            chOhlc.innerHTML = `${c.t} | O:${c.o.toFixed(1)} H:${c.h.toFixed(1)} L:${c.l.toFixed(1)} C:<tspan fill="${color}">${c.c.toFixed(1)}</tspan>`;
+            let ohlcText = `${c.t} | O:${c.o.toFixed(1)} H:${c.h.toFixed(1)} L:${c.l.toFixed(1)} C:<tspan fill="${color}">${c.c.toFixed(1)}</tspan>`;
+            if (showRSI && c[rsiKey]) {
+                ohlcText += ` | RSI: <tspan fill="#A855F7">${c[rsiKey].toFixed(1)}</tspan>`;
+            }
+            chOhlc.innerHTML = ohlcText;
 
             const snapX = (idx * (barWidth + gap)) + (barWidth / 2) + 5;
             chX.setAttribute('x1', snapX); chX.setAttribute('x2', snapX);
@@ -1769,8 +1830,18 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
                 chYtxt.setAttribute('y', yRaw + 4);
                 chYtxt.textContent = priceAtY.toFixed(2);
                 [chYbg, chYtxt, chY].forEach(el => el.style.display = 'block');
+                chYRsi.style.display = 'none';
+            } else if (showRSI && yRaw >= mainChartHeight && yRaw <= mainChartHeight + rsiHeight - 15) {
+                const rsiUsable = rsiHeight - 15;
+                const rsiAtY = ((mainChartHeight + rsiUsable - yRaw) / rsiUsable) * 100;
+                chYbg.setAttribute('y', yRaw - 10);
+                chYtxt.setAttribute('y', yRaw + 4);
+                chYtxt.textContent = rsiAtY.toFixed(1);
+                [chYbg, chYtxt, chYRsi].forEach(el => el.style.display = 'block');
+                chY.style.display = 'none';
+                chYRsi.setAttribute('y1', yRaw); chYRsi.setAttribute('y2', yRaw);
             } else {
-                [chYbg, chYtxt, chY].forEach(el => el.style.display = 'none');
+                [chYbg, chYtxt, chY, chYRsi].forEach(el => el.style.display = 'none');
             }
 
             chXtxt.textContent = c.t;
@@ -1783,7 +1854,7 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
         }
     };
     svgEl.onmouseleave = () => {
-        [chX, chY, chYbg, chYtxt, chXbg, chXtxt].forEach(el => el.style.display = 'none');
+        [chX, chY, chYRsi, chYbg, chYtxt, chXbg, chXtxt].forEach(el => el.style.display = 'none');
     };
 }
 
