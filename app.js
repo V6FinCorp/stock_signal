@@ -1426,11 +1426,17 @@ if (typeof fullChartCache === 'undefined') {
 
 async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJson = '') {
     const config = CONFIGS[currentMode];
-    const chartOpts = config.chart || { bars: 30, ema: true, st: true, dma: true, vol: true };
+    // Default visibility options
+    const chartOpts = {
+        bars: 30, ema: true, st: true, dma: true, vol: true,
+        dayLines: true, emaMarkers: true,
+        ...(config.chart || {})
+    };
     const barsRequested = chartOpts.bars || 30;
 
     // Determine timeframe string for display
     const tfDisplay = currentTimeframe || "Daily";
+    const isIntraday = ["5m", "15m", "30m", "60m"].includes(tfDisplay);
 
     // Create/Reuse Modal
     let modal = document.getElementById('candle-zoom-modal');
@@ -1448,7 +1454,7 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
 
     // Initial Loading UI
     modal.innerHTML = `
-        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; width: 900px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.6); position: relative;">
+        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; width: 1000px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.6); position: relative;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
                 <div>
                     <div style="display: flex; align-items: center; gap: 12px;">
@@ -1461,7 +1467,16 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
                         </div>
                     ` : ''}
                 </div>
-                <button onclick="document.getElementById('candle-zoom-modal').style.display='none'" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-dim); cursor: pointer; font-size: 20px; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">&times;</button>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <div id="chart-controls-toggle" style="display: flex; gap: 12px; font-size: 10px; color: var(--text-dim); background: rgba(0,0,0,0.2); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border-color);">
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-ema" ${chartOpts.ema ? 'checked' : ''}> EMA</label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-st" ${chartOpts.st ? 'checked' : ''}> SuperTrend</label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-dma" ${chartOpts.dma ? 'checked' : ''}> DMA</label>
+                        <label style="display: ${isIntraday ? 'flex' : 'none'}; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-daylines" ${chartOpts.dayLines ? 'checked' : ''}> Sessions</label>
+                        <label style="display: ${isIntraday ? 'flex' : 'none'}; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-markers" ${chartOpts.emaMarkers ? 'checked' : ''}> Markers</label>
+                    </div>
+                    <button onclick="document.getElementById('candle-zoom-modal').style.display='none'" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-dim); cursor: pointer; font-size: 20px; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">&times;</button>
+                </div>
             </div>
             
             <div id="zoom-chart-content" style="min-height: 400px; display: flex; align-items: center; justify-content: center;">
@@ -1499,7 +1514,23 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
     }
 
     if (chartData && chartData.length > 0) {
-        renderEnrichedChart(chartData, symbol, chartOpts, tfDisplay);
+        const redraw = () => {
+            const currentOpts = {
+                ...chartOpts,
+                ema: document.getElementById('toggle-ema').checked,
+                st: document.getElementById('toggle-st').checked,
+                dma: document.getElementById('toggle-dma').checked,
+                dayLines: document.getElementById('toggle-daylines').checked,
+                emaMarkers: document.getElementById('toggle-markers').checked
+            };
+            renderEnrichedChart(chartData, symbol, currentOpts, tfDisplay);
+        };
+
+        ['toggle-ema', 'toggle-st', 'toggle-dma', 'toggle-daylines', 'toggle-markers'].forEach(id => {
+            document.getElementById(id).onchange = redraw;
+        });
+
+        redraw();
     } else {
         document.getElementById('zoom-chart-content').innerHTML = `
             <div style="color: var(--danger); text-align: center;">
@@ -1548,7 +1579,7 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
     priceRange = maxH - minL;
 
     // 2. SVG Dimensions
-    const svgWidth = container.clientWidth || 850;
+    const svgWidth = container.clientWidth || 950;
     const svgHeight = 400;
     const chartPaddingRight = 70;
     const chartAreaWidth = svgWidth - chartPaddingRight;
@@ -1560,9 +1591,25 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
     const barWidth = (chartAreaWidth / candleCount) * 0.75;
     const gap = (chartAreaWidth / candleCount) * 0.25;
 
-    let svg = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background: #0d1117; border-radius: 8px;">`;
+    let svg = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background: #0d1117; border-radius: 8px; user-select: none;">`;
 
-    // 3. Grid Lines & Price Labels
+    // 3. Logic for Day Boundaries
+    const isIntraday = ["5m", "15m", "30m", "60m"].includes(tfDisplay);
+
+    if (opts.dayLines && isIntraday) {
+        candles.forEach((c, i) => {
+            if (i === 0) return;
+            const prevDate = candles[i - 1].t.split(' ')[0];
+            const currDate = c.t.split(' ')[0];
+            if (prevDate !== currDate) {
+                const xLine = (i * (barWidth + gap)) + 5 - (gap / 2);
+                svg += `<line x1="${xLine}" y1="${padTop}" x2="${xLine}" y2="${padTop + usableHeight}" stroke="rgb(255, 255, 255)" stroke-width="1" stroke-dasharray="4 4" />`;
+                svg += `<text x="${xLine + 4}" y="${padTop + 12}" fill="rgba(255,255,255,0.6)" font-size="9" font-weight="600">${currDate.split('-').slice(1).join('/')}</text>`;
+            }
+        });
+    }
+
+    // 4. Grid Lines & Price Labels
     const steps = 5;
     for (let i = 0; i <= steps; i++) {
         const yLine = padTop + (usableHeight / steps) * i;
@@ -1571,12 +1618,14 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
         svg += `<text x="${chartAreaWidth + 10}" y="${yLine + 4}" fill="var(--text-dim)" font-size="11" font-family="sans-serif">${priceVal.toFixed(2)}</text>`;
     }
 
-    // 4. Draw Indicators (Polylines)
+    // 5. Indicators
     // EMA Lines
+    const emaKeys = Object.keys(candles[0] || {}).filter(k => k.startsWith('EMA_'));
+    const sortedEmaKeys = [...emaKeys].sort((a, b) => parseInt(a.split('_')[1]) - parseInt(b.split('_')[1]));
+
     if (opts.ema) {
-        const emaKeys = Object.keys(candles[0]).filter(k => k.startsWith('EMA_'));
         const colors = ['#2962FF', '#FF9800', '#E91E63'];
-        emaKeys.forEach((key, idx) => {
+        sortedEmaKeys.forEach((key, idx) => {
             let points = "";
             candles.forEach((c, i) => {
                 const val = c[key];
@@ -1590,27 +1639,55 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
             svg += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.8" />`;
             legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:10px; border-radius:3px; background:${color}"></div>${key}</div>`;
         });
+
+        // EMA Crossovers
+        if (opts.emaMarkers && sortedEmaKeys.length >= 2 && isIntraday) {
+            const fastKey = sortedEmaKeys[0];
+            const slowKey = sortedEmaKeys[1];
+            candles.forEach((c, i) => {
+                if (i === 0) return;
+                const prevF = candles[i - 1][fastKey];
+                const prevS = candles[i - 1][slowKey];
+                const currF = c[fastKey];
+                const currS = c[slowKey];
+
+                if (prevF && prevS && currF && currS) {
+                    const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
+                    const y = padTop + usableHeight - ((currF - minL) / priceRange) * usableHeight;
+
+                    if (prevF <= prevS && currF > currS) {
+                        // Bullish Cross
+                        svg += `<path d="M ${x - 5} ${y + 12} L ${x + 5} ${y + 12} L ${x} ${y + 2} Z" fill="var(--success)" opacity="0.9" />`;
+                    } else if (prevF >= prevS && currF < currS) {
+                        // Bearish Cross
+                        svg += `<path d="M ${x - 5} ${y - 12} L ${x + 5} ${y - 12} L ${x} ${y - 2} Z" fill="var(--danger)" opacity="0.9" />`;
+                    }
+                }
+            });
+        }
     }
 
-    // Supertrend
+    // Supertrend (Dynamic Flip)
     if (opts.st) {
-        let stPoints = "";
-        candles.forEach((c, i) => {
-            if (c.ST_value) {
-                const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
-                const y = padTop + usableHeight - ((c.ST_value - minL) / priceRange) * usableHeight;
-                stPoints += `${x},${y} `;
+        for (let i = 1; i < candles.length; i++) {
+            const p = candles[i - 1];
+            const c = candles[i];
+            if (p.ST_value && c.ST_value) {
+                const x1 = ((i - 1) * (barWidth + gap)) + (barWidth / 2) + 5;
+                const y1 = padTop + usableHeight - ((p.ST_value - minL) / priceRange) * usableHeight;
+                const x2 = (i * (barWidth + gap)) + (barWidth / 2) + 5;
+                const y2 = padTop + usableHeight - ((c.ST_value - minL) / priceRange) * usableHeight;
+
+                const color = c.ST_dir === 1 ? '#10b981' : '#ef4444';
+                svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2.5" stroke-dasharray="4 2" />`;
             }
-        });
-        if (stPoints) {
-            svg += `<polyline points="${stPoints}" fill="none" stroke="rgba(245, 158, 11, 1.0)" stroke-width="2" stroke-dasharray="4 2" />`;
-            legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:2px; background:#f59e0b"></div>Supertrend</div>`;
         }
+        legend.innerHTML += `<div style="display:flex; align-items:center; gap:6px;"><div style="width:10px; height:2px; background:#10b981"></div>Supertrend</div>`;
     }
 
     // DMA References (Horizontal Lines)
     if (opts.dma) {
-        const dmaKeys = Object.keys(candles[0]).filter(k => k.startsWith('DMA_'));
+        const dmaKeys = Object.keys(candles[0] || {}).filter(k => k.startsWith('DMA_'));
         dmaKeys.forEach((key) => {
             const val = candles[0][key];
             if (val && val >= minL && val <= maxH) {
@@ -1621,18 +1698,18 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
         });
     }
 
-    // 5. Volume Bars (Background)
+    // 6. Volume Bars (Background)
     if (opts.vol && maxV > 0) {
         candles.forEach((c, i) => {
             const vHeight = (c.v / maxV) * (usableHeight * 0.2);
             const x = (i * (barWidth + gap)) + 5;
             const y = svgHeight - padBottom - vHeight;
-            const color = c.c >= c.o ? 'rgba(8, 153, 129, 0.15)' : 'rgba(242, 54, 69, 0.15)';
+            const color = c.c >= c.o ? 'rgba(8, 153, 129, 0.12)' : 'rgba(242, 54, 69, 0.12)';
             svg += `<rect x="${x}" y="${y}" width="${barWidth}" height="${vHeight}" fill="${color}" />`;
         });
     }
 
-    // 6. Draw Candles
+    // 7. Draw Candles
     candles.forEach((c, i) => {
         const isGreen = c.c >= c.o;
         const color = isGreen ? '#089981' : '#F23645';
@@ -1651,43 +1728,62 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
         svg += `<rect x="${xCenter - (barWidth / 2)}" y="${topBody}" width="${barWidth}" height="${bodyH}" fill="${color}" />`;
     });
 
-    // 7. Crosshair interactivity
-    svg += `<line id="ch-x" x1="0" y1="0" x2="0" y2="${svgHeight}" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display:none; pointer-events:none;"/>`;
-    svg += `<line id="ch-y" x1="0" y1="0" x2="${svgWidth}" y2="0" stroke="rgba(255,255,255,0.4)" stroke-dasharray="4 4" style="display:none; pointer-events:none;"/>`;
+    // 8. Crosshair & Dynamic Labels
+    svg += `<line id="ch-x" x1="0" y1="0" x2="0" y2="${svgHeight}" stroke="rgba(255,255,255,0.4)" stroke-dasharray="2 2" style="display:none; pointer-events:none;"/>`;
+    svg += `<line id="ch-y" x1="0" y1="0" x2="${svgWidth}" y2="0" stroke="rgba(255,255,255,0.4)" stroke-dasharray="2 2" style="display:none; pointer-events:none;"/>`;
+
+    svg += `<rect id="ch-y-lbl-bg" x="${chartAreaWidth}" y="0" width="70" height="20" fill="var(--primary)" rx="4" style="display:none; pointer-events:none;"/>`;
+    svg += `<text id="ch-y-lbl-txt" x="${chartAreaWidth + 5}" y="0" fill="white" font-size="10" font-weight="600" style="display:none; pointer-events:none;"></text>`;
+
+    svg += `<rect id="ch-x-lbl-bg" x="0" y="${svgHeight - 20}" width="120" height="20" fill="var(--sidebar-bg)" rx="4" style="display:none; pointer-events:none;"/>`;
+    svg += `<text id="ch-x-lbl-txt" x="0" y="${svgHeight - 7}" fill="white" font-size="10" text-anchor="middle" style="display:none; pointer-events:none;"></text>`;
+
     svg += `<text id="ch-ohlc" x="10" y="20" fill="var(--text-dim)" font-size="12" font-family="sans-serif"></text>`;
 
     svg += `</svg>`;
     container.innerHTML = svg;
 
     const svgEl = container.querySelector('svg');
-    const chX = document.getElementById('ch-x');
-    const chY = document.getElementById('ch-y');
-    const chOhlc = document.getElementById('ch-ohlc');
+    const [chX, chY, chYbg, chYtxt, chXbg, chXtxt, chOhlc] = [
+        'ch-x', 'ch-y', 'ch-y-lbl-bg', 'ch-y-lbl-txt', 'ch-x-lbl-bg', 'ch-x-lbl-txt', 'ch-ohlc'
+    ].map(id => document.getElementById(id));
 
     svgEl.onmousemove = (e) => {
         const r = svgEl.getBoundingClientRect();
-        const x = e.clientX - r.left;
-        const y = e.clientY - r.top;
+        const xRaw = e.clientX - r.left;
+        const yRaw = e.clientY - r.top;
 
-        chX.style.display = 'block';
-        chY.style.display = 'block';
-        chX.setAttribute('x1', x); chX.setAttribute('x2', x);
-        chY.setAttribute('y1', y); chY.setAttribute('y2', y);
-
-        // Nearest Candle
-        const idx = Math.floor(x / (barWidth + gap));
+        const idx = Math.floor((xRaw - 5) / (barWidth + gap));
         if (idx >= 0 && idx < candles.length) {
             const c = candles[idx];
             const color = c.c >= c.o ? '#089981' : '#F23645';
             chOhlc.innerHTML = `${c.t} | O:${c.o.toFixed(1)} H:${c.h.toFixed(1)} L:${c.l.toFixed(1)} C:<tspan fill="${color}">${c.c.toFixed(1)}</tspan>`;
 
-            // Snap X
             const snapX = (idx * (barWidth + gap)) + (barWidth / 2) + 5;
             chX.setAttribute('x1', snapX); chX.setAttribute('x2', snapX);
+            chY.setAttribute('y1', yRaw); chY.setAttribute('y2', yRaw);
+
+            const priceAtY = maxH - ((yRaw - padTop) / usableHeight) * priceRange;
+            if (yRaw >= padTop && yRaw <= padTop + usableHeight) {
+                chYbg.setAttribute('y', yRaw - 10);
+                chYtxt.setAttribute('y', yRaw + 4);
+                chYtxt.textContent = priceAtY.toFixed(2);
+                [chYbg, chYtxt, chY].forEach(el => el.style.display = 'block');
+            } else {
+                [chYbg, chYtxt, chY].forEach(el => el.style.display = 'none');
+            }
+
+            chXtxt.textContent = c.t;
+            const txtWidth = chXtxt.getComputedTextLength() + 10;
+            chXbg.setAttribute('width', txtWidth);
+            chXbg.setAttribute('x', snapX - (txtWidth / 2));
+            chXtxt.setAttribute('x', snapX);
+
+            [chX, chXbg, chXtxt].forEach(el => el.style.display = 'block');
         }
     };
     svgEl.onmouseleave = () => {
-        chX.style.display = 'none'; chY.style.display = 'none';
+        [chX, chY, chYbg, chYtxt, chXbg, chXtxt].forEach(el => el.style.display = 'none');
     };
 }
 

@@ -380,12 +380,16 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     
                     bullish_cols = ['CDL_ENGULFING', 'CDL_HAMMER', 'CDL_MORNINGSTAR', 'CDL_PIERCING', 'CDL_MORNINGDOJISTAR', 'CDL_3WHITESOLDIERS', 'CDL_DRAGONFLYDOJI']
                     bearish_cols = ['CDL_ENGULFING', 'CDL_SHOOTINGSTAR', 'CDL_EVENINGSTAR', 'CDL_DARKCLOUDCOVER', 'CDL_EVENINGDOJISTAR', 'CDL_HANGINGMAN', 'CDL_3BLACKCROWS', 'CDL_GRAVESTONEDOJI']
-                    neutral_cols = ['CDL_DOJI_10_0.1', 'CDL_SPINNINGTOP', 'CDL_HIGHWAVE', 'CDL_RICKSHAWMAN', 'CDL_LONGLEGGEDDOJI']
+                    neutral_cols = ['CDL_DOJI_10_0.1', 'CDL_SPINNINGTOP', 'CDL_HIGHWAVE', 'CDL_RICKSHAWMAN', 'CDL_LONGLEGGEDDOJI', 'CDL_INSIDE', 'CDL_BELTHOLD']
                     
                     for key, val in latest_data.items():
                         if not isinstance(key, str) or not key.startswith("CDL_") or pd.isna(val) or val == 0:
                             continue
                         
+                        # Only accept strong pattern signals (usually 100 or -100)
+                        if abs(val) < 10: 
+                            continue
+
                         pattern_name = key.replace("CDL_", "").split("_")[0].title()
                         
                         if val > 0:
@@ -396,7 +400,9 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                             else:
                                 bullish_patterns.append(pattern_name)
                         elif val < 0:
-                            if key in bullish_cols and key not in bearish_cols:
+                            if key in neutral_cols:
+                                neutral_patterns.append(pattern_name)
+                            elif key in bullish_cols and key not in bearish_cols:
                                 bullish_patterns.append(pattern_name)
                             else:
                                 bearish_patterns.append(pattern_name)
