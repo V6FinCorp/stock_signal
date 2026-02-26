@@ -32,6 +32,7 @@ const CONFIGS = {
         vol: { enabled: true, period: 20, threshold: 2.0 },
         dma: { enabled: true, periods: [10, 20, 50, 200] },
         patterns: { enabled: true, bullish: true, bearish: true, neutral: false },
+        fundamentals: { enabled: true },
         auto: { fetch: true, calc: true, interval: 1800000, marketHoursOnly: true },
         chart: { bars: 30, ema: true, st: true, dma: true, vol: true }
     },
@@ -42,6 +43,7 @@ const CONFIGS = {
         vol: { enabled: true, period: 20, threshold: 1.5 },
         dma: { enabled: false, periods: [10, 20] },
         patterns: { enabled: true, bullish: true, bearish: true, neutral: false },
+        fundamentals: { enabled: true },
         auto: { fetch: true, calc: true, interval: 300000, marketHoursOnly: true },
         chart: { bars: 30, ema: true, st: true, dma: true, vol: true }
     }
@@ -55,6 +57,13 @@ let signalCache = {};
 let activeStatFilter = 'all';
 let currentSortColumn = 'rsi'; // Default sort by RSI
 let currentSortDirection = 'desc'; // Default desc
+let activeSectorFilter = 'all';
+let isSectorBarCollapsed = false;
+
+let HUD_STATES = {
+    swing: { active: false, expanded: false },
+    intraday: { active: false, expanded: false }
+};
 
 let autoSyncTimerId = null;
 let isAutoSyncEnabled = false;
@@ -92,6 +101,7 @@ async function fetchAndRenderSignals(forceFetch = false) {
     }
 
     renderSignals();
+    updateSectorSentiment();
 }
 
 // --- UI Logic ---
@@ -107,10 +117,13 @@ function setMode(mode) {
     currentMode = mode;
     currentTimeframe = MODES[mode].defaultTF;
 
-    // UI Updates
+    // Pulse navigation
     document.getElementById('mode-swing').classList.toggle('active', mode === 'swing');
     document.getElementById('mode-intraday').classList.toggle('active', mode === 'intraday');
     document.getElementById('page-title').innerText = MODES[mode].title;
+
+    // HUD Context Sync
+    syncHudVisibility();
 
     // Update settings selector to match mode context
     document.getElementById('config-profile-selector').value = mode;
@@ -119,6 +132,7 @@ function setMode(mode) {
     updateTableHeader();
     fetchAndRenderSignals();
     fetchSystemStatus();
+    updateSectorSentiment();
 }
 
 async function fetchSystemStatus() {
@@ -161,7 +175,19 @@ function updateTableHeader() {
 
     thead.appendChild(createHeader('Rank', 'confluence_rank', true)).classList.add('col-rank');
     thead.appendChild(createHeader('Stock Detail', 'symbol', true)).classList.add('col-symbol');
+
+    if (conf.fundamentals && conf.fundamentals.enabled) {
+        thead.appendChild(createHeader('Industry Group', 'i_group', true)).classList.add('col-sector');
+    }
+
     thead.appendChild(createHeader('LTP', 'ltp', true)).classList.add('col-ltp');
+
+    // Only show PE and ROE in Swing mode as they are too static for Intraday
+    if (conf.fundamentals && conf.fundamentals.enabled && currentMode === 'swing') {
+        thead.appendChild(createHeader('PE', 'pe', true)).classList.add('col-pe');
+        thead.appendChild(createHeader('ROE', 'roe', true)).classList.add('col-roe');
+    }
+
     thead.appendChild(createHeader('RSI', 'rsi', true)).classList.add('col-rsi');
 
     if (conf.ema.enabled) {
@@ -192,6 +218,7 @@ function updateTableHeader() {
     thead.appendChild(createHeader('Supertrend', 'supertrend_dir', false));
     thead.appendChild(createHeader('MTF', null, false));
     thead.appendChild(createHeader('Trade Plan', null, false));
+    thead.appendChild(createHeader('Action', null, false));
 
     // Setup Column Toggle Dropdown
     setTimeout(() => setupColumnToggle('#main-signal-table', 'main-col-toggle-container'), 0);
@@ -260,12 +287,17 @@ function renderSignals() {
         displayData = displayData.filter(s => s.confluence_rank >= minRank);
     }
 
+    // Filter by Sector
+    if (activeSectorFilter !== 'all') {
+        displayData = displayData.filter(s => s.i_group === activeSectorFilter);
+    }
+
     // Filter by Search Input
     const searchQuery = document.getElementById('search-input') ? document.getElementById('search-input').value.trim().toUpperCase() : '';
     if (searchQuery) {
         displayData = displayData.filter(s =>
-            s.symbol.toUpperCase().includes(searchQuery) ||
-            s.isin.toUpperCase().includes(searchQuery)
+            (s.symbol || "").toUpperCase().includes(searchQuery) ||
+            (s.isin || "").toUpperCase().includes(searchQuery)
         );
     }
 
@@ -319,8 +351,25 @@ function renderSignals() {
                 <div class="symbol-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stock.symbol}</div>
                 <div class="isin-code">${stock.isin}</div>
             </td>
-            <td class="col-ltp"><div style="font-weight: 700; font-size: 15px;">₹${(stock.ltp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></td>
         `;
+
+        if (conf.fundamentals && conf.fundamentals.enabled) {
+            rowHtml += `
+                <td class="col-sector">
+                    <div style="font-size: 13px; color: var(--text-main); font-weight: 500; overflow: hidden; text-overflow: ellipsis; max-width: 140px;" title="${stock.i_group || '-'}">${stock.i_group || '-'}</div>
+                    <div style="font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; max-width: 140px; margin-top: 2px;" title="${stock.i_subgroup || '-'}">${stock.i_subgroup || '-'}</div>
+                </td>
+            `;
+        }
+
+        rowHtml += `<td class="col-ltp"><div style="font-weight: 700; font-size: 15px;">${(stock.ltp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></td>`;
+
+        if (conf.fundamentals && conf.fundamentals.enabled && currentMode === 'swing') {
+            rowHtml += `
+                <td class="col-pe"><div style="font-size: 14px; font-weight: 600;">${stock.pe ? stock.pe.toFixed(1) : '-'}</div></td>
+                <td class="col-roe"><div class="font-bold ${stock.roe > 15 ? 'text-success' : ''}" style="font-size: 14px;">${stock.roe ? stock.roe.toFixed(1) + '%' : '-'}</div></td>
+            `;
+        }
 
         // RSI
         if (conf.rsi.enabled) {
@@ -542,24 +591,23 @@ function renderSignals() {
                 <div class="trade-plan-box" style="min-width: 170px;">
                     <div class="tp-row" style="justify-content: flex-start; gap: 8px;">
                         <span class="text-dim" style="width: 25px;">SL:</span>
-                        <span class="text-danger font-bold">₹${stock.sl ? stock.sl.toFixed(1) : '-'}</span>
+                        <span class="text-danger font-bold">${stock.sl ? stock.sl.toFixed(1) : '-'}</span>
                         <span style="font-size: 11px; color: var(--danger); opacity: 0.8;">(${slDiffPct ? slDiffPct + '%' : '-'})</span>
                     </div>
                     <div class="tp-row" style="justify-content: flex-start; gap: 8px; margin-top: 2px;">
                         <span class="text-dim" style="width: 25px;">Tgt:</span>
-                        <span class="text-success font-bold">₹${stock.target ? stock.target.toFixed(1) : '-'}</span>
-                        <span style="font-size: 11px; color: var(--success); opacity: 0.8;">(${tgtDiffPct ? tgtPrefix + tgtDiffPct + '%' : '-'})</span>
-                    </div>
-                    <div class="tp-row" style="justify-content: flex-start; align-items: center; margin-top: 6px; border-top: 1px solid var(--border-color); padding-top: 8px;">
-                        <span style="font-size: 11px; font-weight: 700; color: var(--amber); letter-spacing: 0.2px;">RR ${slAbs}:${tgtAbs}</span>
-                        <span class="text-dim" style="margin: 0 12px; opacity: 0.4;">|</span>
-                        <button class="btn" title="${isBuy ? 'Buy' : 'Short'} Trade" style="padding: 2px 14px; border-radius: 4px; font-size: 13px; font-weight: 900; background: ${actionColor}; color: white; border: none; cursor: pointer;">
-                            ${actionLabel}
-                        </button>
-                    </div>
-                </div>
             </td>
         `;
+
+        // Add the new Trade button column here
+        rowHtml += `
+            <td>
+                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 11px; font-weight: 700;" onclick="openPaperTrade('${stock.isin}', '${stock.symbol}', ${stock.ltp})">
+                    <i class="fas fa-plus-circle"></i> Trade
+                </button>
+            </td>
+        `;
+
         row.innerHTML = rowHtml;
         tbody.appendChild(row);
     });
@@ -600,6 +648,8 @@ function loadProfileSettings() {
     document.getElementById('setting-rsi-period').value = conf.rsi.period;
     document.getElementById('setting-rsi-ob').value = conf.rsi.ob;
     document.getElementById('setting-rsi-os').value = conf.rsi.os;
+
+    document.getElementById('setting-fundamentals-enabled').checked = conf.fundamentals ? conf.fundamentals.enabled : false;
 
     document.getElementById('setting-st-enabled').checked = conf.st.enabled;
     document.getElementById('setting-st-period').value = conf.st.period;
@@ -659,6 +709,9 @@ function saveProfileSettings() {
     conf.rsi.ob = parseInt(document.getElementById('setting-rsi-ob').value);
     conf.rsi.os = parseInt(document.getElementById('setting-rsi-os').value);
 
+    if (!conf.fundamentals) conf.fundamentals = {};
+    conf.fundamentals.enabled = document.getElementById('setting-fundamentals-enabled').checked;
+
     conf.st.enabled = document.getElementById('setting-st-enabled').checked;
     conf.st.period = parseInt(document.getElementById('setting-st-period').value);
     conf.st.mult = parseFloat(document.getElementById('setting-st-mult').value);
@@ -702,8 +755,47 @@ function saveProfileSettings() {
         startAutoSync();
     }
 
-    // Return to dashboard after save
-    switchTab('dashboard');
+    saveConfigsToLocalStorage();
+
+    // Sync settings with Backend Database for indicator engine
+    const syncBtn = document.querySelector('#settings-view .btn-primary');
+    const originalBtnHtml = syncBtn ? syncBtn.innerHTML : null;
+    if (syncBtn) {
+        syncBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving to DB...';
+        syncBtn.disabled = true;
+    }
+
+    fetch('/api/settings/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            profile: profile,
+            settings: conf
+        })
+    })
+        .then(res => res.json())
+        .then(data => {
+            console.log("DB Settings Sync:", data.message);
+            if (syncBtn) {
+                syncBtn.innerHTML = '<i class="fas fa-check"></i> Applied Successfully';
+                syncBtn.disabled = false;
+                setTimeout(() => {
+                    syncBtn.innerHTML = originalBtnHtml;
+                    switchTab('dashboard');
+                }, 1000);
+            } else {
+                switchTab('dashboard');
+            }
+        })
+        .catch(err => {
+            console.error("DB Settings Sync Error:", err);
+            if (syncBtn) {
+                syncBtn.innerHTML = originalBtnHtml;
+                syncBtn.disabled = false;
+            }
+            alert("Settings saved locally, but failed to sync with Database. Indicators may use old periods.");
+            switchTab('dashboard');
+        });
 }
 
 function switchTab(tabId) {
@@ -723,7 +815,6 @@ function switchTab(tabId) {
         navItem.classList.add('active');
     }
 
-    // Trigger tab-specific logic
     if (tabId === 'settings') {
         loadProfileSettings();
     } else if (tabId === 'db-manager') {
@@ -741,6 +832,10 @@ function switchTab(tabId) {
                 }
             });
         }
+    } else if (tabId === 'pro-screener') {
+        renderProScreener();
+    } else if (tabId === 'trades') {
+        fetchActiveTrades();
     }
 }
 
@@ -762,9 +857,21 @@ async function fetchDbStats() {
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;" class="text-dim">No raw OHLCV data found.</td></tr>';
             } else {
                 for (const [tf, stats] of Object.entries(result.data.coverage)) {
+                    let gapHtml = '';
+                    if (stats.gaps && stats.gaps.length > 0) {
+                        const gapList = stats.gaps.join(', ');
+                        const total = stats.total_gap_count || stats.gaps.length;
+                        gapHtml = `
+                            <div class="text-danger" style="font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 4px;">
+                                <i class="fas fa-exclamation-triangle"></i> 
+                                <span title="Missing dates: ${gapList}">${total} gaps found</span>
+                            </div>
+                        `;
+                    }
+
                     tbody.innerHTML += `
                         <tr>
-                            <td style="font-weight: 600;">${tf}</td>
+                            <td style="font-weight: 600;">${tf} ${gapHtml}</td>
                             <td>${stats.min_date || '-'}</td>
                             <td>${stats.max_date || '-'}</td>
                             <td style="color: var(--primary); font-weight: 700;">${stats.days || 0}</td>
@@ -939,165 +1046,183 @@ function runAutoSyncLoop() {
     }
 }
 
+function syncHudVisibility() {
+    const swingHud = document.getElementById('job-hud-swing');
+    const intradayHud = document.getElementById('job-hud-intraday');
+
+    if (currentMode === 'swing') {
+        intradayHud.classList.add('hidden');
+        if (HUD_STATES.swing.active) swingHud.classList.remove('hidden');
+        else swingHud.classList.add('hidden');
+    } else {
+        swingHud.classList.add('hidden');
+        if (HUD_STATES.intraday.active) intradayHud.classList.remove('hidden');
+        else intradayHud.classList.add('hidden');
+    }
+}
+
+function toggleHudExpand(mode) {
+    const console = document.getElementById(`hud-console-${mode}`);
+    HUD_STATES[mode].expanded = !HUD_STATES[mode].expanded;
+    console.classList.toggle('hidden', !HUD_STATES[mode].expanded);
+}
+
 async function fetchMarketData() {
+    const mode = currentMode;
     const btn = document.getElementById('fetch-data-btn');
-    const container = document.getElementById('progress-container');
-    const fill = document.getElementById('progress-fill');
-    const percent = document.getElementById('progress-percent');
-    const progText = container.querySelector('.progress-info span:first-child');
-    const liveConsole = document.getElementById('live-console');
-    const track = document.getElementById('progress-track-element');
+    const hud = document.getElementById(`job-hud-${mode}`);
+    const bar = document.getElementById(`hud-bar-${mode}`);
+    const percent = document.getElementById(`hud-percent-${mode}`);
+    const statusText = document.getElementById(`hud-status-${mode}`);
+    const console = document.getElementById(`hud-console-${mode}`);
 
     const originalHTML = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+    btn.classList.add('btn-disabled');
     btn.disabled = true;
 
-    const stopBtn = document.getElementById('stop-fetch-btn');
-    if (stopBtn) stopBtn.style.display = 'block';
+    HUD_STATES[mode].active = true;
+    syncHudVisibility();
+    console.innerHTML = '';
+    statusText.innerText = `Fetching ${mode.toUpperCase()} Market Data...`;
 
-    container.classList.remove('hidden');
-    liveConsole.classList.remove('hidden');
-    track.classList.add('hidden'); // Hide fake bar
-    liveConsole.innerHTML = ''; // clear logs
-    if (progText) progText.innerText = `Streaming Upstox API Data (${currentMode.toUpperCase()})...`;
-
-    const evtSource = new EventSource(`/api/stream/fetch-data?mode=${currentMode}`);
+    const evtSource = new EventSource(`/api/stream/fetch-data?mode=${mode}`);
     fetchEvtSource = evtSource;
 
     evtSource.onmessage = function (event) {
         if (event.data === "[DONE]") {
             evtSource.close();
             fetchEvtSource = null;
-            if (stopBtn) stopBtn.style.display = 'none';
-            fetchSystemStatus();
-            setTimeout(() => {
-                container.classList.add('hidden');
-                btn.innerHTML = originalHTML;
-                btn.disabled = false;
-                liveConsole.classList.add('hidden');
-                track.classList.remove('hidden');
+            bar.style.width = '100%';
+            percent.innerText = '100%';
+            statusText.innerText = 'Fetch Complete';
 
-                if (isAutoSyncEnabled && CONFIGS[currentMode] && CONFIGS[currentMode].auto.calc) {
+            setTimeout(() => {
+                HUD_STATES[mode].active = false;
+                syncHudVisibility();
+                btn.innerHTML = originalHTML;
+                btn.classList.remove('btn-disabled');
+                btn.disabled = false;
+                fetchSystemStatus();
+
+                if (isAutoSyncEnabled && CONFIGS[mode] && CONFIGS[mode].auto.calc) {
                     refreshSignals();
                 }
-            }, 1000);
+            }, 1500);
             return;
         }
+
+        // Partial progress simulation (finding count in logs)
+        const match = event.data.match(/(\d+)\/(\d+)/);
+        if (match) {
+            const current = parseInt(match[1]);
+            const total = parseInt(match[2]);
+            const p = Math.floor((current / total) * 100);
+            bar.style.width = `${p}%`;
+            percent.innerText = `${p}%`;
+        }
+
         const logLine = document.createElement('div');
         logLine.innerText = event.data;
-        logLine.style.marginBottom = "4px";
-
-        // Color coding
-        if (event.data.includes("Planned:")) logLine.style.color = "var(--primary)";
-        else if (event.data.includes("✅")) logLine.style.color = "var(--success)";
-        else if (event.data.includes("Last available") || event.data.includes("No previous")) logLine.style.color = "var(--amber)";
+        if (event.data.includes("✅")) logLine.style.color = "var(--success)";
         else if (event.data.includes("ERROR:") || event.data.includes("WARNING:")) logLine.style.color = "var(--danger)";
 
-        liveConsole.appendChild(logLine);
-        liveConsole.scrollTop = liveConsole.scrollHeight;
+        console.appendChild(logLine);
+        console.scrollTop = console.scrollHeight;
     };
 
     evtSource.onerror = function () {
-        console.error("EventSource failed.");
         evtSource.close();
         fetchEvtSource = null;
-        if (stopBtn) stopBtn.style.display = 'none';
+        HUD_STATES[mode].active = false;
+        syncHudVisibility();
         btn.innerHTML = originalHTML;
         btn.disabled = false;
-        fetchSystemStatus();
     };
 }
 
 async function stopFetch() {
-    const stopBtn = document.getElementById('stop-fetch-btn');
-    if (stopBtn) {
-        stopBtn.disabled = true;
-        stopBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Stopping...';
-    }
-
     try {
-        const response = await fetch(`/api/stop-fetch?mode=${currentMode}`, { method: 'POST' });
-        const result = await response.json();
-        console.log(result.message);
+        await fetch(`/api/stop-fetch?mode=${currentMode}`, { method: 'POST' });
+        if (fetchEvtSource) fetchEvtSource.close();
+        fetchEvtSource = null;
+        HUD_STATES[currentMode].active = false;
+        syncHudVisibility();
 
-        if (fetchEvtSource) {
-            fetchEvtSource.close();
-            fetchEvtSource = null;
-        }
-
-        // Reset UI immediately
         const btn = document.getElementById('fetch-data-btn');
-        const container = document.getElementById('progress-container');
-        const liveConsole = document.getElementById('live-console');
-        const track = document.getElementById('progress-track-element');
-
-        if (stopBtn) {
-            stopBtn.style.display = 'none';
-            stopBtn.disabled = false;
-            stopBtn.innerHTML = '<i class="fas fa-stop-circle"></i> Stop Fetch';
-        }
-
-        if (btn) {
-            btn.innerHTML = '<i class="fas fa-download"></i> Fetch Market Data';
-            btn.disabled = false;
-        }
-
-        setTimeout(() => {
-            if (container) container.classList.add('hidden');
-            if (liveConsole) liveConsole.classList.add('hidden');
-            if (track) track.classList.remove('hidden');
-            fetchSystemStatus();
-        }, 500);
-
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-download"></i> Fetch Market Data';
     } catch (e) {
-        console.error("Failed to stop fetch:", e);
-        if (stopBtn) {
-            stopBtn.disabled = false;
-            stopBtn.innerHTML = '<i class="fas fa-stop-circle"></i> Stop Fetch';
-        }
+        console.error("Stop fetch failed:", e);
     }
 }
 
 async function refreshSignals() {
+    const mode = currentMode;
     const btnIcon = document.getElementById('refresh-icon');
-    const container = document.getElementById('progress-container');
-    const fill = document.getElementById('progress-fill');
-    const percent = document.getElementById('progress-percent');
-    const progText = container.querySelector('.progress-info span:first-child');
+    const hud = document.getElementById(`job-hud-${mode}`);
+    const bar = document.getElementById(`hud-bar-${mode}`);
+    const percent = document.getElementById(`hud-percent-${mode}`);
+    const statusText = document.getElementById(`hud-status-${mode}`);
+    const console = document.getElementById(`hud-console-${mode}`);
 
-    container.classList.remove('hidden');
-    if (progText) progText.innerText = 'Calculating Indicators & Strategies...';
+    HUD_STATES[mode].active = true;
+    syncHudVisibility();
     btnIcon.classList.add('fa-spin');
+    console.innerHTML = '<div>Starting indicator calculation...</div>';
 
-    // Simulate progress while API loads
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress >= 85) clearInterval(interval);
-        fill.style.width = `${Math.min(progress, 85)}% `;
-        percent.innerText = `${Math.floor(Math.min(progress, 85))}% `;
-    }, 150);
+    const timeframes = MODES[mode].timeframes;
+    let currentStep = 0;
+    const totalSteps = timeframes.length;
 
     try {
-        // 1. Manually trigger the Pandas-TA calculating backend for all timeframes
-        await fetch(`/api/calculate?mode=${currentMode}`, {
-            method: 'POST'
-        });
+        const conf = CONFIGS[mode];
+        const useFundamentals = conf.fundamentals ? conf.fundamentals.enabled : false;
 
-        // 2. Fetch the newly populated data back into the frontend cache & UI
-        await fetchAndRenderSignals(true); // force cache bust
+        // Start Stage-based progress
+        statusText.innerText = `Calculating: ${timeframes[0]}...`;
+
+        // Since the backend doesn't stream progress yet, we simulate the bar movement per stage
+        const calcFetch = fetch(`/api/calculate?mode=${mode}&fundamentals=${useFundamentals}`, { method: 'POST' });
+
+        // Fake Smooth Bar
+        let p = 5;
+        const interval = setInterval(() => {
+            p += Math.random() * 2;
+            if (p > 95) clearInterval(interval);
+            bar.style.width = `${Math.floor(p)}%`;
+            percent.innerText = `${Math.floor(p)}%`;
+
+            // Periodically update console with "Working" logs
+            if (Math.random() > 0.8) {
+                const log = document.createElement('div');
+                log.innerText = `Processing batch for ${mode}...`;
+                console.appendChild(log);
+                console.scrollTop = console.scrollHeight;
+            }
+        }, 500);
+
+        await calcFetch;
+        clearInterval(interval);
+
+        bar.style.width = '100%';
+        percent.innerText = '100%';
+        statusText.innerText = 'Calculations Ready';
+        console.innerHTML += '<div style="color:var(--success)">✅ Calculations completed successfully.</div>';
+
+        await fetchAndRenderSignals(true);
         fetchSystemStatus();
 
     } catch (e) {
-        console.error("Failed to trigger engine:", e);
+        console.error("Calculation failed:", e);
+        statusText.innerText = 'Calculation Failed';
+        console.innerHTML += `<div style="color:var(--danger)">❌ Error: ${e.message}</div>`;
     } finally {
-        clearInterval(interval);
-        fill.style.width = `100 % `;
-        percent.innerText = `100 % `;
         setTimeout(() => {
-            container.classList.add('hidden');
+            HUD_STATES[mode].active = false;
+            syncHudVisibility();
             btnIcon.classList.remove('fa-spin');
-        }, 500);
+        }, 2000);
     }
 }
 
@@ -1280,9 +1405,9 @@ function drawBacktestGrid(symbolFilter = 'ALL') {
                 <td style="padding: 12px;">${dateStr}</td>
                 <td style="padding: 12px; font-weight: 600;">${d.symbol}</td>
                 <td style="padding: 12px;">${d.action}</td>
-                <td style="padding: 12px;">₹${d.avg_entry.toFixed(2)}</td>
+                <td style="padding: 12px;">${d.avg_entry.toFixed(2)}</td>
                 <td style="padding: 12px; color: var(--text-dim);">${trancheDisplay}</td>
-                <td style="padding: 12px;">₹${d.exit_price.toFixed(2)}</td>
+                <td style="padding: 12px;">${d.exit_price.toFixed(2)}</td>
                 <td style="padding: 12px;">${d.exit_trigger}</td>
                 <td style="padding: 12px; text-align: right; color: ${pnlColor}; font-weight: 600;">${d.pnl_pct > 0 ? '+' : ''}${d.pnl_pct.toFixed(2)}%</td>
             </tr>
@@ -1353,8 +1478,13 @@ function setupColumnToggle(tableSelector, containerId) {
     if (!tableColumnStates[tableSelector] || tableColumnStates[tableSelector].length !== headers.length) {
         tableColumnStates[tableSelector] = Array.from(headers).map(th => {
             const text = th.textContent.trim();
-            // Default these specific columns to hidden
-            return text !== 'Strategy' && text !== 'Trade Plan' && text !== 'Pattern Name';
+            // Default these specific advanced columns to hidden
+            if (['Strategy', 'Trade Plan', 'Pattern Name', 'Industry', 'IndustryNew'].includes(text)) return false;
+
+            // PE/ROE are strictly for Swing - hide/prevent them in Intraday view entirely
+            if (currentMode === 'intraday' && (text === 'PE' || text === 'ROE')) return false;
+
+            return true;
         });
     }
 
@@ -1368,6 +1498,10 @@ function setupColumnToggle(tableSelector, containerId) {
 
     headers.forEach((th, index) => {
         const headerText = th.textContent.trim() || `Col ${index + 1}`;
+
+        // Strictly exclude PE/ROE from Intraday toggle options
+        if (currentMode === 'intraday' && (headerText === 'PE' || headerText === 'ROE')) return;
+
         const isChecked = tableColumnStates[tableSelector][index] ? 'checked' : '';
         html += `
             <label style="display: block; margin-bottom: 8px; font-size: 13px; cursor: pointer; color: var(--text-dim); display: flex; align-items: center; gap: 8px;">
@@ -1410,6 +1544,100 @@ function applyTableColumnStyles() {
         });
     }
     styleEl.innerHTML = css;
+}
+
+let lastSectorData = [];
+
+async function updateSectorSentiment() {
+    const apiTf = TF_MAP[currentTimeframe] || '1d';
+    const container = document.getElementById('sector-sentiment-container');
+    if (!container) return;
+
+    try {
+        const response = await fetch(`/api/sector/sentiment?mode=${currentMode}&timeframe=${apiTf}`);
+        const result = await response.json();
+
+        if (result.status === 'success' && result.data.length > 0) {
+            lastSectorData = result.data;
+            renderSectorSentimentUI();
+        } else {
+            container.classList.add('hidden');
+        }
+    } catch (e) {
+        console.error("Sector sentiment fetch failed:", e);
+        container.classList.add('hidden');
+    }
+}
+
+function renderSectorSentimentUI() {
+    const container = document.getElementById('sector-sentiment-container');
+    if (!container || lastSectorData.length === 0) return;
+
+    container.classList.remove('hidden');
+    container.classList.toggle('collapsed', isSectorBarCollapsed);
+
+    let html = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; cursor: pointer;" onclick="toggleSectorCollapse()">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-layer-group"></i> Industry Group Sentiment
+            </div>
+            <div style="display: flex; gap: 8px;" onclick="event.stopPropagation()">
+                ${activeSectorFilter !== 'all' ? `<button onclick="setSectorFilter('all', true)" class="hud-btn" style="width: auto; padding: 0 10px; font-size: 10px; height: 24px; color: var(--amber);">Clear Filter</button>` : ''}
+                <button onclick="toggleSectorCollapse()" class="hud-btn" style="width: 24px; height: 24px;" title="${isSectorBarCollapsed ? 'Expand' : 'Collapse'}">
+                    <i class="fas ${isSectorBarCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'}"></i>
+                </button>
+            </div>
+        </div>
+        <div class="sentiment-grid" style="display: flex; gap: 10px; flex-wrap: wrap;">
+    `;
+
+    lastSectorData.forEach(item => {
+        const isSelected = activeSectorFilter === item.group;
+        const color = item.score >= 60 ? 'var(--success)' : (item.score <= 40 ? 'var(--danger)' : 'var(--amber)');
+        const icon = item.score >= 60 ? 'fa-arrow-trend-up' : (item.score <= 40 ? 'fa-arrow-trend-down' : 'fa-minus');
+
+        html += `
+            <div class="sector-sentiment-card ${isSelected ? 'active-sector' : ''}" 
+                 style="border-left: 3px solid ${color};" 
+                 onclick="setSectorFilter('${item.group}')"
+                 title="${item.buy_count} Buy / ${item.sell_count} Sell out of ${item.total} total stocks">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${item.group}</div>
+                <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                    <span style="font-size: 14px; font-weight: 800; color: ${color};">${item.score}%</span>
+                    <i class="fas ${icon}" style="font-size: 10px; color: ${color}; opacity: 0.8;"></i>
+                </div>
+            </div>
+        `;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+function toggleSectorCollapse() {
+    isSectorBarCollapsed = !isSectorBarCollapsed;
+    const container = document.getElementById('sector-sentiment-container');
+    if (container) {
+        container.classList.toggle('collapsed', isSectorBarCollapsed);
+        // Update the arrow icon immediately
+        const icon = container.querySelector('.fa-chevron-up, .fa-chevron-down');
+        if (icon) {
+            icon.className = `fas ${isSectorBarCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'}`;
+        }
+    }
+}
+
+function setSectorFilter(sectorName, clearDropdown = false) {
+    if (activeSectorFilter === sectorName) {
+        activeSectorFilter = 'all';
+    } else {
+        activeSectorFilter = sectorName;
+    }
+    renderSectorSentimentUI();
+    renderSignals();
+    if (activeSectorFilter !== 'all' && !clearDropdown) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 }
 
 // Close Dropdowns on outside click automatically
@@ -1527,7 +1755,16 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
         chartData = JSON.parse(decodeURIComponent(fallbackCandlesJson));
     }
 
-    if (chartData && chartData.length > 0) {
+    let finalCandles = [];
+    if (chartData) {
+        if (Array.isArray(chartData)) {
+            finalCandles = chartData;
+        } else if (chartData.candles) {
+            finalCandles = chartData.candles;
+        }
+    }
+
+    if (finalCandles && finalCandles.length > 0) {
         const redraw = () => {
             const currentOpts = {
                 ...chartOpts,
@@ -1536,7 +1773,8 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
                 dma: document.getElementById('toggle-dma').checked,
                 rsi: document.getElementById('toggle-rsi').checked,
                 dayLines: document.getElementById('toggle-daylines') ? document.getElementById('toggle-daylines').checked : false,
-                emaMarkers: document.getElementById('toggle-markers') ? document.getElementById('toggle-markers').checked : false
+                emaMarkers: document.getElementById('toggle-markers') ? document.getElementById('toggle-markers').checked : false,
+                vpvr: true // Always on for now
             };
             renderEnrichedChart(chartData, symbol, currentOpts, tfDisplay);
         };
@@ -1558,11 +1796,14 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
     }
 }
 
-function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
+function renderEnrichedChart(chartInput, symbol, opts, tfDisplay) {
     const container = document.getElementById('zoom-chart-content');
     const legend = document.getElementById('zoom-chart-legend');
     container.innerHTML = '';
     legend.innerHTML = '';
+
+    const candles = Array.isArray(chartInput) ? chartInput : (chartInput.candles || []);
+    const vpvr = Array.isArray(chartInput) ? null : (chartInput.vpvr || null);
 
     // 1. Calculate Scaling
     let minL = Infinity;
@@ -1614,6 +1855,19 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
     const gap = (chartAreaWidth / candleCount) * 0.25;
 
     let svg = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="background: #0d1117; border-radius: 8px; user-select: none;">`;
+
+    // 2.5 Render VPVR (Horizontal Volume)
+    if (opts.vpvr && vpvr && vpvr.length > 0) {
+        const maxVpvrVol = Math.max(...vpvr.map(v => v.volume)) || 1;
+        const maxBarWidth = chartAreaWidth * 0.3; // Max 30% width
+        const binHeight = usableHeight / vpvr.length;
+
+        vpvr.forEach((v, i) => {
+            const barW = (v.volume / maxVpvrVol) * maxBarWidth;
+            const y = padTop + usableHeight - ((i + 1) * binHeight);
+            svg += `<rect x="0" y="${y}" width="${barW}" height="${binHeight - 1}" fill="rgba(14, 165, 233, 0.15)" stroke="rgba(14, 165, 233, 0.3)" stroke-width="0.5" />`;
+        });
+    }
 
     // 3. Logic for Day Boundaries
     const isIntraday = ["5m", "15m", "30m", "60m"].includes(tfDisplay);
@@ -1861,7 +2115,177 @@ function renderEnrichedChart(candles, symbol, opts, tfDisplay) {
 // --- App Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     console.log("App Initialized. Defaulting to Swing Dashboard.");
+    loadConfigsFromLocalStorage();
     setMode('swing');
     switchTab('dashboard');
     setupRSISlider(); // Initialize Dual RSI Slider
 });
+
+function saveConfigsToLocalStorage() {
+    localStorage.setItem('stock_signal_configs', JSON.stringify(CONFIGS));
+}
+
+function loadConfigsFromLocalStorage() {
+    const saved = localStorage.getItem('stock_signal_configs');
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            // Deep merge or simple assign? Simple assign for now to override defaults
+            Object.assign(CONFIGS, parsed);
+        } catch (e) {
+            console.error("Failed to load saved configs:", e);
+        }
+    }
+}
+
+// --- Pro Screener & Paper Trading Logic ---
+function renderProScreener() {
+    const tbody = document.getElementById('screener-tbody');
+    const sentimentPlaceholder = document.getElementById('screener-sentiment-placeholder');
+    if (!tbody || !sentimentPlaceholder) return;
+
+    // Show the sentiment widget in the screener too if it exists
+    const sectorContent = document.getElementById('sector-sentiment-container');
+    if (sectorContent) {
+        sentimentPlaceholder.innerHTML = sectorContent.innerHTML;
+        sentimentPlaceholder.className = 'sector-sentiment-bar';
+    }
+
+    // Filter signals: Rank >= 4
+    const proSignals = liveSignals.filter(s => s.rank >= 4);
+
+    if (proSignals.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No Rank 4-5 signals found in current mode. Run calculation first.</td></tr>`;
+        return;
+    }
+
+    let html = '';
+    proSignals.forEach(s => {
+        const starHtml = Array(s.rank).fill('<i class="fas fa-star" style="color:var(--amber); font-size:10px;"></i>').join('');
+        const price = s.ltp || s.close || 0;
+
+        // Strategy derived from rank & RSI
+        const strategy = s.rank === 5 ? "High Conviction Confluence" : "Trend Support";
+        const targets = `T1: ₹${(price * 1.05).toFixed(2)}<br>T2: ₹${(price * 1.10).toFixed(2)}`;
+        const sl = `₹${(price * 0.97).toFixed(2)}`;
+        const accumulation = `Buy: ₹${price.toFixed(2)}<br>Add: ₹${(price * 0.99).toFixed(2)}`;
+
+        html += `
+            <tr>
+                <td><div class="rank-badge rank-${s.rank}">${starHtml}</div></td>
+                <td>
+                    <div style="font-weight:700;">${s.symbol}</div>
+                    <div style="font-size:10px; color:var(--text-dim);">${s.isin}</div>
+                </td>
+                <td style="font-weight:700; color:var(--primary);">₹${price.toLocaleString('en-IN')}</td>
+                <td><span class="badge badge-info" style="background:rgba(14, 165, 233, 0.1); color:var(--primary); border:1px solid rgba(14, 165, 233, 0.2);">${strategy}</span></td>
+                <td style="color:var(--amber); font-weight:600; font-size:11px;">${accumulation}</td>
+                <td style="color:var(--success); font-weight:600; font-size:11px;">${targets}</td>
+                <td style="color:var(--danger); font-weight:600; font-size:11px;">${sl}</td>
+                <td>
+                    <button class="btn btn-primary" style="padding:6px 14px; font-size:11px; background:var(--primary); box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);" 
+                        onclick="openPaperTrade('${s.isin}', '${s.symbol}', ${price})">
+                        <i class="fas fa-plus-circle"></i> Trade
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+async function openPaperTrade(isin, symbol, price) {
+    const qty = prompt(`Enter quantity for ${symbol} at ₹${price}:`, "100");
+    if (!qty || isNaN(qty)) return;
+
+    const payload = {
+        isin: isin,
+        symbol: symbol,
+        mode: currentMode,
+        timeframe: currentTimeframe,
+        entry_price: price,
+        target_1: price * 1.05,
+        target_2: price * 1.10,
+        stop_loss: price * 0.97,
+        qty: parseInt(qty)
+    };
+
+    try {
+        const res = await fetch('/api/trades/open', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+            alert(`Paper trade opened for ${symbol}! Check your Paper Trading tab.`);
+        }
+    } catch (e) {
+        console.error("Failed to open trade", e);
+        alert("Failed to open trade. Check console.");
+    }
+}
+
+async function fetchActiveTrades() {
+    const tbody = document.getElementById('active-trades-tbody');
+    const totalPnlEl = document.getElementById('trades-total-pnl');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('/api/trades/active');
+        const result = await res.json();
+        if (result.status === 'success') {
+            const trades = result.data;
+            if (trades.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No active trades. Go to Pro Screener or Dashboard to commit a trade.</td></tr>`;
+                totalPnlEl.innerText = '₹0.00';
+                return;
+            }
+
+            let html = '';
+            let totalPnl = 0;
+            trades.forEach(t => {
+                const ltp = t.ltp || t.entry_price;
+                const pnl = (ltp - t.entry_price) * t.qty;
+                const pnlPct = ((ltp - t.entry_price) / t.entry_price) * 100;
+                const pnlColor = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+                totalPnl += pnl;
+
+                html += `
+                    <tr>
+                        <td><span class="badge" style="background:rgba(255,255,255,0.05);">${t.timeframe}</span></td>
+                        <td><div style="font-weight:700;">${t.symbol}</div><div style="font-size:9px; color:var(--text-dim);">${t.isin}</div></td>
+                        <td>₹${t.entry_price.toLocaleString('en-IN')}</td>
+                        <td style="font-weight:700; color:var(--primary);">₹${ltp.toLocaleString('en-IN')}</td>
+                        <td>${t.qty}</td>
+                        <td style="color:${pnlColor}; font-weight:700;">₹${pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td style="color:${pnlColor}; font-weight:700;">${pnl >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</td>
+                        <td>
+                            <button class="btn btn-danger" style="padding:4px 10px; font-size:10px; background:rgba(239, 68, 68, 0.1); color:var(--danger); border:1px solid rgba(239, 68, 68, 0.2);" onclick="closeTrade(${t.id})">
+                                <i class="fas fa-times"></i> Close
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = html;
+            totalPnlEl.innerText = `₹${totalPnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+            totalPnlEl.style.color = totalPnl >= 0 ? 'var(--success)' : 'var(--danger)';
+        }
+    } catch (e) {
+        console.error("Failed to fetch trades", e);
+    }
+}
+
+async function closeTrade(id) {
+    if (!confirm("Are you sure you want to close this paper trade?")) return;
+    try {
+        const res = await fetch(`/api/trades/close/${id}`, { method: 'POST' });
+        const result = await res.json();
+        if (result.status === 'success') {
+            fetchActiveTrades();
+        }
+    } catch (e) {
+        console.error("Failed to close trade", e);
+    }
+}

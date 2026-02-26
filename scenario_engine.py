@@ -19,7 +19,7 @@ async def fetch_ohlcv_data(cur, isin, base_timeframe, start_date, end_date):
         SELECT timestamp, open, high, low, close, volume 
         FROM app_sg_ohlcv_prices 
         WHERE isin = %s AND timeframe = %s 
-        AND timestamp >= DATE_SUB(%s, INTERVAL 30 DAY) AND timestamp <= %s
+        AND timestamp >= DATE_SUB(%s, INTERVAL 365 DAY) AND timestamp <= %s
         ORDER BY timestamp ASC
     """
     await cur.execute(query, (isin, base_timeframe, start_date, f"{end_date} 23:59:59"))
@@ -45,7 +45,7 @@ def prepare_indicators(df_base, df_primary, settings):
     st_base = ta.supertrend(df_base['high'], df_base['low'], df_base['close'], length=st_p, multiplier=st_m)
     if st_base is not None and not st_base.empty:
         # Col 1 is direction (1 for buy, -1 for sell)
-        df_base['ST_base_dir'] = st_base.iloc[:, 1]
+        df_base['ST_5m_dir'] = st_base.iloc[:, 1]
     
     # Calculate RSI and Supertrend for Primary (resampled) timeframe
     rsi_p = settings['RSI']['period']
@@ -59,10 +59,9 @@ def prepare_indicators(df_base, df_primary, settings):
     # Map the primary timeframe indicators back onto the base timeframe
     df_primary_subset = df_primary[['timestamp', 'RSI', 'ST_primary_dir', 'ST_primary_val']].copy()
     
-    # Shift to avoid lookahead bias
-    df_primary_subset['RSI'] = df_primary_subset['RSI'].shift(1)
-    df_primary_subset['ST_primary_dir'] = df_primary_subset['ST_primary_dir'].shift(1)
-    df_primary_subset['ST_primary_val'] = df_primary_subset['ST_primary_val'].shift(1)
+    # Shift to ensure low-timeframe bars only see the COMPLETED previous primary bar
+    # (Avoids look-ahead bias during merging)
+    df_primary_subset[['RSI', 'ST_primary_dir', 'ST_primary_val']] = df_primary_subset[['RSI', 'ST_primary_dir', 'ST_primary_val']].shift(1)
 
     df_combined = pd.merge_asof(
         df_base, 

@@ -12,6 +12,75 @@ import json
 
 app = FastAPI(title="StockSignal Pro API")
 
+# --- Paper Trading Models ---
+class TradeOpen(BaseModel):
+    isin: str
+    symbol: str
+    mode: str
+    timeframe: str
+    entry_price: float
+    target_1: float
+    target_2: float
+    stop_loss: float
+    qty: int = 1
+
+@app.post("/api/trades/open")
+async def api_open_trade(trade: TradeOpen):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    INSERT INTO app_sg_active_trades 
+                    (isin, symbol, profile_id, timeframe, entry_price, target_1, target_2, stop_loss, qty)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (trade.isin, trade.symbol, trade.mode, trade.timeframe, trade.entry_price, 
+                      trade.target_1, trade.target_2, trade.stop_loss, trade.qty))
+                await conn.commit()
+        app_pool.close()
+        await app_pool.wait_closed()
+        return {"status": "success", "message": "Trade opened successfully."}
+    except Exception as e:
+        if 'app_pool' in locals(): app_pool.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/trades/active")
+async def api_get_active_trades():
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                # Fetch active trades and join with current LTP from OHLCV table
+                await cur.execute("""
+                    SELECT t.*, p.close as ltp 
+                    FROM app_sg_active_trades t
+                    LEFT JOIN app_sg_ohlcv_prices p ON t.isin = p.isin AND t.timeframe = p.timeframe
+                    WHERE t.status = 'OPEN'
+                    AND p.timestamp = (SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE isin = t.isin AND timeframe = t.timeframe)
+                """)
+                rows = await cur.fetchall()
+        app_pool.close()
+        await app_pool.wait_closed()
+        return {"status": "success", "data": rows}
+    except Exception as e:
+        if 'app_pool' in locals(): app_pool.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/trades/close/{trade_id}")
+async def api_close_trade(trade_id: int):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("DELETE FROM app_sg_active_trades WHERE id = %s", (trade_id,))
+                await conn.commit()
+        app_pool.close()
+        await app_pool.wait_closed()
+        return {"status": "success", "message": "Trade closed/removed."}
+    except Exception as e:
+        if 'app_pool' in locals(): app_pool.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Allow CORS for local testing (so index.html can hit it from anywhere)
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +97,101 @@ async def serve_dashboard():
 
 # Mount the current directory to serve static assets (like styles.css, app.js)
 app.mount("/static", StaticFiles(directory="."), name="static")
+
+@app.post("/api/settings/save")
+async def save_settings(data: dict):
+    """Saves indicator settings for a specific profile (swing/intraday) to the database."""
+    profile = data.get("profile")
+    settings = data.get("settings")
+    if not profile or not settings:
+        raise HTTPException(status_code=400, detail="Profile and settings are required.")
+    
+    # Map frontend JS keys to backend Python engine keys
+    mapping = {
+        'rsi': 'RSI',
+        'ema': 'EMA',
+        'st': 'SUPERTREND',
+        'vol': 'VOLUME',
+        'dma': 'DMA',
+        'patterns': 'patterns',
+        'fundamentals': 'FUNDAMENTALS'
+    }
+    
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                for fe_key, be_key in mapping.items():
+                    if fe_key in settings:
+                        val = settings[fe_key]
+                        is_enabled = val.get('enabled', True)
+                        # Extract parameters excluding the 'enabled' flag
+                        params = {k: v for k, v in val.items() if k != 'enabled'}
+                        params_json = json.dumps(params)
+                        
+                        await cur.execute("""
+                            INSERT INTO app_sg_indicator_settings (profile_id, indicator_key, is_enabled, params_json)
+                            VALUES (%s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE is_enabled=VALUES(is_enabled), params_json=VALUES(params_json)
+                        """, (profile, be_key, is_enabled, params_json))
+                await conn.commit()
+        app_pool.close()
+        await app_pool.wait_closed()
+        return {"status": "success", "message": f"Settings for {profile} saved to database."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save settings: {str(e)}")
+
+@app.get("/api/sector/sentiment")
+async def get_sector_sentiment(mode: str = "swing", timeframe: str = None):
+    """Aggregates signal directions by Industry Group to provide sector-level sentiment."""
+    default_tf = "5m" if mode == "intraday" else "1d"
+    tf = timeframe if timeframe else default_tf
+    
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("""
+                    SELECT i_group, supertrend_dir, COUNT(*) as count 
+                    FROM app_sg_calculated_signals 
+                    WHERE profile_id = %s AND timeframe = %s AND i_group IS NOT NULL
+                    GROUP BY i_group, supertrend_dir
+                """, (mode, tf))
+                rows = await cur.fetchall()
+        app_pool.close()
+        await app_pool.wait_closed()
+        
+        # Aggregate logic
+        sentiment = {}
+        for r in rows:
+            g = r['i_group']
+            if g not in sentiment:
+                sentiment[g] = {'buy': 0, 'sell': 0, 'total': 0}
+            
+            if r['supertrend_dir'] == 'BUY':
+                sentiment[g]['buy'] += r['count']
+            elif r['supertrend_dir'] == 'SELL':
+                sentiment[g]['sell'] += r['count']
+            sentiment[g]['total'] += r['count']
+            
+        # Transform for frontend
+        results = []
+        for g, vals in sentiment.items():
+            score = (vals['buy'] / vals['total'] * 100) if vals['total'] > 0 else 50
+            results.append({
+                "group": g,
+                "buy_count": vals['buy'],
+                "sell_count": vals['sell'],
+                "total": vals['total'],
+                "score": round(score, 1)
+            })
+            
+        # Sort by score (Bullish first)
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return {"status": "success", "data": results}
+    except Exception as e:
+        if 'app_pool' in locals(): app_pool.close()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/signals")
 async def get_signals(mode: str = "swing", timeframe: str = None):
@@ -104,7 +268,17 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                         "trade_strategy": row['trade_strategy'] or "NORMAL",
                         "candlestick_pattern": row.get('candlestick_pattern'),
                         "last_5_candles": json.loads(row['last_5_candles']) if row.get('last_5_candles') and row['last_5_candles'].startswith('[') else None,
-                        "mtf_data": mtf_map.get(isin, {})
+                        "mtf_data": mtf_map.get(isin, {}),
+                        "sector": row.get('sector'),
+                        "i_group": row.get('i_group'),
+                        "i_subgroup": row.get('i_subgroup'),
+                        "industry": row.get('industry'),
+                        "pe": float(row['pe']) if row.get('pe') is not None else None,
+                        "pb": float(row['pb']) if row.get('pb') is not None else None,
+                        "roe": float(row['roe']) if row.get('roe') is not None else None,
+                        "eps": float(row['eps']) if row.get('eps') is not None else None,
+                        "opm": float(row['opm']) if row.get('opm') is not None else None,
+                        "npm": float(row['npm']) if row.get('npm') is not None else None
                     })
                     
     except Exception as e:
@@ -138,7 +312,7 @@ async def api_chart_details(isin: str, timeframe: str, profile: str = "swing", b
         raise HTTPException(status_code=500, detail=f"Chart Enrichment Failed: {str(e)}")
 
 @app.post("/api/calculate")
-async def calculate_signals(mode: str = "swing"):
+async def calculate_signals(mode: str = "swing", fundamentals: bool = True):
     """Manually triggers the Pandas-TA Indicator Engine from the frontend for all timeframes."""
     timeframes = ['1d', '1w', '1mo'] if mode == "swing" else ['5m', '15m', '30m', '60m']
     
@@ -151,7 +325,7 @@ async def calculate_signals(mode: str = "swing"):
     try:
         shared_cache = {}
         for tf in timeframes:
-            await process_profile(app_pool, datamart_pool, mode, tf, shared_cache)
+            await process_profile(app_pool, datamart_pool, mode, tf, shared_cache, use_fundamentals=fundamentals)
     except Exception as e:
         app_pool.close()
         datamart_pool.close()
@@ -443,18 +617,55 @@ async def api_db_stats():
                     FROM app_sg_ohlcv_prices
                     GROUP BY timeframe
                 """)
-                coverage_data = await cur.fetchall()
+                coverage_rows = await cur.fetchall()
                 coverage = {}
-                for row in coverage_data:
-                    coverage[row['timeframe']] = {
+                for row in coverage_rows:
+                    tf = row['timeframe']
+                    coverage[tf] = {
                         "min_date": row['min_date'].strftime("%Y-%m-%d %H:%M:%S") if row['min_date'] else None,
                         "max_date": row['max_date'].strftime("%Y-%m-%d %H:%M:%S") if row['max_date'] else None,
                         "count": row['c'],
-                        "days": row['days']
+                        "days": row['days'],
+                        "gaps": []
                     }
 
+                    # --- GAP CHECK LOGIC ---
+                    if row['min_date'] and row['max_date'] and tf == '1d':
+                        # 1. Fetch official holidays from Datamart
+                        holidays = []
+                        try:
+                            datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
+                            async with datamart_pool.acquire() as dm_conn:
+                                async with dm_conn.cursor() as dm_cur:
+                                    await dm_cur.execute("SELECT holiday_date FROM e_bs_holidays_nse")
+                                    holidays = [r[0] for r in await dm_cur.fetchall()]
+                            datamart_pool.close()
+                            await datamart_pool.wait_closed()
+                        except: pass
+
+                        # 2. Get dates present in DB
+                        await cur.execute("SELECT DISTINCT DATE(timestamp) as d FROM app_sg_ohlcv_prices WHERE timeframe = %s", (tf,))
+                        db_dates = {r['d'] for r in await cur.fetchall()}
+
+                        # 3. Iterate and find missing non-weekend, non-holiday dates
+                        start = row['min_date'].date()
+                        end = row['max_date'].date()
+                        import datetime
+                        curr = start
+                        while curr <= end:
+                            # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+                            if curr.weekday() < 5 and curr not in holidays and curr not in db_dates:
+                                coverage[tf]['gaps'].append(curr.strftime("%Y-%m-%d"))
+                            curr += datetime.timedelta(days=1)
+                        
+                        # Only show last 5 gaps to keep UI clean
+                        if len(coverage[tf]['gaps']) > 5:
+                            total_gaps = len(coverage[tf]['gaps'])
+                            coverage[tf]['gaps'] = coverage[tf]['gaps'][-5:]
+                            coverage[tf]['total_gap_count'] = total_gaps
+
     except Exception as e:
-        app_pool.close()
+        if app_pool: app_pool.close()
         raise HTTPException(status_code=500, detail=f"Stats Query Failed: {str(e)}")
 
     app_pool.close()

@@ -14,15 +14,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Default configurations in case the database settings are empty
 DEFAULT_CONFIGS = {
-    'swing': {
-        'RSI': {'period': 14, 'ob': 70, 'os': 30, 'enabled': True},
-        'EMA': {'fast_period': 9, 'slow_period': 20, 'enabled': True},
-        'SUPERTREND': {'period': 10, 'mult': 3.0, 'enabled': True},
-        'ATR': {'period': 14, 'enabled': True},
-        'DMA': {'periods': [10, 20, 50, 200], 'enabled': True},
-        'VOLUME': {'period': 20, 'threshold': 2.0, 'enabled': True},
-        'patterns': {'enabled': True, 'bullish': True, 'bearish': True, 'neutral': False}
-    },
     'intraday': {
         'RSI': {'period': 14, 'ob': 80, 'os': 20, 'enabled': True},
         'EMA': {'fast_period': 9, 'slow_period': 21, 'enabled': True},
@@ -30,7 +21,18 @@ DEFAULT_CONFIGS = {
         'ATR': {'period': 14, 'enabled': True},
         'DMA': {'periods': [10, 20], 'enabled': False},
         'VOLUME': {'period': 20, 'threshold': 1.5, 'enabled': True},
-        'patterns': {'enabled': True, 'bullish': True, 'bearish': True, 'neutral': False}
+        'patterns': {'enabled': True, 'bullish': True, 'bearish': True, 'neutral': False},
+        'FUNDAMENTALS': {'enabled': True}
+    },
+    'swing': {
+        'RSI': {'period': 14, 'ob': 70, 'os': 30, 'enabled': True},
+        'EMA': {'fast_period': 9, 'slow_period': 20, 'enabled': True},
+        'SUPERTREND': {'period': 10, 'mult': 3.0, 'enabled': True},
+        'ATR': {'period': 14, 'enabled': True},
+        'DMA': {'periods': [10, 20, 50, 200], 'enabled': True},
+        'VOLUME': {'period': 20, 'threshold': 2.0, 'enabled': True},
+        'patterns': {'enabled': True, 'bullish': True, 'bearish': True, 'neutral': False},
+        'FUNDAMENTALS': {'enabled': True}
     }
 }
 
@@ -142,11 +144,19 @@ def calculate_indicators(df, settings):
             
     return df.iloc[-1] # Return the latest row
 
-async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cache=None):
-    if shared_cache is None:
-        shared_cache = {}
+async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cache=None, use_fundamentals=None):
+    """
+    Main entry point for processing a specific profile and timeframe.
+    Fetches raw data, calculates indicators, and upserts to signal table.
+    """
     logging.info(f"--- Processing Profile: {profile_id.upper()} (Timeframe: {timeframe}) ---")
     settings = await get_profile_settings(pool, profile_id)
+    
+    # Apply runtime override if provided
+    if use_fundamentals is not None:
+        if 'FUNDAMENTALS' not in settings:
+            settings['FUNDAMENTALS'] = {}
+        settings['FUNDAMENTALS']['enabled'] = use_fundamentals
     
     # 1. Fetch the exact Companies aligned with dim_favourites from Datamart DB
     target_dim = 1 if profile_id == 'intraday' else 2
@@ -167,6 +177,25 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
     if not favourite_symbols:
         logging.warning("No favourite indices found in Datamart. Aborting calculation.")
         return
+
+    # Fetch Fundamental Data if enabled for this profile
+    fundamental_map = {}
+    if settings.get('FUNDAMENTALS', {}).get('enabled'):
+        try:
+            async with datamart_pool.acquire() as dm_conn:
+                async with dm_conn.cursor(aiomysql.DictCursor) as dm_cur:
+                    query = """
+                        SELECT bs_ISIN, bs_SecurityId, bs_Sector, bs_IndustryNew, 
+                               bs_IGroup, bs_ISubGroup,
+                               bs_PE, bs_PB, bs_ROE, bs_EPS, bs_OPM, bs_NPM 
+                        FROM e_bs_header_info_bse
+                    """
+                    await dm_cur.execute(query)
+                    dm_rows = await dm_cur.fetchall()
+                    for r in dm_rows:
+                        fundamental_map[r['bs_ISIN']] = r
+        except Exception as e:
+            logging.error(f"Failed to fetch fundamental data from Datamart: {e}")
 
     # Determine base timeframe to fetch raw data 
     if timeframe in ['1w', '1mo']:
@@ -209,8 +238,17 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
             signals_to_insert = []
             
             for isin in isins:
-                # Fetch recent historical data (increase limit if we are resampling to higher timeframes)
-                limit = 1500 if timeframe in ['1w', '1mo'] else 400
+                # Fetch recent historical data (increase limit to ensure 250 bar warmup AFTER resampling)
+                if timeframe in ['1w', '1mo']:
+                    limit = 3000 # 250 weeks = ~5 years
+                elif timeframe == '60m':
+                    limit = 3000 # 250 1-hour candles = 3000 5m candles
+                elif timeframe == '30m':
+                    limit = 1500 # 250 30-min candles = 1500 5m candles
+                elif timeframe == '15m':
+                    limit = 2000 # 250 15-min candles = 750 5m candles (using 2000 for extra buffer)
+                else: 
+                    limit = 1250 # 1d / 5m warmup (generous padding)
                 await cur.execute(
                     """
                     SELECT timestamp, open, high, low, close, volume 
@@ -316,6 +354,23 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     rsi_val = float(latest_data[rsi_col]) if rsi_col in latest_data and pd.notna(latest_data[rsi_col]) else None
                     rsi_day_high = float(latest_data['RSI_day_high']) if 'RSI_day_high' in latest_data and pd.notna(latest_data['RSI_day_high']) else None
                     rsi_day_low = float(latest_data['RSI_day_low']) if 'RSI_day_low' in latest_data and pd.notna(latest_data['RSI_day_low']) else None
+                # --- VPVR (Volume Profile) ---
+                vpvr_data = []
+                if not df.empty:
+                    prices_min = df['low'].min()
+                    prices_max = df['high'].max()
+                    num_bins = 24
+                    if prices_max > prices_min:
+                        bin_size = (prices_max - prices_min) / num_bins
+                        for i in range(num_bins):
+                            b_start = prices_min + (i * bin_size)
+                            b_end = b_start + bin_size
+                            # Volume in this price range
+                            v = df[(df['close'] >= b_start) & (df['close'] < b_end)]['volume'].sum()
+                            vpvr_data.append({
+                                "price": float(round(b_start, 2)),
+                                "volume": int(v)
+                            })
                 
                 ema_fast = None
                 ema_slow = None
@@ -490,6 +545,25 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         })
                     last_5_candles = json.dumps(candles_list)
 
+                # --- Fundamentals Integration ---
+                sector = industry = pe = pb = roe = eps = opm = npm = i_group = i_subgroup = None
+                if settings.get('FUNDAMENTALS', {}).get('enabled'):
+                    f_data = fundamental_map.get(isin, {})
+                    sector = f_data.get('bs_Sector')
+                    industry = f_data.get('bs_IndustryNew')
+                    i_group = f_data.get('bs_IGroup')
+                    i_subgroup = f_data.get('bs_ISubGroup')
+                    
+                    # For Intraday, PE/ROE are not meaningful context - skip them to maintain purity
+                    if profile_id != 'intraday':
+                        pe = float(f_data['bs_PE']) if f_data.get('bs_PE') is not None else None
+                        roe = float(f_data['bs_ROE']) if f_data.get('bs_ROE') is not None else None
+                    
+                    pb = float(f_data['bs_PB']) if f_data.get('bs_PB') is not None else None
+                    eps = float(f_data['bs_EPS']) if f_data.get('bs_EPS') is not None else None
+                    opm = float(f_data['bs_OPM']) if f_data.get('bs_OPM') is not None else None
+                    npm = float(f_data['bs_NPM']) if f_data.get('bs_NPM') is not None else None
+
                 signals_to_insert.append((
                     isin, profile_id, timeframe, timestamp, ltp, rsi_val, 
                     rsi_day_high, rsi_day_low,
@@ -497,15 +571,22 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     vol_signal, vol_ratio,
                     ema_fast, # Using ema_fast as legacy ema_value
                     st_dir, st_value, json.dumps(dma_data), rank,
-                    sl, target, trade_strategy, pattern_str, last_5_candles
+                    sl, target, trade_strategy, pattern_str, last_5_candles,
+                    sector, industry, pe, pb, roe, eps, opm, npm,
+                    i_group, i_subgroup
                 ))
             
             # Upsert into database
             if signals_to_insert:
                 upsert_query = """
                     INSERT INTO app_sg_calculated_signals 
-                    (isin, profile_id, timeframe, timestamp, ltp, rsi, rsi_day_high, rsi_day_low, ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, trade_strategy, candlestick_pattern, last_5_candles)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (isin, profile_id, timeframe, timestamp, ltp, rsi, rsi_day_high, rsi_day_low, 
+                     ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, 
+                     supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, 
+                     trade_strategy, candlestick_pattern, last_5_candles,
+                     sector, industry, pe, pb, roe, eps, opm, npm,
+                     i_group, i_subgroup)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         timestamp=VALUES(timestamp), ltp=VALUES(ltp), rsi=VALUES(rsi), 
                         rsi_day_high=VALUES(rsi_day_high), rsi_day_low=VALUES(rsi_day_low),
@@ -516,7 +597,10 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         dma_data=VALUES(dma_data), confluence_rank=VALUES(confluence_rank),
                         sl=VALUES(sl), target=VALUES(target), trade_strategy=VALUES(trade_strategy),
                         candlestick_pattern=VALUES(candlestick_pattern),
-                        last_5_candles=VALUES(last_5_candles)
+                        last_5_candles=VALUES(last_5_candles),
+                        sector=VALUES(sector), industry=VALUES(industry), pe=VALUES(pe), 
+                        pb=VALUES(pb), roe=VALUES(roe), eps=VALUES(eps), opm=VALUES(opm), npm=VALUES(npm),
+                        i_group=VALUES(i_group), i_subgroup=VALUES(i_subgroup)
                 """
                 await cur.executemany(upsert_query, signals_to_insert)
                 logging.info(f"✅ Successfully updated {len(signals_to_insert)} signals for {profile_id} ({timeframe}).")
@@ -528,14 +612,16 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
     # Determine base timeframe and required limit
     if timeframe in ['1w', '1mo']:
         base_timeframe = '1d'
-        limit = 1500
     elif timeframe in ['15m', '30m', '60m']:
         base_timeframe = '5m'
-        limit = 1000 # 30 bars of 60m = 360 base candles
     else:
         base_timeframe = timeframe
-        limit = max(250, bars + 100)
 
+    # Define fetch limit based on timeframe (Ensuring 250+ bars)
+    if timeframe == '5m': limit = 1500 # ~15 days
+    elif timeframe in ['15m', '30m', '60m']: limit = 3000 
+    else: limit = 1000 # ~4 years daily
+    
     async with app_pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute(
@@ -626,7 +712,28 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                 'open': 'o', 'high': 'h', 'low': 'l', 'close': 'c', 'volume': 'v'
             })
             
-            return df.to_dict(orient='records')
+            # --- VPVR (Volume Profile) ---
+            vpvr_data = []
+            if not df.empty:
+                prices_min = df['l'].min()
+                prices_max = df['h'].max()
+                num_bins = 24
+                if prices_max > prices_min:
+                    bin_size = (prices_max - prices_min) / num_bins
+                    for i in range(num_bins):
+                        b_start = prices_min + (i * bin_size)
+                        b_end = b_start + bin_size
+                        # Volume in this price range
+                        v = df[(df['c'] >= b_start) & (df['c'] < b_end)]['v'].sum()
+                        vpvr_data.append({
+                            "price": float(round(b_start, 2)),
+                            "volume": float(v)
+                        })
+
+            return {
+                "candles": df.to_dict(orient='records'),
+                "vpvr": vpvr_data
+            }
 
 async def main():
     logging.info("Starting Indicator Engine (Testing Phase - Favourites Only)...")

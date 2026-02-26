@@ -6,6 +6,7 @@
     --text-main: #f8fafc;
     --text-dim: #94a3b8;
     --primary: #0ea5e9;
+    --primary-rgb: 14, 165, 233;
     --primary-hover: #0284c7;
     --success: #10b981;
     --danger: #ef4444;
@@ -496,8 +497,9 @@ h1 {
     width: 70px;
 }
 
-.col-symbol {
-    width: 220px;
+.col-symbol,
+.col-sector {
+    width: 160px;
 }
 
 .col-ltp {
@@ -1138,4 +1140,154 @@ input:checked+.slider:before {
     transform: scale(1.05);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Isolated HUD Styles */
+.job-hud {
+    position: fixed;
+    bottom: 24px;
+    left: 284px;
+    /* Sidebar width (260) + gap (24) */
+    right: 24px;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hud-main {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    gap: 15px;
+}
+
+.hud-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 220px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.hud-percent {
+    background: var(--primary);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: 10px;
+}
+
+.hud-progress-track {
+    flex: 1;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.hud-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), #38bdf8);
+    transition: width 0.4s ease;
+}
+
+.hud-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.hud-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-dim);
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.hud-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-main);
+}
+
+.hud-btn.stop-btn {
+    color: var(--danger);
+}
+
+.hud-console {
+    border-top: 1px solid var(--glass-border);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 15px;
+    max-height: 250px;
+    overflow-y: auto;
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+}
+
+/* Sector Sentiment Widget */
+.sector-sentiment-bar {
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+    animation: fadeIn 0.4s ease-out;
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding 0.4s, margin 0.4s;
+    position: relative;
+    overflow: hidden;
+    max-height: 800px;
+    /* Large enough for all sectors */
+}
+
+.sector-sentiment-bar.collapsed {
+    max-height: 52px;
+    /* Title bar only */
+    padding-bottom: 0;
+    margin-bottom: 12px;
+}
+
+.sector-sentiment-bar.collapsed .sentiment-grid {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-10px);
+}
+
+.sector-sentiment-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-width: 140px;
+    flex: 1;
+    max-width: 220px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+
+.sector-sentiment-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    border-color: var(--glass-border-bright);
+}
+
+.sector-sentiment-card.active-sector {
+    background: rgba(var(--primary-rgb), 0.15);
+    border-color: var(--primary);
+    box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3);
 }
