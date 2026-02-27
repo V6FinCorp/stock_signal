@@ -260,26 +260,72 @@
             </div>
         </main>
 
-        <!-- PRO SCREENER VIEW -->
+        <!-- SCREENER VIEW -->
         <main class="main-content hidden" id="pro-screener-view">
             <header class="top-header">
                 <div class="header-left">
                     <h1 id="page-title-pro">High-Conviction Screener</h1>
                     <p class="text-dim">Absolute Rank 4-5 signals with high probability trade setups</p>
                 </div>
-                <div class="header-right" style="display: flex; gap: 12px; align-items: center;">
-                    <div class="search-box" style="margin: 0; width: 250px;">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="screener-search" placeholder="Search Screener..." oninput="applyScreenerFilters()">
-                    </div>
-                    <select class="select-input" id="screener-filter-rank" onchange="applyScreenerFilters()" style="min-width: 160px;">
-                        <option value="4">All High (±4 & ±5)</option>
-                        <option value="5">Perfect Only (±5)</option>
-                        <option value="bullish">Bullish Only (+)</option>
-                        <option value="bearish">Bearish Only (-)</option>
-                    </select>
-                </div>
             </header>
+
+            <div class="controls-row" style="margin-bottom: 24px; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--border-color);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
+                    <!-- Row 1: Search & Basic Filters -->
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <div class="search-box" style="margin: 0; flex: 1;">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="screener-search" placeholder="Search Symbol..." oninput="applyScreenerFilters()">
+                        </div>
+                        <select class="select-input" id="screener-filter-tf" onchange="applyScreenerFilters()" style="width: 120px;">
+                            <option value="all">Timeframe: All</option>
+                            <option value="5m">5 Minute</option>
+                            <option value="15m">15 Minute</option>
+                            <option value="1h">1 Hour</option>
+                            <option value="1d">Daily</option>
+                            <option value="1w">Weekly</option>
+                        </select>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <select class="select-input" id="screener-filter-dir" onchange="applyScreenerFilters()">
+                            <option value="all">Direction: All</option>
+                            <option value="buy">BUY Only</option>
+                            <option value="sell">SELL Only</option>
+                        </select>
+                        <select class="select-input" id="screener-filter-strat" onchange="applyScreenerFilters()">
+                            <option value="all">Trade Plan: All</option>
+                            <option value="PERFECT_BUY">Perfect Buy</option>
+                            <option value="PERFECT_SELL">Perfect Sell</option>
+                            <option value="DMA_BOUNCE">Support Bounce</option>
+                            <option value="OVEREXTENDED">Overextended</option>
+                        </select>
+                    </div>
+
+                    <!-- Row 2: Sliders -->
+                    <div class="rsi-filter-wrapper" style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
+                        <span style="font-size: 10px; font-weight: 700; color: var(--success); text-transform: uppercase;">Min Target %:</span>
+                        <div class="rsi-slider-container">
+                            <div class="rsi-slider-track"></div>
+                            <div class="rsi-slider-range" id="screener-target-range"></div>
+                            <input type="range" id="screener-target-min" min="0" max="20" value="0" step="0.5" oninput="applyScreenerFilters()">
+                            <input type="range" id="screener-target-max" min="0" max="20" value="20" step="0.5" oninput="applyScreenerFilters()">
+                        </div>
+                        <div class="rsi-values" id="screener-target-label" style="color: var(--success);">0% - 20%</div>
+                    </div>
+
+                    <div class="rsi-filter-wrapper" style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
+                        <span style="font-size: 10px; font-weight: 700; color: var(--danger); text-transform: uppercase;">Max SL %:</span>
+                        <div class="rsi-slider-container">
+                            <div class="rsi-slider-track"></div>
+                            <div class="rsi-slider-range" id="screener-sl-range"></div>
+                            <input type="range" id="screener-sl-min" min="0" max="10" value="0" step="0.2" oninput="applyScreenerFilters()">
+                            <input type="range" id="screener-sl-max" min="0" max="10" value="10" step="0.2" oninput="applyScreenerFilters()">
+                        </div>
+                        <div class="rsi-values" id="screener-sl-label" style="color: var(--danger);">0% - 10%</div>
+                    </div>
+                </div>
+            </div>
 
             <div id="screener-sentiment-placeholder"></div>
 

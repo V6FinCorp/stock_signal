@@ -1481,45 +1481,43 @@ function drawBacktestGrid(symbolFilter = 'ALL') {
 
 // Initialized via DOMContentLoaded below.
 
-function setupRSISlider() {
-    const minInput = document.getElementById('filter-rsi-min');
-    const maxInput = document.getElementById('filter-rsi-max');
-    const rangeTrack = document.getElementById('rsi-slider-range');
-    const label = document.getElementById('rsi-range-label');
+function setupDualSlider(minId, maxId, rangeId, labelId, minLimit, maxLimit, step, unit, onUpdate) {
+    const minInput = document.getElementById(minId);
+    const maxInput = document.getElementById(maxId);
+    const rangeTrack = document.getElementById(rangeId);
+    const label = document.getElementById(labelId);
 
     if (!minInput || !maxInput || !rangeTrack || !label) return;
 
-    function updateSlider() {
-        let minVal = parseInt(minInput.value);
-        let maxVal = parseInt(maxInput.value);
+    function update() {
+        let minVal = parseFloat(minInput.value);
+        let maxVal = parseFloat(maxInput.value);
 
-        // Prevent crossing
-        if (minVal > maxVal - 5) {
-            if (this === minInput) {
-                minInput.value = maxVal - 5;
-                minVal = maxVal - 5;
-            } else {
-                maxInput.value = minVal + 5;
-                maxVal = minVal + 5;
-            }
+        if (minVal > maxVal) {
+            if (this === minInput) { minInput.value = maxVal; minVal = maxVal; }
+            else { maxInput.value = minVal; maxVal = minVal; }
         }
 
-        // Update Visual Track
-        rangeTrack.style.left = (minVal) + '%';
-        rangeTrack.style.width = (maxVal - minVal) + '%';
+        const rangeWidth = maxLimit - minLimit;
+        rangeTrack.style.left = ((minVal - minLimit) / rangeWidth * 100) + '%';
+        rangeTrack.style.width = ((maxVal - minVal) / rangeWidth * 100) + '%';
+        label.innerText = `${minVal}${unit} - ${maxVal}${unit}`;
 
-        // Update Label
-        label.innerText = `${minVal} - ${maxVal}`;
-
-        // Trigger Render
-        renderSignals();
+        if (onUpdate) onUpdate();
     }
 
-    minInput.oninput = updateSlider;
-    maxInput.oninput = updateSlider;
+    minInput.oninput = update;
+    maxInput.oninput = update;
+    update();
+}
 
-    // Initial run
-    updateSlider();
+function setupRSISlider() {
+    setupDualSlider('filter-rsi-min', 'filter-rsi-max', 'rsi-slider-range', 'rsi-range-label', 0, 100, 1, '', renderSignals);
+}
+
+function setupScreenerSliders() {
+    setupDualSlider('screener-target-min', 'screener-target-max', 'screener-target-range', 'screener-target-label', 0, 20, 0.5, '%', applyScreenerFilters);
+    setupDualSlider('screener-sl-min', 'screener-sl-max', 'screener-sl-range', 'screener-sl-label', 0, 10, 0.2, '%', applyScreenerFilters);
 }
 
 // --- Column Toggle Logic ---
@@ -2178,6 +2176,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setMode('swing');
     switchTab('dashboard');
     setupRSISlider(); // Initialize Dual RSI Slider
+    setupScreenerSliders(); // Initialize Screener Sliders
     applyZoom(); // Apply initial zoom level
 });
 
@@ -2225,18 +2224,46 @@ function applyScreenerFilters() {
     if (!tbody) return;
 
     const searchTerm = document.getElementById('screener-search').value.toLowerCase();
-    const rankFilter = document.getElementById('screener-filter-rank').value;
+    const tfFilter = document.getElementById('screener-filter-tf').value;
+    const dirFilter = document.getElementById('screener-filter-dir').value;
+    const stratFilter = document.getElementById('screener-filter-strat').value;
+
+    const targetMin = parseFloat(document.getElementById('screener-target-min').value);
+    const targetMax = parseFloat(document.getElementById('screener-target-max').value);
+    const slMin = parseFloat(document.getElementById('screener-sl-min').value);
+    const slMax = parseFloat(document.getElementById('screener-sl-max').value);
     
     let filtered = screenerMasterData.filter(s => {
+        // 1. Search filter
         const matchesSearch = s.symbol.toLowerCase().includes(searchTerm) || s.isin.toLowerCase().includes(searchTerm);
-        
-        let matchesRank = true;
+        if (!matchesSearch) return false;
+
+        // 2. Timeframe filter
+        if (tfFilter !== 'all' && s.timeframe !== tfFilter) return false;
+
+        // 3. Direction filter
+        if (dirFilter !== 'all') {
+            const isBuy = (s.confluence_rank || 0) > 0;
+            if (dirFilter === 'buy' && !isBuy) return false;
+            if (dirFilter === 'sell' && isBuy) return false;
+        }
+
+        // 4. Strategy filter
+        if (stratFilter !== 'all' && s.trade_strategy !== stratFilter) return false;
+
+        // 5. Target/SL % filters
         const score = s.confluence_rank || 0;
-        if (rankFilter === '5') matchesRank = Math.abs(score) === 5;
-        else if (rankFilter === 'bullish') matchesRank = score > 0;
-        else if (rankFilter === 'bearish') matchesRank = score < 0;
+        const price = s.ltp || s.close || 0;
+        const targetVal = s.target || (score > 0 ? price * 1.05 : price * 0.95); // fallback if not in DB
+        const slVal = s.sl || (score > 0 ? price * 0.97 : price * 1.03);
+
+        const rewardPct = Math.abs((targetVal - price) / price) * 100;
+        const riskPct = Math.abs((slVal - price) / price) * 100;
+
+        if (rewardPct < targetMin || rewardPct > targetMax) return false;
+        if (riskPct < slMin || riskPct > slMax) return false;
         
-        return matchesSearch && matchesRank;
+        return true;
     });
 
     if (filtered.length === 0) {
