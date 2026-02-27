@@ -2337,10 +2337,6 @@ function applyScreenerFilters() {
         `;
         });
         tbody.innerHTML = html;
-    } catch (e) {
-        console.error("Pro Screener Render Error:", e);
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--danger);">Failed to load alerts. Check console.</td></tr>';
-    }
 }
 
 async function openPaperTrade(isin, symbol, price, timeframe) {
