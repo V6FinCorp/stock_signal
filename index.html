@@ -203,9 +203,10 @@
                             oninput="renderSignals()">
                     </div>
                     <select class="select-input" id="filter-rank" onchange="renderSignals()">
-                        <option value="all">Min Rank (All)</option>
-                        <option value="3">Rank 3+</option>
-                        <option value="4">Rank 4+</option>
+                        <option value="all">Any Conviction (All)</option>
+                        <option value="3">Bullish Confluence (3+)</option>
+                        <option value="-3">Bearish Confluence (≤ -3)</option>
+                        <option value="top">Top Conviction (±4)</option>
                     </select>
 
                     <div class="rsi-filter-wrapper">
@@ -252,8 +253,10 @@
         <main class="main-content hidden" id="pro-screener-view">
             <header class="top-header">
                 <div class="header-left">
-                    <h1>High-Conviction Pro Screener</h1>
-                    <p class="text-dim">Only Rank 4-5 signals with high probability trade setups</p>
+                    <h1 id="page-title-pro">High-Conviction Pro Screener</h1>
+                    <p class="text-dim">Only absolute Rank 4-5 signals with high probability trade setups</p>
+                </div>
+                <div class="header-right">
                 </div>
             </header>
 
@@ -263,7 +266,7 @@
                 <table class="signal-table" id="screener-table">
                     <thead>
                         <tr>
-                            <th>Confidence</th>
+                            <th>Conviction Rank</th>
                             <th>Stock</th>
                             <th>Current Price</th>
                             <th>Trade Plan (Strategy)</th>
@@ -643,29 +646,7 @@
                         style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1200px;">
                         <div class="settings-col-left">
                             <!-- Profile Group -->
-                            <div class="settings-group">
-                                <h3>Strategy Profile</h3>
-                                <div class="control-field">
-                                    <label>Editing Configuration For:</label>
-                                    <select class="select-input" id="config-profile-selector"
-                                        onchange="loadProfileSettings()">
-                                        <option value="swing">Swing Portfolio (Daily/Weekly)</option>
-                                        <option value="intraday">Intraday Momentum (5m/15m)</option>
-                                    </select>
-                                    <p class="text-dim" style="font-size: 11px; margin-top: 5px;">Settings are
-                                        independent
-                                        for
-                                        each mode.</p>
-                                </div>
-                                <div class="control-field">
-                                    <label>Watchlist Generation</label>
-                                    <div class="radio-group" style="display: flex; gap: 16px;">
-                                        <label><input type="radio" name="watchlist" value="top"> Top by Volume</label>
-                                        <label><input type="radio" name="watchlist" value="manual" checked> Manual
-                                            Picker</label>
-                                    </div>
-                                </div>
-                            </div>
+
 
                             <!-- Automation Settings Group -->
                             <div class="settings-group">

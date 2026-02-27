@@ -540,12 +540,20 @@ h1 {
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    color: var(--amber);
+    color: var(--text-dim);
+    font-size: 11px;
 }
 
 .rank-high {
-    background: rgba(245, 158, 11, 0.2);
-    border: 1px solid var(--amber);
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid var(--success);
+    color: var(--success) !important;
+}
+
+.rank-low {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid var(--danger);
+    color: var(--danger) !important;
 }
 
 .symbol-name {
@@ -586,18 +594,28 @@ h1 {
 }
 
 .bg-perfect {
-    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    background: linear-gradient(135deg, #f59e0b, #10b981);
+    color: white;
+}
+
+.bg-perfect-sell {
+    background: linear-gradient(135deg, #ef4444, #7f1d1d);
     color: white;
 }
 
 .bg-bounce {
-    background: rgba(14, 165, 233, 0.15);
-    color: var(--primary);
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+}
+
+.bg-resistance {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger);
 }
 
 .bg-stretch {
-    background: rgba(239, 68, 68, 0.15);
-    color: var(--danger);
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--amber);
 }
 
 .bg-normal {

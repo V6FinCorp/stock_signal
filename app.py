@@ -273,6 +273,7 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                         "i_group": row.get('i_group'),
                         "i_subgroup": row.get('i_subgroup'),
                         "industry": row.get('industry'),
+                        "timestamp": row['timestamp'].strftime("%Y-%m-%d %H:%M:%S") if row['timestamp'] else None,
                         "pe": float(row['pe']) if row.get('pe') is not None else None,
                         "pb": float(row['pb']) if row.get('pb') is not None else None,
                         "roe": float(row['roe']) if row.get('roe') is not None else None,

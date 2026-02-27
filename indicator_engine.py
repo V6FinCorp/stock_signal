@@ -480,16 +480,36 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 # +1 if RSI > 50 (bullish momemtum)
                 # +1 if Price > DMA(20)
                 rank = 0
-                if ema_fast and ema_slow and ema_fast > ema_slow: rank += 1
+                # 1. EMA Signal (+1 for BUY, -1 for SELL)
+                if ema_signal == 'BUY': rank += 1
+                elif ema_signal == 'SELL': rank -= 1
+                
+                # 2. Supertrend (+1 for BUY, -1 for SELL)
                 if st_dir == 'BUY': rank += 1
-                if rsi_val and rsi_val > 50: rank += 1
-                if dma_data and dma_data.get('SMA_20') and ltp > dma_data.get('SMA_20'): rank += 1
+                elif st_dir == 'SELL': rank -= 1
+                
+                # 3. RSI (+1 for RSI > 50, -1 for RSI < 50)
+                if rsi_val is not None:
+                    if rsi_val > 50: rank += 1
+                    elif rsi_val < 50: rank -= 1
+                
+                # 4. Anchor Trend (SMA 20) (+1 for price > SMA, -1 for price < SMA)
+                if dma_data and dma_data.get('SMA_20'):
+                    sma20 = dma_data.get('SMA_20')
+                    if ltp > sma20: rank += 1
+                    else: rank -= 1
+                
+                # 5. Volume Signal (+1 for BULL_SPIKE, -1 for BEAR_SPIKE)
                 if vol_signal == 'BULL_SPIKE': rank += 1
+                elif vol_signal == 'BEAR_SPIKE': rank -= 1
 
                 # --- Trade Plan Logic (Pick Stocks for Trade) ---
                 sl = None
                 target = None
                 trade_strategy = "NORMAL"
+                
+                # Determine RR based on Profile
+                rr_multiplier = 2.0 if profile_id == 'swing' else 1.5
                 
                 if st_dir == 'BUY':
                     # SL is the lower of Supertrend and EMA Slow (safer floor)
@@ -502,7 +522,12 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         
                     if sl and sl < ltp:
                         risk = ltp - sl
-                        target = ltp + (risk * 2.0) # 1:2 Reward
+                        target = ltp + (risk * rr_multiplier) # Profile-specific RR
+                    else:
+                        # Fallback SL (e.g. 0.5% for intraday, 3% for swing)
+                        sl_pct = 0.03 if profile_id == 'swing' else 0.005
+                        sl = ltp * (1 - sl_pct)
+                        target = ltp * (1 + (sl_pct * rr_multiplier))
                 elif st_dir == 'SELL':
                     # Shorting Trade Plan
                     if st_value and ema_slow:
@@ -514,21 +539,29 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         
                     if sl and sl > ltp:
                         risk = sl - ltp
-                        target = ltp - (risk * 2.0)
+                        target = ltp - (risk * rr_multiplier)
+                    else:
+                        sl_pct = 0.03 if profile_id == 'swing' else 0.005
+                        sl = ltp * (1 + sl_pct)
+                        target = ltp * (1 - (sl_pct * rr_multiplier))
                 
                 # Pick Strategy Labels
                 if rank >= 4 and vol_signal == 'BULL_SPIKE' and ema_signal == 'BUY' and st_dir == 'BUY':
                     trade_strategy = "PERFECT_BUY"
+                elif rank <= -4 and vol_signal == 'BEAR_SPIKE' and ema_signal == 'SELL' and st_dir == 'SELL':
+                    trade_strategy = "PERFECT_SELL"
                 elif st_dir == 'BUY' and dma_data:
                     # Pullback logic: Check if price is near major DMA (20, 50, or 200)
                     for dma_val in dma_data.values():
                         if 0.985 <= (ltp / dma_val) <= 1.015:
                             trade_strategy = "DMA_BOUNCE"
                             break
-                
-                # Overextended check
-                if ema_slow and ltp > (ema_slow * 1.12):
-                    trade_strategy = "OVEREXTENDED"
+                elif st_dir == 'SELL' and dma_data:
+                    # Resistance logic
+                    for dma_val in dma_data.values():
+                        if 0.985 <= (ltp / dma_val) <= 1.015:
+                            trade_strategy = "DMA_RESISTANCE"
+                            break
 
                 # Last 5 candles visualizer
                 last_5_candles = None

@@ -107,11 +107,13 @@ This is the core mathematical brain. It uses `pandas` and `pandas-ta`.
     *   **Candlestick Patterns:** Analyzes all `CDL_` columns from `pandas-ta`. 
         *   *Logic Guard:* Patterns are only registered if `abs(value) >= 10`.
         *   *Categorization:* `CDL_INSIDE`, `CDL_BELTHOLD`, `CDL_DOJI` variants are forcefully mapped to "Neutral".
-*   **Confluence Ranking:** A composite integer score.
-    *   `+10` points for Supertrend BUY, `-10` for SELL.
-    *   `+5` points for EMA BUY, `-5` for SELL.
-    *   `+5` points for extreme Volume breakout.
-    *   Bonus points mapped based on RSI proximity to 50 bounds.
+*   **Confluence Ranking:** A composite integer score ranging from -5 to +5.
+    *   `+1 / -1` point for Supertrend direction (BUY/SELL).
+    *   `+1 / -1` point for EMA crossover (BUY/SELL).
+    *   `+1 / -1` point for RSI momentum (Above/Below 50).
+    *   `+1 / -1` point for Price vs SMA 20 (Above/Below).
+    *   `+1 / -1` point for Volume breakout (BULL_SPIKE/BEAR_SPIKE).
+    *   *Result:* Positive scores indicate Bullish confluence, Negative scores indicate Bearish confluence. Scores of ±3 or higher are considered "High Conviction".
 
 ---
 

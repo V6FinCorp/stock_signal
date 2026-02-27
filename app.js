@@ -59,6 +59,7 @@ let currentSortColumn = 'rsi'; // Default sort by RSI
 let currentSortDirection = 'desc'; // Default desc
 let activeSectorFilter = 'all';
 let isSectorBarCollapsed = false;
+let activeTab = 'dashboard';
 
 let HUD_STATES = {
     swing: { active: false, expanded: false },
@@ -114,23 +115,46 @@ function setStatFilter(filterType) {
 }
 
 function setMode(mode) {
+    console.log(`Setting Mode: ${mode}`);
+    const oldMode = currentMode;
     currentMode = mode;
     currentTimeframe = MODES[mode].defaultTF;
 
     // Pulse navigation
-    document.getElementById('mode-swing').classList.toggle('active', mode === 'swing');
-    document.getElementById('mode-intraday').classList.toggle('active', mode === 'intraday');
-    document.getElementById('page-title').innerText = MODES[mode].title;
+    document.querySelectorAll('#mode-swing, #mode-intraday').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`mode-${mode}`).classList.add('active');
+
+    // Update ALL page titles to reflect the context globally
+    const modeLabel = mode === 'swing' ? 'Swing' : 'Intraday';
+
+    const dashboardTitle = document.getElementById('page-title');
+    if (dashboardTitle) dashboardTitle.innerText = `${modeLabel} Trading Dashboard`;
+
+    const proTitle = document.getElementById('page-title-pro');
+    if (proTitle) proTitle.innerText = `High-Conviction ${modeLabel} Pro Screener`;
+
+    const settingsTitle = document.getElementById('page-title-settings');
+    if (settingsTitle) settingsTitle.innerText = `${modeLabel} Engine Configuration`;
+
+    // Clear local cache when switching modes to prevent any data "bleeding" or staleness
+    if (oldMode !== mode) {
+        signalCache = {};
+    }
 
     // HUD Context Sync
     syncHudVisibility();
 
-    // Update settings selector to match mode context
-    document.getElementById('config-profile-selector').value = mode;
+    // Logic to refresh whatever view the user is on strictly
+    if (activeTab === 'dashboard') {
+        renderTimeframes();
+        updateTableHeader();
+        fetchAndRenderSignals(true); // Force fetch on mode switch
+    } else if (activeTab === 'pro-screener') {
+        renderProScreener();
+    } else if (activeTab === 'settings') {
+        loadProfileSettings();
+    }
 
-    renderTimeframes();
-    updateTableHeader();
-    fetchAndRenderSignals();
     fetchSystemStatus();
     updateSectorSentiment();
 }
@@ -265,7 +289,7 @@ function renderSignals() {
     document.getElementById('stat-bullish').innerText = bullish.toLocaleString();
     const bearish = liveSignals.filter(s => s.supertrend_dir === 'SELL').length;
     document.getElementById('stat-bearish').innerText = bearish.toLocaleString();
-    const confluence = liveSignals.filter(s => s.confluence_rank >= 3).length;
+    const confluence = liveSignals.filter(s => Math.abs(s.confluence_rank) >= 3).length;
     document.getElementById('stat-confluence').innerText = confluence.toLocaleString();
 
     // 2. Filter Data
@@ -277,14 +301,22 @@ function renderSignals() {
     } else if (activeStatFilter === 'bearish') {
         displayData = displayData.filter(s => s.supertrend_dir === 'SELL');
     } else if (activeStatFilter === 'confluence') {
-        displayData = displayData.filter(s => s.confluence_rank >= 3);
+        displayData = displayData.filter(s => Math.abs(s.confluence_rank) >= 3);
     }
 
     // Filter by rank dropdown
     const filterRank = document.getElementById('filter-rank') ? document.getElementById('filter-rank').value : 'all';
     if (filterRank !== 'all') {
-        const minRank = parseInt(filterRank);
-        displayData = displayData.filter(s => s.confluence_rank >= minRank);
+        if (filterRank === 'top') {
+            displayData = displayData.filter(s => Math.abs(s.confluence_rank) >= 4);
+        } else {
+            const minRank = parseInt(filterRank);
+            if (minRank > 0) {
+                displayData = displayData.filter(s => s.confluence_rank >= minRank);
+            } else {
+                displayData = displayData.filter(s => s.confluence_rank <= minRank);
+            }
+        }
     }
 
     // Filter by Sector
@@ -345,8 +377,12 @@ function renderSignals() {
         const score = stock.confluence_rank || 0;
         const row = document.createElement('tr');
 
+        let rankClass = '';
+        if (score >= 3) rankClass = 'rank-high';
+        else if (score <= -3) rankClass = 'rank-low';
+
         let rowHtml = `
-            <td class="col-rank"><div class="rank-badge ${score >= 3 ? 'rank-high' : ''}" style="margin-top: 2px;">${score}</div></td>
+            <td class="col-rank"><div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score}</div></td>
             <td class="col-symbol">
                 <div class="symbol-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stock.symbol}</div>
                 <div class="isin-code">${stock.isin}</div>
@@ -426,8 +462,10 @@ function renderSignals() {
         const strat = stock.trade_strategy || 'NORMAL';
         let stratClass = 'bg-normal';
         let stratLabel = 'Neutral';
-        if (strat === 'PERFECT_BUY') { stratClass = 'bg-perfect'; stratLabel = 'Perfect Setup'; }
+        if (strat === 'PERFECT_BUY') { stratClass = 'bg-perfect'; stratLabel = 'Perfect Buy'; }
+        else if (strat === 'PERFECT_SELL') { stratClass = 'bg-perfect-sell'; stratLabel = 'Perfect Sell'; }
         else if (strat === 'DMA_BOUNCE') { stratClass = 'bg-bounce'; stratLabel = 'Support Bounce'; }
+        else if (strat === 'DMA_RESISTANCE') { stratClass = 'bg-resistance'; stratLabel = 'Resistance'; }
         else if (strat === 'OVEREXTENDED') { stratClass = 'bg-stretch'; stratLabel = 'Stretched'; }
 
         rowHtml += `
@@ -620,7 +658,7 @@ document.getElementById('filter-rank').addEventListener('change', renderSignals)
 // --- Settings Logic ---
 
 function loadProfileSettings() {
-    const profile = document.getElementById('config-profile-selector').value;
+    const profile = currentMode;
     const conf = CONFIGS[profile];
 
     if (conf.auto) {
@@ -686,7 +724,7 @@ function loadProfileSettings() {
 }
 
 function saveProfileSettings() {
-    const profile = document.getElementById('config-profile-selector').value;
+    const profile = currentMode;
     const conf = CONFIGS[profile];
 
     if (!conf.auto) conf.auto = {};
@@ -806,6 +844,7 @@ function switchTab(tabId) {
     const target = document.getElementById(tabId + '-view');
     if (target) {
         target.classList.remove('hidden');
+        activeTab = tabId;
     }
 
     // Update sidebar navigation active state
@@ -2139,46 +2178,114 @@ function loadConfigsFromLocalStorage() {
 }
 
 // --- Pro Screener & Paper Trading Logic ---
-function renderProScreener() {
+
+async function renderProScreener() {
     const tbody = document.getElementById('screener-tbody');
     const sentimentPlaceholder = document.getElementById('screener-sentiment-placeholder');
     if (!tbody || !sentimentPlaceholder) return;
 
-    // Show the sentiment widget in the screener too if it exists
-    const sectorContent = document.getElementById('sector-sentiment-container');
-    if (sectorContent) {
-        sentimentPlaceholder.innerHTML = sectorContent.innerHTML;
-        sentimentPlaceholder.className = 'sector-sentiment-bar';
-    }
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i> Loading High-Conviction Alerts...</td></tr>';
 
-    // Filter signals: Rank >= 4
-    const proSignals = liveSignals.filter(s => s.rank >= 4);
+    try {
+        const response = await fetch(`/api/signals?mode=${currentMode}`);
+        const result = await response.json();
+        if (result.status !== 'success') throw new Error("API Failure");
 
-    if (proSignals.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No Rank 4-5 signals found in current mode. Run calculation first.</td></tr>`;
-        return;
-    }
+        const sourceData = result.data;
+        const proSignals = sourceData.filter(s => Math.abs(s.confluence_rank || 0) >= 4);
 
-    let html = '';
-    proSignals.forEach(s => {
-        const starHtml = Array(s.rank).fill('<i class="fas fa-star" style="color:var(--amber); font-size:10px;"></i>').join('');
-        const price = s.ltp || s.close || 0;
+        if (proSignals.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No high-conviction (Rank ±4/5) signals found in ${currentMode} mode.</td></tr>`;
+            return;
+        }
 
-        // Strategy derived from rank & RSI
-        const strategy = s.rank === 5 ? "High Conviction Confluence" : "Trend Support";
-        const targets = `T1: ₹${(price * 1.05).toFixed(2)}<br>T2: ₹${(price * 1.10).toFixed(2)}`;
-        const sl = `₹${(price * 0.97).toFixed(2)}`;
-        const accumulation = `Buy: ₹${price.toFixed(2)}<br>Add: ₹${(price * 0.99).toFixed(2)}`;
+        const getMetricsList = (s) => {
+            let metrics = [];
+            const score = s.confluence_rank || 0;
+            const isBull = score > 0;
 
-        html += `
+            metrics.push(`TOTAL CONVICTION: ${score} / 5\n-------------------`);
+
+            if (isBull) {
+                metrics.push(s.ema_signal === 'BUY' ? "✓ EMA: Bullish Golden Crossover" : "✗ EMA: Neutral/Bearish");
+                metrics.push(s.supertrend_dir === 'BUY' ? "✓ SUPERTREND: Bullish Support" : "✗ SUPERTREND: No Support");
+                metrics.push(s.rsi > 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Strong Momentum)` : `✗ RSI: ${s.rsi.toFixed(1)} (Weak)`);
+                metrics.push(s.ltp > (s.dma_data?.SMA_20 || 0) ? "✓ ANCHOR TREND: Above SMA 20" : "✗ ANCHOR TREND: Overextended/Below");
+                metrics.push(s.volume_signal === 'BULL_SPIKE' ? "✓ VOLUME: Institutional Buy Surge" : "✗ VOLUME: Normal Activity");
+            } else {
+                metrics.push(s.ema_signal === 'SELL' ? "✓ EMA: Bearish Death Cross" : "✗ EMA: Neutral/Bullish");
+                metrics.push(s.supertrend_dir === 'SELL' ? "✓ SUPERTREND: Bearish Resistance" : "✗ SUPERTREND: No Resistance");
+                metrics.push(s.rsi < 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Selling Pressure)` : `✗ RSI: ${s.rsi.toFixed(1)} (Strong)`);
+                metrics.push(s.ltp < (s.dma_data?.SMA_20 || 1000000) ? "✓ ANCHOR TREND: Below SMA 20" : "✗ ANCHOR TREND: Overbought/Above");
+                metrics.push(s.volume_signal === 'BEAR_SPIKE' ? "✓ VOLUME: Institutional Sell Panic" : "✗ VOLUME: Normal Activity");
+            }
+            metrics.push("\nPLAN: Maintain strict SL and exit at T1. If trend continues, trail SL and hold for higher reward.");
+            return metrics.join('\n');
+        };
+
+        if (proSignals.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No high-conviction (Rank ±4/5) signals found in current mode. Run calculation first.</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        proSignals.forEach(s => {
+            const score = s.confluence_rank || 0;
+            const isBullish = score > 0;
+            const rankClass = score >= 4 ? 'rank-high' : (score <= -4 ? 'rank-low' : '');
+            const price = s.ltp || s.close || 0;
+
+            // Visual distinction for Swing vs Intraday
+            const tf = s.timeframe || (currentMode === 'swing' ? '1d' : '5m');
+            const isSwing = ['1d', '1w', '1mo'].includes(tf);
+            const tfBadge = `<span class="badge ${isSwing ? 'bg-blue-trans' : 'bg-amber-trans'}" style="font-size:9px; padding: 2px 6px;">${isSwing ? 'SWING' : 'INTRADAY'} (${tf})</span>`;
+
+            // Strategy derived from rank & RSI
+            const strategy = s.trade_strategy || (Math.abs(score) === 5 ? "High Conviction Confluence" : "Trend Support");
+            const stratBg = isBullish ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+            const stratColor = isBullish ? 'var(--success)' : 'var(--danger)';
+            const metricsTooltip = getMetricsList(s);
+
+            const targetVal = s.target || (isBullish ? price * 1.05 : price * 0.95);
+            const slVal = s.sl || (isBullish ? price * 0.97 : price * 1.03);
+
+            const risk = Math.abs(price - slVal);
+            const reward = Math.abs(targetVal - price);
+            const rrRatio = risk > 0 ? (reward / risk).toFixed(1) : "3.0+";
+
+            const targetPct = ((reward / price) * 100).toFixed(1);
+            const slPct = ((risk / price) * 100).toFixed(1);
+
+            const targets = `T1: ₹${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
+            const sl = `₹${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
+            const accumulation = `Zone: ₹${price.toFixed(2)}`;
+
+            html += `
             <tr>
-                <td><div class="rank-badge rank-${s.rank}">${starHtml}</div></td>
+                <td>
+                    <div class="rank-badge ${rankClass}" style="width: 44px; height: 32px; font-weight: 800; font-size: 16px;">
+                        ${isBullish ? '+' : ''}${score}
+                    </div>
+                    <div style="margin-top: 8px;">${tfBadge}</div>
+                </td>
                 <td>
                     <div style="font-weight:700;">${s.symbol}</div>
                     <div style="font-size:10px; color:var(--text-dim);">${s.isin}</div>
                 </td>
-                <td style="font-weight:700; color:var(--primary);">₹${price.toLocaleString('en-IN')}</td>
-                <td><span class="badge badge-info" style="background:rgba(14, 165, 233, 0.1); color:var(--primary); border:1px solid rgba(14, 165, 233, 0.2);">${strategy}</span></td>
+                <td style="font-weight:700; color:var(--text-main);">
+                    <div>₹${price.toLocaleString('en-IN')}</div>
+                    <div style="font-size: 10px; color: var(--text-dim); font-weight: 400; margin-top: 4px;">
+                        <i class="far fa-clock" style="font-size: 9px;"></i> ${s.timestamp || 'N/A'}
+                    </div>
+                </td>
+                <td>
+                    <span class="badge" title="${metricsTooltip}" style="background:${stratBg}; color:${stratColor}; border:1px solid ${stratColor}44; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; cursor: help;">
+                        ${strategy} <i class="fas fa-info-circle" style="font-size: 9px; opacity: 0.7;"></i>
+                    </span>
+                    <div style="font-size: 10px; color: var(--text-dim); margin-top: 6px;">
+                        Risk/Reward: <span style="color: var(--text-main); font-weight: 600;">1:${rrRatio}</span>
+                    </div>
+                </td>
                 <td style="color:var(--amber); font-weight:600; font-size:11px;">${accumulation}</td>
                 <td style="color:var(--success); font-weight:600; font-size:11px;">${targets}</td>
                 <td style="color:var(--danger); font-weight:600; font-size:11px;">${sl}</td>
@@ -2190,8 +2297,12 @@ function renderProScreener() {
                 </td>
             </tr>
         `;
-    });
-    tbody.innerHTML = html;
+        });
+        tbody.innerHTML = html;
+    } catch (e) {
+        console.error("Pro Screener Render Error:", e);
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--danger);">Failed to load alerts. Check console.</td></tr>';
+    }
 }
 
 async function openPaperTrade(isin, symbol, price) {
