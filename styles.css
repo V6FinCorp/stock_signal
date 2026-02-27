@@ -1258,7 +1258,7 @@ input:checked+.slider:before {
 
 /* Sector Sentiment Widget */
 .sector-sentiment-bar {
-    background: rgba(15, 23, 42, 0.4);
+    background: var(--card-bg);
     backdrop-filter: blur(12px);
     border: 1px solid var(--glass-border);
     border-radius: 12px;

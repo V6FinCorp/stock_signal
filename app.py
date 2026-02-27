@@ -30,10 +30,11 @@ async def api_open_trade(trade: TradeOpen):
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
         async with app_pool.acquire() as conn:
             async with conn.cursor() as cur:
+                # Ensure status is explicitly set to OPEN
                 await cur.execute("""
                     INSERT INTO app_sg_active_trades 
-                    (isin, symbol, profile_id, timeframe, entry_price, target_1, target_2, stop_loss, qty)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (isin, symbol, profile_id, timeframe, entry_price, target_1, target_2, stop_loss, qty, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'OPEN')
                 """, (trade.isin, trade.symbol, trade.mode, trade.timeframe, trade.entry_price, 
                       trade.target_1, trade.target_2, trade.stop_loss, trade.qty))
                 await conn.commit()
@@ -50,13 +51,14 @@ async def api_get_active_trades():
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
         async with app_pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                # Fetch active trades and join with current LTP from OHLCV table
+                # Fetch active trades and separately get current LTP to avoid row loss if prices are missing
                 await cur.execute("""
-                    SELECT t.*, p.close as ltp 
+                    SELECT t.*, 
+                           (SELECT close FROM app_sg_ohlcv_prices 
+                            WHERE isin = t.isin AND timeframe = t.timeframe 
+                            ORDER BY timestamp DESC LIMIT 1) as ltp
                     FROM app_sg_active_trades t
-                    LEFT JOIN app_sg_ohlcv_prices p ON t.isin = p.isin AND t.timeframe = p.timeframe
                     WHERE t.status = 'OPEN'
-                    AND p.timestamp = (SELECT MAX(timestamp) FROM app_sg_ohlcv_prices WHERE isin = t.isin AND timeframe = t.timeframe)
                 """)
                 rows = await cur.fetchall()
         app_pool.close()
@@ -195,10 +197,6 @@ async def get_sector_sentiment(mode: str = "swing", timeframe: str = None):
 
 @app.get("/api/signals")
 async def get_signals(mode: str = "swing", timeframe: str = None):
-    # Default timeframe mapping based on mode
-    default_timeframe = "5m" if mode == "intraday" else "1d"
-    selected_timeframe = timeframe if timeframe else default_timeframe
-    
     try:
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
         datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
@@ -231,15 +229,16 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                         mtf_map[m['isin']] = {}
                     mtf_map[m['isin']][m['timeframe']] = m['supertrend_dir']
                 
-                # Fetch main timeframe rows
-                await app_cur.execute(
-                    """
-                    SELECT * FROM app_sg_calculated_signals 
-                    WHERE profile_id = %s AND timeframe = %s 
-                    ORDER BY confluence_rank DESC LIMIT 500
-                    """, 
-                    (mode, selected_timeframe)
-                )
+                # Fetch main timeframe rows - Fetch ALL if timeframe is not provided or set to 'all'
+                query = "SELECT * FROM app_sg_calculated_signals WHERE profile_id = %s"
+                params = [mode]
+                
+                if timeframe and timeframe != "all":
+                    query += " AND timeframe = %s"
+                    params.append(timeframe)
+                
+                query += " ORDER BY confluence_rank DESC LIMIT 1000"
+                await app_cur.execute(query, tuple(params))
                 rows = await app_cur.fetchall()
                 
                 for row in rows:

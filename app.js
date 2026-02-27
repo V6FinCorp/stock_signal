@@ -60,6 +60,8 @@ let currentSortDirection = 'desc'; // Default desc
 let activeSectorFilter = 'all';
 let isSectorBarCollapsed = false;
 let activeTab = 'dashboard';
+let appZoom = 1.0;
+let screenerMasterData = []; // Cache for local screener filtering
 
 let HUD_STATES = {
     swing: { active: false, expanded: false },
@@ -131,14 +133,15 @@ function setMode(mode) {
     if (dashboardTitle) dashboardTitle.innerText = `${modeLabel} Trading Dashboard`;
 
     const proTitle = document.getElementById('page-title-pro');
-    if (proTitle) proTitle.innerText = `High-Conviction ${modeLabel} Pro Screener`;
-
+    if (proTitle) proTitle.innerText = `High-Conviction ${modeLabel} Screener`;
+    
     const settingsTitle = document.getElementById('page-title-settings');
     if (settingsTitle) settingsTitle.innerText = `${modeLabel} Engine Configuration`;
 
     // Clear local cache when switching modes to prevent any data "bleeding" or staleness
     if (oldMode !== mode) {
         signalCache = {};
+        screenerMasterData = [];
     }
 
     // HUD Context Sync
@@ -154,9 +157,26 @@ function setMode(mode) {
     } else if (activeTab === 'settings') {
         loadProfileSettings();
     }
-
+    
     fetchSystemStatus();
     updateSectorSentiment();
+}
+
+// --- Zoom Logic ---
+function adjustZoom(delta) {
+    appZoom = Math.min(Math.max(appZoom + delta, 0.5), 1.5);
+    applyZoom();
+}
+
+function resetZoom() {
+    appZoom = 1.0;
+    applyZoom();
+}
+
+function applyZoom() {
+    document.body.style.zoom = appZoom;
+    const textEl = document.getElementById('zoom-level-text');
+    if (textEl) textEl.innerText = `${Math.round(appZoom * 100)}%`;
 }
 
 async function fetchSystemStatus() {
@@ -381,8 +401,8 @@ function renderSignals() {
         if (score >= 3) rankClass = 'rank-high';
         else if (score <= -3) rankClass = 'rank-low';
 
-        let rowHtml = `
-            <td class="col-rank"><div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score}</div></td>
+        rowHtml = `
+            <td class="col-rank"><div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score > 0 ? '+' : ''}${score}</div></td>
             <td class="col-symbol">
                 <div class="symbol-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stock.symbol}</div>
                 <div class="isin-code">${stock.isin}</div>
@@ -640,7 +660,7 @@ function renderSignals() {
         // Add the new Trade button column here
         rowHtml += `
             <td>
-                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 11px; font-weight: 700;" onclick="openPaperTrade('${stock.isin}', '${stock.symbol}', ${stock.ltp})">
+                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 11px; font-weight: 700;" onclick="openPaperTrade('${stock.isin}', '${stock.symbol}', ${stock.ltp}, '${currentTimeframe}')">
                     <i class="fas fa-plus-circle"></i> Trade
                 </button>
             </td>
@@ -703,7 +723,7 @@ function loadProfileSettings() {
         document.getElementById('setting-vol-threshold').value = conf.vol.threshold;
     }
 
-    document.getElementById('setting-dma-enabled').checked = conf.dma.enabled;
+    conf.dma.enabled = document.getElementById('setting-dma-enabled').checked;
     [10, 20, 50, 100, 200].forEach(p => {
         const el = document.getElementById(`dma-${p}`);
         if (el) el.checked = conf.dma.periods.includes(p);
@@ -2158,6 +2178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setMode('swing');
     switchTab('dashboard');
     setupRSISlider(); // Initialize Dual RSI Slider
+    applyZoom(); // Apply initial zoom level
 });
 
 function saveConfigsToLocalStorage() {
@@ -2190,21 +2211,45 @@ async function renderProScreener() {
         const response = await fetch(`/api/signals?mode=${currentMode}`);
         const result = await response.json();
         if (result.status !== 'success') throw new Error("API Failure");
+        
+        screenerMasterData = result.data.filter(s => Math.abs(s.confluence_rank || 0) >= 4);
+        applyScreenerFilters();
+    } catch (e) {
+        console.error("Pro Screener Fetch Error:", e);
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--danger);">Failed to load alerts.</td></tr>';
+    }
+}
 
-        const sourceData = result.data;
-        const proSignals = sourceData.filter(s => Math.abs(s.confluence_rank || 0) >= 4);
+function applyScreenerFilters() {
+    const tbody = document.getElementById('screener-tbody');
+    if (!tbody) return;
 
-        if (proSignals.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No high-conviction (Rank ±4/5) signals found in ${currentMode} mode.</td></tr>`;
-            return;
-        }
+    const searchTerm = document.getElementById('screener-search').value.toLowerCase();
+    const rankFilter = document.getElementById('screener-filter-rank').value;
+    
+    let filtered = screenerMasterData.filter(s => {
+        const matchesSearch = s.symbol.toLowerCase().includes(searchTerm) || s.isin.toLowerCase().includes(searchTerm);
+        
+        let matchesRank = true;
+        const score = s.confluence_rank || 0;
+        if (rankFilter === '5') matchesRank = Math.abs(score) === 5;
+        else if (rankFilter === 'bullish') matchesRank = score > 0;
+        else if (rankFilter === 'bearish') matchesRank = score < 0;
+        
+        return matchesSearch && matchesRank;
+    });
 
-        const getMetricsList = (s) => {
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No signals found matching your filters in ${currentMode} mode.</td></tr>`;
+        return;
+    }
+
+    const getMetricsList = (s) => {
             let metrics = [];
             const score = s.confluence_rank || 0;
             const isBull = score > 0;
 
-            metrics.push(`TOTAL CONVICTION: ${score} / 5\n-------------------`);
+            metrics.push(`TOTAL CONVICTION: ${score > 0 ? '+' : ''}${score} / 5\n-------------------`);
 
             if (isBull) {
                 metrics.push(s.ema_signal === 'BUY' ? "✓ EMA: Bullish Golden Crossover" : "✗ EMA: Neutral/Bearish");
@@ -2223,13 +2268,8 @@ async function renderProScreener() {
             return metrics.join('\n');
         };
 
-        if (proSignals.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No high-conviction (Rank ±4/5) signals found in current mode. Run calculation first.</td></tr>`;
-            return;
-        }
-
         let html = '';
-        proSignals.forEach(s => {
+    filtered.forEach(s => {
             const score = s.confluence_rank || 0;
             const isBullish = score > 0;
             const rankClass = score >= 4 ? 'rank-high' : (score <= -4 ? 'rank-low' : '');
@@ -2256,16 +2296,14 @@ async function renderProScreener() {
             const targetPct = ((reward / price) * 100).toFixed(1);
             const slPct = ((risk / price) * 100).toFixed(1);
 
-            const targets = `T1: ₹${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
-            const sl = `₹${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
-            const accumulation = `Zone: ₹${price.toFixed(2)}`;
+            const targets = `T1: ${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
+            const sl = `${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
+            const accumulation = `Zone: ${price.toFixed(2)}`;
 
             html += `
             <tr>
                 <td>
-                    <div class="rank-badge ${rankClass}" style="width: 44px; height: 32px; font-weight: 800; font-size: 16px;">
-                        ${isBullish ? '+' : ''}${score}
-                    </div>
+                    <div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score}</div>
                     <div style="margin-top: 8px;">${tfBadge}</div>
                 </td>
                 <td>
@@ -2273,7 +2311,7 @@ async function renderProScreener() {
                     <div style="font-size:10px; color:var(--text-dim);">${s.isin}</div>
                 </td>
                 <td style="font-weight:700; color:var(--text-main);">
-                    <div>₹${price.toLocaleString('en-IN')}</div>
+                    <div>${price.toLocaleString('en-IN')}</div>
                     <div style="font-size: 10px; color: var(--text-dim); font-weight: 400; margin-top: 4px;">
                         <i class="far fa-clock" style="font-size: 9px;"></i> ${s.timestamp || 'N/A'}
                     </div>
@@ -2291,7 +2329,7 @@ async function renderProScreener() {
                 <td style="color:var(--danger); font-weight:600; font-size:11px;">${sl}</td>
                 <td>
                     <button class="btn btn-primary" style="padding:6px 14px; font-size:11px; background:var(--primary); box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);" 
-                        onclick="openPaperTrade('${s.isin}', '${s.symbol}', ${price})">
+                        onclick="openPaperTrade('${s.isin}', '${s.symbol}', ${price}, '${s.timeframe || (currentMode === 'swing' ? '1d' : '5m')}')">
                         <i class="fas fa-plus-circle"></i> Trade
                     </button>
                 </td>
@@ -2305,15 +2343,18 @@ async function renderProScreener() {
     }
 }
 
-async function openPaperTrade(isin, symbol, price) {
+async function openPaperTrade(isin, symbol, price, timeframe) {
     const qty = prompt(`Enter quantity for ${symbol} at ₹${price}:`, "100");
     if (!qty || isNaN(qty)) return;
+
+    // Map timeframe string (e.g., 'Daily') to API code (e.g., '1d') if needed
+    const apiTf = TF_MAP[timeframe] || timeframe || '1d';
 
     const payload = {
         isin: isin,
         symbol: symbol,
         mode: currentMode,
-        timeframe: currentTimeframe,
+        timeframe: apiTf,
         entry_price: price,
         target_1: price * 1.05,
         target_2: price * 1.10,

@@ -40,7 +40,7 @@
                 <a href="#" class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')"><i
                         class="fas fa-th-large"></i> <span>Dashboard</span></a>
                 <a href="#" class="nav-item" id="nav-pro-screener" onclick="switchTab('pro-screener')"><i
-                        class="fas fa-bullseye"></i> <span>Pro Screener</span></a>
+                        class="fas fa-bullseye"></i> <span>Screener</span></a>
                 <a href="#" class="nav-item" id="nav-trades" onclick="switchTab('trades')"><i
                         class="fas fa-shopping-cart"></i> <span>Paper Trading</span></a>
                 <a href="#" class="nav-item" id="nav-scenario-builder" onclick="switchTab('scenario-builder')"><i
@@ -52,6 +52,16 @@
                     <span>Settings</span></a>
                 <a href="#" class="nav-item"><i class="fas fa-history"></i> <span>Signal History</span></a>
             </nav>
+
+            <div class="sidebar-zoom" style="padding: 15px 24px; border-top: 1px solid var(--border-color); margin-top: auto;">
+                <div class="nav-label" style="margin-bottom: 10px;">Display Zoom</div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px;" onclick="adjustZoom(-0.05)"><i class="fas fa-minus"></i></button>
+                    <span id="zoom-level-text" style="font-size: 12px; font-weight: 600; color: var(--text-dim); min-width: 35px; text-align: center;">100%</span>
+                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px;" onclick="adjustZoom(0.05)"><i class="fas fa-plus"></i></button>
+                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px; margin-left: 5px;" onclick="resetZoom()" title="Reset"><i class="fas fa-undo"></i></button>
+                </div>
+            </div>
 
             <div class="sidebar-footer">
                 <div class="user-info">
@@ -253,10 +263,20 @@
         <main class="main-content hidden" id="pro-screener-view">
             <header class="top-header">
                 <div class="header-left">
-                    <h1 id="page-title-pro">High-Conviction Pro Screener</h1>
-                    <p class="text-dim">Only absolute Rank 4-5 signals with high probability trade setups</p>
+                    <h1 id="page-title-pro">High-Conviction Screener</h1>
+                    <p class="text-dim">Absolute Rank 4-5 signals with high probability trade setups</p>
                 </div>
-                <div class="header-right">
+                <div class="header-right" style="display: flex; gap: 12px; align-items: center;">
+                    <div class="search-box" style="margin: 0; width: 250px;">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="screener-search" placeholder="Search Screener..." oninput="applyScreenerFilters()">
+                    </div>
+                    <select class="select-input" id="screener-filter-rank" onchange="applyScreenerFilters()" style="min-width: 160px;">
+                        <option value="4">All High (±4 & ±5)</option>
+                        <option value="5">Perfect Only (±5)</option>
+                        <option value="bullish">Bullish Only (+)</option>
+                        <option value="bearish">Bearish Only (-)</option>
+                    </select>
                 </div>
             </header>
 
