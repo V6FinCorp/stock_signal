@@ -642,11 +642,18 @@
 
                             <!-- Header Row: Name & Action -->
                             <div
-                                style="display: grid; grid-template-columns: 1fr 140px 140px 140px; gap: 16px; margin-bottom: 24px;">
+                                style="display: grid; grid-template-columns: 240px 1fr 130px 140px; gap: 16px; align-items: end; background: rgba(0,0,0,0.15); padding: 20px; border-radius: 12px; margin-bottom: 24px; border: 1px solid var(--border-color);">
                                 <div class="control-field" style="margin: 0;">
-                                    <label style="font-size: 11px; color: var(--primary);">Strategy Identifier</label>
+                                    <label style="font-size: 11px; color: var(--primary);">Load Saved Blueprint</label>
+                                    <select id="strat-id-select" class="select-input" style="height: 48px;"
+                                        onchange="loadSavedStrategyLogic()">
+                                        <option value="">+ New Blueprint</option>
+                                    </select>
+                                </div>
+                                <div class="control-field" style="margin: 0;">
+                                    <label style="font-size: 11px; color: var(--primary);">Blueprint Name</label>
                                     <input type="text" id="strat-name" class="select-input"
-                                        placeholder="e.g. RSI Reversal Pro" style="height: 48px; font-weight: 700;">
+                                        placeholder="e.g. RSI Dip Buyer" style="height: 48px; font-weight: 700;">
                                 </div>
                                 <div class="control-field" style="margin: 0;">
                                     <label style="font-size: 11px; color: var(--primary);">Action</label>
@@ -657,19 +664,9 @@
                                     </select>
                                 </div>
                                 <div class="control-field" style="margin: 0;">
-                                    <label style="font-size: 11px; color: var(--primary);">Universe</label>
-                                    <select id="strat-universe-mode" class="select-input" style="height: 48px;">
-                                        <option value="intraday">Intraday (50)</option>
-                                        <option value="swing">Swing (N200)</option>
-                                    </select>
-                                </div>
-                                <div class="control-field" style="margin: 0;">
                                     <label style="font-size: 11px; color: var(--primary);">Base Timeframe</label>
                                     <select id="strat-timeframe" class="select-input" style="height: 48px;">
-                                        <option value="1d">Daily</option>
-                                        <option value="1h">1 Hour</option>
-                                        <option value="15m" selected>15 Minute</option>
-                                        <option value="5m">5 Minute</option>
+                                        <!-- Populated dynamically based on Mode -->
                                     </select>
                                 </div>
                             </div>

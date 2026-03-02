@@ -156,10 +156,37 @@ function setMode(mode) {
         renderProScreener();
     } else if (activeTab === 'settings') {
         loadProfileSettings();
+    } else if (activeTab === 'strategy-lab') {
+        updateStrategyLabOptions();
     }
 
     fetchSystemStatus();
     updateSectorSentiment();
+}
+
+function updateStrategyLabOptions() {
+    const mode = currentMode;
+    const select = document.getElementById('strat-timeframe');
+    if (!select) return;
+
+    // Clear and build options based on mode
+    const options = mode === 'swing'
+        ? [["1d", "Daily"], ["1w", "Weekly"], ["1mo", "Monthly"]]
+        : [["5m", "5 Minute"], ["15m", "15 Minute"], ["30m", "30 Minute"], ["60m", "1 Hour"]];
+
+    select.innerHTML = options.map(([val, label]) =>
+        `<option value="${val}">${label}</option>`
+    ).join('');
+
+    // Update styling context of the Lab based on mode
+    const entryBox = document.getElementById('strat-entry-query');
+    if (entryBox) {
+        if (mode === 'intraday') {
+            entryBox.style.border = "1px solid rgba(245, 158, 11, 0.3)"; // Amber for intraday
+        } else {
+            entryBox.style.border = "1px solid rgba(16, 185, 129, 0.3)"; // Success Green for swing
+        }
+    }
 }
 
 // --- Zoom Logic ---
@@ -2556,35 +2583,55 @@ const STRAT_ALIASES = {
     "Price": "LTP",
     "Last Price": "LTP",
     "CMP": "LTP",
+    "LTP": "LTP",
     "Super Trend": "ST",
+    "SuperTrend": "ST", // Common variant
+    "ST": "ST",
     "Super Trend Value": "ST_V",
+    "SuperTrendValue": "ST_V", // Common variant
+    "ST_V": "ST_V",
+    "STV": "ST_V",
     "RSI": "RSI",
     "Volume": "VOL",
+    "VOL": "VOL",
     "Volume Ratio": "VOL_R",
+    "VOL_R": "VOL_R",
     "Bullish Volume": "BULL_S",
+    "BULL_S": "BULL_S",
     "Bearish Volume": "BEAR_S",
+    "BEAR_S": "BEAR_S",
     "EMA Fast": "EMA_F",
+    "EMA_F": "EMA_F",
     "EMA Slow": "EMA_S",
+    "EMA_S": "EMA_S",
     "EMA Crossover": "EMA_C",
+    "EMA_C": "EMA_C",
+    "EMA Value": "EMA_V",
+    "EMA_V": "EMA_V",
     "Market Cap": "market_cap",
     "PE Ratio": "pe",
+    "PE": "pe",
     "PB Ratio": "pb",
+    "PB": "pb",
     "ROE": "roe",
     "EPS": "eps",
     "OPM": "opm",
     "NPM": "npm",
     "Sector": "sector",
-    "Industry": "industry"
+    "Industry": "industry",
+    "Prev_High": "prev_high",
+    "Prev_Low": "prev_low"
 };
 
 const STRAT_KEYWORDS = [
     ...Object.keys(STRAT_ALIASES),
-    "AND", "OR", "NOT", "Timeframe =", "5m", "15m", "30m", "1h", "1d", "BUY", "SELL", "BULL_S", "BEAR_S"
+    "AND", "OR", "NOT", "Timeframe =", "5m", "15m", "30m", "1h", "1d", "BUY", "SELL", "BULL_S", "BEAR_S", "EMA_F", "EMA_S", "ST_V", "ST"
 ];
 
 function initStrategyLab() {
     renderSavedStrategies();
     setupStrategyAutoSuggest();
+    updateStrategyLabOptions();
     updateStrategyExplainer();
 }
 
@@ -2715,15 +2762,35 @@ function loadSampleQuery(type) {
 
     const s = samples[type];
     if (s) {
-        document.getElementById('strat-name').value = s.name;
-        document.getElementById('strat-entry-query').value = s.entry || "";
-        document.getElementById('strat-target-query').value = s.target || "";
-        document.getElementById('strat-exit-query').value = s.exit || "";
-        document.getElementById('strat-sl-query').value = s.sl || "";
-        document.getElementById('strat-accum-query').value = s.accum || "";
-        document.getElementById('strat-side').value = s.side || "BUY";
-        document.getElementById('strat-timeframe').value = s.tf || "15m";
-        document.getElementById('strat-universe-mode').value = s.universe || "intraday";
+        const nameEl = document.getElementById('strat-name');
+        if (nameEl) nameEl.value = s.name;
+
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val || "";
+        };
+
+        setVal('strat-entry-query', s.entry);
+        setVal('strat-target-query', s.target);
+        setVal('strat-exit-query', s.exit);
+        setVal('strat-sl-query', s.sl);
+        setVal('strat-accum-query', s.accum);
+        setVal('strat-side', s.side || "BUY");
+
+        // Timeframe might need a moment to be valid if switching modes is involved, 
+        // but here we just try to set it if it exists in the current mode's list.
+        const tfEl = document.getElementById('strat-timeframe');
+        if (tfEl) {
+            // Check if the sample's TF is valid for current mode
+            const options = Array.from(tfEl.options).map(o => o.value);
+            if (options.includes(s.tf)) {
+                tfEl.value = s.tf;
+            } else {
+                // Default to first available if sample TF doesn't match mode
+                tfEl.selectedIndex = 0;
+            }
+        }
+
         updateStrategyExplainer();
     }
 }
@@ -2990,28 +3057,37 @@ function loadSavedStrategyLogic(base64Data) {
             data = JSON.parse(raw);
         } catch (e) {
             // Legacy support for plain text queries
-            document.getElementById('strat-entry-query').value = raw;
-            document.getElementById('strat-exit-query').value = ""; // Clear exit for legacy
-            document.getElementById('strat-target-query').value = "";
-            document.getElementById('strat-sl-query').value = "";
-            document.getElementById('strat-accum-query').value = "";
-            document.getElementById('strat-side').value = "BUY"; // Default for legacy
-            document.getElementById('strat-timeframe').value = "15m"; // Default for legacy
-            document.getElementById('strat-universe-mode').value = "intraday"; // Default for legacy
+            const setVal = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.value = val || "";
+            };
+            setVal('strat-entry-query', raw);
+            setVal('strat-exit-query', "");
+            setVal('strat-target-query', "");
+            setVal('strat-sl-query', "");
+            setVal('strat-accum-query', "");
+            setVal('strat-side', "BUY");
+            setVal('strat-timeframe', "15m");
             showToast("Legacy blueprint loaded into Lab.", "info");
             updateStrategyExplainer();
             return;
         }
 
-        document.getElementById('strat-entry-query').value = data.entry || "";
-        document.getElementById('strat-target-query').value = data.target || "";
-        document.getElementById('strat-sl-query').value = data.sl || "";
-        document.getElementById('strat-exit-query').value = data.exit || "";
-        document.getElementById('strat-accum-query').value = data.accum || "";
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val || "";
+        };
+        setVal('strat-entry-query', data.entry);
+        setVal('strat-target-query', data.target);
+        setVal('strat-sl-query', data.sl);
+        setVal('strat-exit-query', data.exit);
+        setVal('strat-accum-query', data.accum);
 
-        document.getElementById('strat-side').value = data.side || "BUY";
-        document.getElementById('strat-timeframe').value = data.tf || "15m";
-        document.getElementById('strat-universe-mode').value = data.universe || "intraday";
+        const sideEl = document.getElementById('strat-side');
+        if (sideEl) sideEl.value = data.side || "BUY";
+
+        const tfEl = document.getElementById('strat-timeframe');
+        if (tfEl) tfEl.value = data.tf || "15m";
 
         showToast("Blueprint Expanded.", "success");
         updateStrategyExplainer();
@@ -3112,7 +3188,7 @@ async function runStrategyScan() {
     const entryLogic = document.getElementById('strat-entry-query').value.trim();
     const side = document.getElementById('strat-side').value;
     const timeframe = document.getElementById('strat-timeframe').value;
-    const universeMode = document.getElementById('strat-universe-mode').value;
+    const universeMode = currentMode; // Decided based on Strategy Mode (App context)
 
     if (!entryLogic) return alert("Define entry criteria first!");
 
