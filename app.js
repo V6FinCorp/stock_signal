@@ -134,7 +134,7 @@ function setMode(mode) {
 
     const proTitle = document.getElementById('page-title-pro');
     if (proTitle) proTitle.innerText = `High-Conviction ${modeLabel} Screener`;
-    
+
     const settingsTitle = document.getElementById('page-title-settings');
     if (settingsTitle) settingsTitle.innerText = `${modeLabel} Engine Configuration`;
 
@@ -157,7 +157,7 @@ function setMode(mode) {
     } else if (activeTab === 'settings') {
         loadProfileSettings();
     }
-    
+
     fetchSystemStatus();
     updateSectorSentiment();
 }
@@ -1709,19 +1709,30 @@ if (typeof fullChartCache === 'undefined') {
     var fullChartCache = {};
 }
 
-async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJson = '', requestedTf = null) {
-    const config = CONFIGS[currentMode];
-    // Default visibility options
-    const chartOpts = {
-        bars: 30, ema: true, st: true, dma: true, vol: true,
-        dayLines: true, emaMarkers: true, rsi: true,
-        ...(config.chart || {})
-    };
-    const barsRequested = chartOpts.bars || 30;
+// Modal State for Multi-View
+let modalTfState = {
+    isin: null,
+    symbol: null,
+    pattern: '',
+    activeTfs: [], // Array of strings e.g. ["5m", "15m"]
+    isSplit: false
+};
 
-    // Determine timeframe string for display
-    const tfDisplay = requestedTf || currentTimeframe || "Daily";
-    const isIntraday = ["5m", "15m", "30m", "60m"].includes(tfDisplay);
+async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJson = '', requestedTf = null) {
+    // Reset or Initialize State if it's a new stock
+    if (modalTfState.isin !== isin) {
+        modalTfState.isin = isin;
+        modalTfState.symbol = symbol;
+        modalTfState.pattern = patternName;
+        // Default to current timeframe or Daily
+        const initialTf = requestedTf || currentTimeframe || "Daily";
+        modalTfState.activeTfs = [initialTf];
+        modalTfState.isSplit = false;
+    } else if (requestedTf && !modalTfState.isSplit) {
+        // Regular mode: replace current TF
+        modalTfState.activeTfs = [requestedTf];
+    }
+
     const allTfs = ["5m", "15m", "30m", "60m", "Daily", "Weekly", "Monthly"];
 
     // Create/Reuse Modal
@@ -1729,135 +1740,165 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
     if (!modal) {
         modal = document.createElement('div');
         modal.id = 'candle-zoom-modal';
-        modal.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
-            z-index: 9999; display: flex; align-items: center; justify-content: center;
-        `;
-        document.body.appendChild(modal);
+        modal.className = 'modal-overlay';
         modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+        document.body.appendChild(modal);
     }
 
-    // Initial Loading UI
+    // Build Modal UI
     modal.innerHTML = `
-        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; width: 1000px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.6); position: relative;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+        <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; width: 1200px; max-width: 98vw; height: 90vh; box-shadow: 0 20px 60px rgba(0,0,0,0.6); position: relative; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-shrink: 0;">
                 <div>
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <h3 style="margin: 0; font-size: 22px; font-weight: 700;">${symbol}</h3>
-                        <span style="padding: 2px 8px; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 11px; color: var(--text-dim); border: 1px solid var(--border-color);">${tfDisplay}</span>
-                    </div>
-                     ${patternName ? `
-                        <div style="margin-top: 6px; font-size: 14px; font-weight: 600; color: ${patternName.includes('Bullish') ? 'var(--success)' : (patternName.includes('Bearish') ? 'var(--danger)' : 'var(--text-main)')};">
-                            Condition: ${patternName}
+                        <div id="modal-split-toggle" onclick="toggleModalSplitMode()" title="Split View (Max 4)" style="cursor: pointer; padding: 6px 10px; border-radius: 8px; background: ${modalTfState.isSplit ? 'var(--primary)' : 'rgba(255,255,255,0.05)'}; border: 1px solid ${modalTfState.isSplit ? 'var(--primary)' : 'var(--border-color)'}; color: ${modalTfState.isSplit ? '#fff' : 'var(--text-dim)'}; transition: all 0.2s;">
+                            <i class="fas fa-th-large"></i> Split View
                         </div>
-                    ` : ''}
-                    <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
-                        ${allTfs.map(tf => `
-                            <button onclick="showCandlesPopup('${isin}', '${symbol}', '${patternName}', '', '${tf}')" 
-                                style="background: ${tf === tfDisplay ? 'var(--primary)' : 'rgba(255,255,255,0.05)'}; 
-                                color: ${tf === tfDisplay ? '#fff' : 'var(--text-dim)'}; 
-                                border: 1px solid ${tf === tfDisplay ? 'var(--primary)' : 'var(--border-color)'}; 
-                                padding: 4px 12px; border-radius: 12px; font-size: 11px; cursor: pointer; transition: all 0.2s;">
-                                ${tf}
-                            </button>
-                        `).join('')}
+                    </div>
+                    ${patternName ? `<div style="margin-top: 6px; font-size: 13px; color: var(--text-dim);"><span style="color:var(--amber)">Condition:</span> ${patternName}</div>` : ''}
+                    <div style="display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap;" id="modal-tf-buttons">
+                        ${allTfs.map(tf => {
+        const isActive = modalTfState.activeTfs.includes(tf);
+        return `<button onclick="handleModalTfClick('${tf}')" 
+                                class="tf-btn ${isActive ? 'active' : ''}"
+                                style="font-size: 11px; padding: 4px 10px; min-width: 50px;">${tf}</button>`;
+    }).join('')}
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 16px;">
-                    <div id="chart-controls-toggle" style="display: flex; gap: 12px; font-size: 10px; color: var(--text-dim); background: rgba(0,0,0,0.2); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border-color); flex-wrap: wrap; justify-content: flex-end; max-width: 400px;">
-                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-ema" ${chartOpts.ema ? 'checked' : ''}> EMA</label>
-                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-st" ${chartOpts.st ? 'checked' : ''}> SuperTrend</label>
-                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-dma" ${chartOpts.dma ? 'checked' : ''}> DMA</label>
-                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-rsi" ${chartOpts.rsi ? 'checked' : ''}> RSI</label>
-                        <label style="display: ${isIntraday ? 'flex' : 'none'}; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-daylines" ${chartOpts.dayLines ? 'checked' : ''}> Sessions</label>
-                        <label style="display: ${isIntraday ? 'flex' : 'none'}; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="toggle-markers" ${chartOpts.emaMarkers ? 'checked' : ''}> Markers</label>
+                    <div id="modal-indicator-toggles" style="display: flex; gap: 10px; font-size: 10px; color: var(--text-dim); background: rgba(0,0,0,0.2); padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border-color);">
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="m-toggle-ema" checked> EMA</label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="m-toggle-st" checked> SuperTrend</label>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="m-toggle-rsi" checked> RSI</label>
                     </div>
                     <button onclick="document.getElementById('candle-zoom-modal').style.display='none'" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-dim); cursor: pointer; font-size: 20px; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">&times;</button>
                 </div>
             </div>
             
-            <div id="zoom-chart-content" style="height: 500px; display: flex; align-items: center; justify-content: center;">
-                <div style="text-align: center; color: var(--text-dim);">
-                    <i class="fas fa-spinner fa-spin fa-2x" style="margin-bottom: 12px; color: var(--primary);"></i>
-                    <p>Loading High-Detail Chart...</p>
-                </div>
+            <div id="modal-charts-grid" style="flex: 1; overflow: hidden; display: grid; gap: 16px; min-height: 0;">
+                <!-- Charts will be injected here -->
             </div>
-            
-            <div id="zoom-chart-legend" style="margin-top: 16px; display: flex; gap: 16px; font-size: 11px; flex-wrap: wrap;"></div>
         </div>
     `;
     modal.style.display = 'flex';
 
-    // Fetch Enriched Data
-    const cacheKey = `${isin}_${tfDisplay}_${barsRequested}`;
-    let chartData = fullChartCache[cacheKey];
+    // Hook up indicator toggles
+    ['m-toggle-ema', 'm-toggle-st', 'm-toggle-rsi'].forEach(id => {
+        document.getElementById(id).onchange = () => refreshModalGrid();
+    });
 
-    if (!chartData) {
-        try {
-            const apiTf = TF_MAP[tfDisplay] || '1d';
-            // Use current mode unless it's strictly mismatched (we can just pass currentMode for settings fallback)
-            const res = await fetch(`/api/chart/details?isin=${isin}&timeframe=${apiTf}&profile=${currentMode}&bars=${barsRequested}`);
-            const result = await res.json();
-            if (result.status === 'success') {
-                chartData = result.data;
-                fullChartCache[cacheKey] = chartData;
-            }
-        } catch (err) {
-            console.error("Chart fetch failed", err);
-        }
-    }
-
-    if (!chartData && fallbackCandlesJson) {
-        chartData = JSON.parse(decodeURIComponent(fallbackCandlesJson));
-    }
-
-    let finalCandles = [];
-    if (chartData) {
-        if (Array.isArray(chartData)) {
-            finalCandles = chartData;
-        } else if (chartData.candles) {
-            finalCandles = chartData.candles;
-        }
-    }
-
-    if (finalCandles && finalCandles.length > 0) {
-        const redraw = () => {
-            const currentOpts = {
-                ...chartOpts,
-                ema: document.getElementById('toggle-ema').checked,
-                st: document.getElementById('toggle-st').checked,
-                dma: document.getElementById('toggle-dma').checked,
-                rsi: document.getElementById('toggle-rsi').checked,
-                dayLines: document.getElementById('toggle-daylines') ? document.getElementById('toggle-daylines').checked : false,
-                emaMarkers: document.getElementById('toggle-markers') ? document.getElementById('toggle-markers').checked : false,
-                vpvr: true // Always on for now
-            };
-            renderEnrichedChart(chartData, symbol, currentOpts, tfDisplay);
-        };
-
-        ['toggle-ema', 'toggle-st', 'toggle-dma', 'toggle-rsi'].forEach(id => {
-            if (document.getElementById(id)) document.getElementById(id).onchange = redraw;
-        });
-        if (document.getElementById('toggle-daylines')) document.getElementById('toggle-daylines').onchange = redraw;
-        if (document.getElementById('toggle-markers')) document.getElementById('toggle-markers').onchange = redraw;
-
-        redraw();
-    } else {
-        document.getElementById('zoom-chart-content').innerHTML = `
-            <div style="color: var(--danger); text-align: center;">
-                <i class="fas fa-exclamation-triangle fa-2x" style="margin-bottom: 12px;"></i>
-                <p>Failed to load detailed chart data.</p>
-            </div>
-        `;
-    }
+    refreshModalGrid();
 }
 
-function renderEnrichedChart(chartInput, symbol, opts, tfDisplay) {
-    const container = document.getElementById('zoom-chart-content');
-    const legend = document.getElementById('zoom-chart-legend');
-    container.innerHTML = '';
-    legend.innerHTML = '';
+/** Toggles between single and multi-view */
+function toggleModalSplitMode() {
+    modalTfState.isSplit = !modalTfState.isSplit;
+    if (!modalTfState.isSplit && modalTfState.activeTfs.length > 1) {
+        // Reverting to single: keep only first TF
+        modalTfState.activeTfs = [modalTfState.activeTfs[0]];
+    }
+    showCandlesPopup(modalTfState.isin, modalTfState.symbol, modalTfState.pattern);
+}
+
+/** Handles timeframe button click in modal */
+function handleModalTfClick(tf) {
+    if (modalTfState.isSplit) {
+        if (modalTfState.activeTfs.includes(tf)) {
+            // Don't allow removing last TF
+            if (modalTfState.activeTfs.length > 1) {
+                modalTfState.activeTfs = modalTfState.activeTfs.filter(t => t !== tf);
+            }
+        } else if (modalTfState.activeTfs.length < 4) {
+            modalTfState.activeTfs.push(tf);
+        }
+    } else {
+        modalTfState.activeTfs = [tf];
+    }
+    showCandlesPopup(modalTfState.isin, modalTfState.symbol, modalTfState.pattern);
+}
+
+/** Renders the grid based on activeTfs */
+async function refreshModalGrid() {
+    const grid = document.getElementById('modal-charts-grid');
+    if (!grid) return;
+
+    const tfs = modalTfState.activeTfs;
+    const count = tfs.length;
+
+    // Apply Grid Layout
+    if (count === 1) grid.style.gridTemplateColumns = '1fr';
+    else if (count === 2) grid.style.gridTemplateColumns = '1fr 1fr';
+    else grid.style.gridTemplateColumns = '1fr 1fr';
+
+    if (count > 2) grid.style.gridTemplateRows = '1fr 1fr';
+    else grid.style.gridTemplateRows = '1fr';
+
+    grid.innerHTML = tfs.map((tf, i) => `
+        <div id="slot-${i}" style="border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; display: flex; flex-direction: column; background: rgba(0,0,0,0.15); overflow: hidden; position: relative;">
+            <div style="padding: 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 11px; font-weight: 700; color: var(--primary); background: rgba(14, 165, 233, 0.05); display: flex; justify-content: space-between;">
+                <span>${tf}</span>
+                <span id="slot-legend-${i}" style="font-weight: 400; color: var(--text-dim); display: flex; gap: 10px;"></span>
+            </div>
+            <div id="slot-chart-${i}" style="flex: 1; min-height: 0;"></div>
+        </div>
+    `).join('');
+
+    const chartControls = {
+        ema: document.getElementById('m-toggle-ema').checked,
+        st: document.getElementById('m-toggle-st').checked,
+        rsi: document.getElementById('m-toggle-rsi').checked,
+        vol: true, dma: true, bars: parseInt(CONFIGS[currentMode].chart?.bars || 30)
+    };
+
+    // Orchestrate data fetching and rendering
+    const chartRenderers = [];
+
+    const promises = tfs.map(async (tf, i) => {
+        const slotChart = document.getElementById(`slot-chart-${i}`);
+        const slotLegend = document.getElementById(`slot-legend-${i}`);
+        slotChart.innerHTML = '<div style="height:100%; display:flex; align-items:center; justify-content:center; color:var(--text-dim); font-size:12px;"><i class="fas fa-spinner fa-spin" style="margin-right:8px;"></i> Loading ${tf}...</div>';
+
+        const apiTf = TF_MAP[tf] || '1d';
+        const cacheKey = `${modalTfState.isin}_${tf}_${chartControls.bars}`;
+        let chartData = fullChartCache[cacheKey];
+
+        if (!chartData) {
+            try {
+                const res = await fetch(`/api/chart/details?isin=${modalTfState.isin}&timeframe=${apiTf}&profile=${currentMode}&bars=${chartControls.bars}`);
+                const result = await res.json();
+                if (result.status === 'success') {
+                    chartData = result.data;
+                    fullChartCache[cacheKey] = chartData;
+                }
+            } catch (err) { console.error(`Fetch failed for ${tf}`, err); }
+        }
+
+        if (chartData) {
+            const renderer = renderEnrichedChart(chartData, modalTfState.symbol, chartControls, tf, {
+                container: slotChart,
+                legend: slotLegend,
+                onMouseMove: (timestamp) => {
+                    // BROADCAST to other charts
+                    chartRenderers.forEach(r => r && r.syncCrosshair && r.syncCrosshair(timestamp));
+                },
+                onMouseLeave: () => {
+                    chartRenderers.forEach(r => r && r.clearCrosshair && r.clearCrosshair());
+                }
+            });
+            chartRenderers[i] = renderer;
+        } else {
+            slotChart.innerHTML = `<div style="height:100%; display:flex; align-items:center; justify-content:center; color:var(--danger); font-size:12px;">Data Error</div>`;
+        }
+    });
+
+    await Promise.all(promises);
+}
+
+function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}) {
+    const container = overrides.container || document.getElementById('zoom-chart-content');
+    const legend = overrides.legend || document.getElementById('zoom-chart-legend');
+    if (!container || !legend) return null;
 
     const candles = Array.isArray(chartInput) ? chartInput : (chartInput.candles || []);
     const vpvr = Array.isArray(chartInput) ? null : (chartInput.vpvr || null);
@@ -2112,60 +2153,103 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay) {
     container.innerHTML = svg;
 
     const svgEl = container.querySelector('svg');
-    const [chX, chY, chYRsi, chYbg, chYtxt, chXbg, chXtxt, chOhlc] = [
-        'ch-x', 'ch-y', 'ch-y-rsi', 'ch-y-lbl-bg', 'ch-y-lbl-txt', 'ch-x-lbl-bg', 'ch-x-lbl-txt', 'ch-ohlc'
-    ].map(id => document.getElementById(id));
+    const chX = svgEl.querySelector('#ch-x');
+    const chY = svgEl.querySelector('#ch-y');
+    const chYRsi = svgEl.querySelector('#ch-y-rsi');
+    const chYbg = svgEl.querySelector('#ch-y-lbl-bg');
+    const chYtxt = svgEl.querySelector('#ch-y-lbl-txt');
+    const chXbg = svgEl.querySelector('#ch-x-lbl-bg');
+    const chXtxt = svgEl.querySelector('#ch-x-lbl-txt');
+    const chOhlc = svgEl.querySelector('#ch-ohlc');
+
+    const updateCrosshairInternal = (idx, yIn = null) => {
+        if (idx < 0 || idx >= candles.length) {
+            [chX, chY, chYRsi, chYbg, chYtxt, chXbg, chXtxt].forEach(el => el.style.display = 'none');
+            return;
+        }
+        const c = candles[idx];
+        const color = c.c >= c.o ? '#089981' : '#F23645';
+        let ohlcText = `${c.t} | O:${c.o.toFixed(1)} H:${c.h.toFixed(1)} L:${c.l.toFixed(1)} C:<tspan fill="${color}">${c.c.toFixed(1)}</tspan>`;
+        if (showRSI && c[rsiKey]) ohlcText += ` | RSI: <tspan fill="#A855F7">${c[rsiKey].toFixed(1)}</tspan>`;
+        chOhlc.innerHTML = ohlcText;
+
+        const snapX = (idx * (barWidth + gap)) + (barWidth / 2) + 5;
+        chX.setAttribute('x1', snapX); chX.setAttribute('x2', snapX);
+        [chX, chXbg, chXtxt].forEach(el => el.style.display = 'block');
+        chXtxt.textContent = c.t;
+        const txtWidth = chXtxt.getComputedTextLength() + 10;
+        chXbg.setAttribute('width', txtWidth);
+        chXbg.setAttribute('x', snapX - (txtWidth / 2));
+        chXtxt.setAttribute('x', snapX);
+
+        if (yIn !== null) {
+            chY.setAttribute('y1', yIn); chY.setAttribute('y2', yIn);
+            const priceAtY = maxH - ((yIn - padTop) / usableHeight) * priceRange;
+            if (yIn >= padTop && yIn <= padTop + usableHeight) {
+                chYbg.setAttribute('y', yIn - 10);
+                chYtxt.setAttribute('y', yIn + 4);
+                chYtxt.textContent = priceAtY.toFixed(2);
+                [chYbg, chYtxt, chY].forEach(el => el.style.display = 'block');
+                chYRsi.style.display = 'none';
+            } else if (showRSI && yIn >= mainChartHeight && yIn <= mainChartHeight + rsiHeight - 15) {
+                const rsiAtY = ((mainChartHeight + (rsiHeight - 15) - yIn) / (rsiHeight - 15)) * 100;
+                chYbg.setAttribute('y', yIn - 10);
+                chYtxt.setAttribute('y', yIn + 4);
+                chYtxt.textContent = rsiAtY.toFixed(1);
+                [chYbg, chYtxt, chYRsi].forEach(el => el.style.display = 'block');
+                chY.style.display = 'none';
+                chYRsi.setAttribute('y1', yIn); chYRsi.setAttribute('y2', yIn);
+            } else {
+                [chYbg, chYtxt, chY, chYRsi].forEach(el => el.style.display = 'none');
+            }
+        }
+    };
 
     svgEl.onmousemove = (e) => {
         const r = svgEl.getBoundingClientRect();
         const xRaw = e.clientX - r.left;
         const yRaw = e.clientY - r.top;
-
         const idx = Math.floor((xRaw - 5) / (barWidth + gap));
-        if (idx >= 0 && idx < candles.length) {
-            const c = candles[idx];
-            const color = c.c >= c.o ? '#089981' : '#F23645';
-            let ohlcText = `${c.t} | O:${c.o.toFixed(1)} H:${c.h.toFixed(1)} L:${c.l.toFixed(1)} C:<tspan fill="${color}">${c.c.toFixed(1)}</tspan>`;
-            if (showRSI && c[rsiKey]) {
-                ohlcText += ` | RSI: <tspan fill="#A855F7">${c[rsiKey].toFixed(1)}</tspan>`;
-            }
-            chOhlc.innerHTML = ohlcText;
 
-            const snapX = (idx * (barWidth + gap)) + (barWidth / 2) + 5;
-            chX.setAttribute('x1', snapX); chX.setAttribute('x2', snapX);
-            chY.setAttribute('y1', yRaw); chY.setAttribute('y2', yRaw);
+        updateCrosshairInternal(idx, yRaw);
 
-            const priceAtY = maxH - ((yRaw - padTop) / usableHeight) * priceRange;
-            if (yRaw >= padTop && yRaw <= padTop + usableHeight) {
-                chYbg.setAttribute('y', yRaw - 10);
-                chYtxt.setAttribute('y', yRaw + 4);
-                chYtxt.textContent = priceAtY.toFixed(2);
-                [chYbg, chYtxt, chY].forEach(el => el.style.display = 'block');
-                chYRsi.style.display = 'none';
-            } else if (showRSI && yRaw >= mainChartHeight && yRaw <= mainChartHeight + rsiHeight - 15) {
-                const rsiUsable = rsiHeight - 15;
-                const rsiAtY = ((mainChartHeight + rsiUsable - yRaw) / rsiUsable) * 100;
-                chYbg.setAttribute('y', yRaw - 10);
-                chYtxt.setAttribute('y', yRaw + 4);
-                chYtxt.textContent = rsiAtY.toFixed(1);
-                [chYbg, chYtxt, chYRsi].forEach(el => el.style.display = 'block');
-                chY.style.display = 'none';
-                chYRsi.setAttribute('y1', yRaw); chYRsi.setAttribute('y2', yRaw);
-            } else {
-                [chYbg, chYtxt, chY, chYRsi].forEach(el => el.style.display = 'none');
-            }
-
-            chXtxt.textContent = c.t;
-            const txtWidth = chXtxt.getComputedTextLength() + 10;
-            chXbg.setAttribute('width', txtWidth);
-            chXbg.setAttribute('x', snapX - (txtWidth / 2));
-            chXtxt.setAttribute('x', snapX);
-
-            [chX, chXbg, chXtxt].forEach(el => el.style.display = 'block');
+        if (overrides.onMouseMove && idx >= 0 && idx < candles.length) {
+            overrides.onMouseMove(candles[idx].t);
         }
     };
+
     svgEl.onmouseleave = () => {
         [chX, chY, chYRsi, chYbg, chYtxt, chXbg, chXtxt].forEach(el => el.style.display = 'none');
+        if (overrides.onMouseLeave) overrides.onMouseLeave();
+    };
+
+    return {
+        syncCrosshair: (targetTimestamp) => {
+            if (!targetTimestamp) return;
+            const targetDate = new Date(targetTimestamp).getTime();
+
+            // Find the candle in THIS timeframe that is closest to the hovered timestamp
+            let closestIdx = -1;
+            let minDiff = Infinity;
+
+            for (let i = 0; i < candles.length; i++) {
+                const candleDate = new Date(candles[i].t).getTime();
+                const diff = Math.abs(candleDate - targetDate);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestIdx = i;
+                }
+            }
+
+            // Only update if it's within a reasonable "relevance" (e.g. same day for Swing vs Intraday)
+            if (closestIdx !== -1) {
+                updateCrosshairInternal(closestIdx, null);
+            }
+        },
+        clearCrosshair: () => {
+            [chX, chY, chYRsi, chYbg, chYtxt, chXbg, chXtxt].forEach(el => el.style.display = 'none');
+            chOhlc.innerHTML = '';
+        }
     };
 }
 
@@ -2210,7 +2294,7 @@ async function renderProScreener() {
         const response = await fetch(`/api/signals?mode=${currentMode}`);
         const result = await response.json();
         if (result.status !== 'success') throw new Error("API Failure");
-        
+
         screenerMasterData = result.data.filter(s => Math.abs(s.confluence_rank || 0) >= 4);
         applyScreenerFilters();
     } catch (e) {
@@ -2232,7 +2316,7 @@ function applyScreenerFilters() {
     const targetMax = parseFloat(document.getElementById('screener-target-max').value);
     const slMin = parseFloat(document.getElementById('screener-sl-min').value);
     const slMax = parseFloat(document.getElementById('screener-sl-max').value);
-    
+
     let filtered = screenerMasterData.filter(s => {
         // 1. Search filter
         const matchesSearch = s.symbol.toLowerCase().includes(searchTerm) || s.isin.toLowerCase().includes(searchTerm);
@@ -2262,7 +2346,7 @@ function applyScreenerFilters() {
 
         if (rewardPct < targetMin || rewardPct > targetMax) return false;
         if (riskPct < slMin || riskPct > slMax) return false;
-        
+
         return true;
     });
 
@@ -2272,62 +2356,62 @@ function applyScreenerFilters() {
     }
 
     const getMetricsList = (s) => {
-            let metrics = [];
-            const score = s.confluence_rank || 0;
-            const isBull = score > 0;
+        let metrics = [];
+        const score = s.confluence_rank || 0;
+        const isBull = score > 0;
 
-            metrics.push(`TOTAL CONVICTION: ${score > 0 ? '+' : ''}${score} / 5\n-------------------`);
+        metrics.push(`TOTAL CONVICTION: ${score > 0 ? '+' : ''}${score} / 5\n-------------------`);
 
-            if (isBull) {
-                metrics.push(s.ema_signal === 'BUY' ? "✓ EMA: Bullish Golden Crossover" : "✗ EMA: Neutral/Bearish");
-                metrics.push(s.supertrend_dir === 'BUY' ? "✓ SUPERTREND: Bullish Support" : "✗ SUPERTREND: No Support");
-                metrics.push(s.rsi > 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Strong Momentum)` : `✗ RSI: ${s.rsi.toFixed(1)} (Weak)`);
-                metrics.push(s.ltp > (s.dma_data?.SMA_20 || 0) ? "✓ ANCHOR TREND: Above SMA 20" : "✗ ANCHOR TREND: Overextended/Below");
-                metrics.push(s.volume_signal === 'BULL_SPIKE' ? "✓ VOLUME: Institutional Buy Surge" : "✗ VOLUME: Normal Activity");
-            } else {
-                metrics.push(s.ema_signal === 'SELL' ? "✓ EMA: Bearish Death Cross" : "✗ EMA: Neutral/Bullish");
-                metrics.push(s.supertrend_dir === 'SELL' ? "✓ SUPERTREND: Bearish Resistance" : "✗ SUPERTREND: No Resistance");
-                metrics.push(s.rsi < 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Selling Pressure)` : `✗ RSI: ${s.rsi.toFixed(1)} (Strong)`);
-                metrics.push(s.ltp < (s.dma_data?.SMA_20 || 1000000) ? "✓ ANCHOR TREND: Below SMA 20" : "✗ ANCHOR TREND: Overbought/Above");
-                metrics.push(s.volume_signal === 'BEAR_SPIKE' ? "✓ VOLUME: Institutional Sell Panic" : "✗ VOLUME: Normal Activity");
-            }
-            metrics.push("\nPLAN: Maintain strict SL and exit at T1. If trend continues, trail SL and hold for higher reward.");
-            return metrics.join('\n');
-        };
+        if (isBull) {
+            metrics.push(s.ema_signal === 'BUY' ? "✓ EMA: Bullish Golden Crossover" : "✗ EMA: Neutral/Bearish");
+            metrics.push(s.supertrend_dir === 'BUY' ? "✓ SUPERTREND: Bullish Support" : "✗ SUPERTREND: No Support");
+            metrics.push(s.rsi > 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Strong Momentum)` : `✗ RSI: ${s.rsi.toFixed(1)} (Weak)`);
+            metrics.push(s.ltp > (s.dma_data?.SMA_20 || 0) ? "✓ ANCHOR TREND: Above SMA 20" : "✗ ANCHOR TREND: Overextended/Below");
+            metrics.push(s.volume_signal === 'BULL_SPIKE' ? "✓ VOLUME: Institutional Buy Surge" : "✗ VOLUME: Normal Activity");
+        } else {
+            metrics.push(s.ema_signal === 'SELL' ? "✓ EMA: Bearish Death Cross" : "✗ EMA: Neutral/Bullish");
+            metrics.push(s.supertrend_dir === 'SELL' ? "✓ SUPERTREND: Bearish Resistance" : "✗ SUPERTREND: No Resistance");
+            metrics.push(s.rsi < 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Selling Pressure)` : `✗ RSI: ${s.rsi.toFixed(1)} (Strong)`);
+            metrics.push(s.ltp < (s.dma_data?.SMA_20 || 1000000) ? "✓ ANCHOR TREND: Below SMA 20" : "✗ ANCHOR TREND: Overbought/Above");
+            metrics.push(s.volume_signal === 'BEAR_SPIKE' ? "✓ VOLUME: Institutional Sell Panic" : "✗ VOLUME: Normal Activity");
+        }
+        metrics.push("\nPLAN: Maintain strict SL and exit at T1. If trend continues, trail SL and hold for higher reward.");
+        return metrics.join('\n');
+    };
 
-        let html = '';
+    let html = '';
     filtered.forEach(s => {
-            const score = s.confluence_rank || 0;
-            const isBullish = score > 0;
-            const rankClass = score >= 4 ? 'rank-high' : (score <= -4 ? 'rank-low' : '');
-            const price = s.ltp || s.close || 0;
+        const score = s.confluence_rank || 0;
+        const isBullish = score > 0;
+        const rankClass = score >= 4 ? 'rank-high' : (score <= -4 ? 'rank-low' : '');
+        const price = s.ltp || s.close || 0;
 
-            // Visual distinction for Swing vs Intraday
-            const tf = s.timeframe || (currentMode === 'swing' ? '1d' : '5m');
-            const isSwing = ['1d', '1w', '1mo'].includes(tf);
-            const tfBadge = `<span class="badge ${isSwing ? 'bg-blue-trans' : 'bg-amber-trans'}" style="font-size:9px; padding: 2px 6px;">${isSwing ? 'SWING' : 'INTRADAY'} (${tf})</span>`;
+        // Visual distinction for Swing vs Intraday
+        const tf = s.timeframe || (currentMode === 'swing' ? '1d' : '5m');
+        const isSwing = ['1d', '1w', '1mo'].includes(tf);
+        const tfBadge = `<span class="badge ${isSwing ? 'bg-blue-trans' : 'bg-amber-trans'}" style="font-size:9px; padding: 2px 6px;">${isSwing ? 'SWING' : 'INTRADAY'} (${tf})</span>`;
 
-            // Strategy derived from rank & RSI
-            const strategy = s.trade_strategy || (Math.abs(score) === 5 ? "High Conviction Confluence" : "Trend Support");
-            const stratBg = isBullish ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-            const stratColor = isBullish ? 'var(--success)' : 'var(--danger)';
-            const metricsTooltip = getMetricsList(s);
+        // Strategy derived from rank & RSI
+        const strategy = s.trade_strategy || (Math.abs(score) === 5 ? "High Conviction Confluence" : "Trend Support");
+        const stratBg = isBullish ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+        const stratColor = isBullish ? 'var(--success)' : 'var(--danger)';
+        const metricsTooltip = getMetricsList(s);
 
-            const targetVal = s.target || (isBullish ? price * 1.05 : price * 0.95);
-            const slVal = s.sl || (isBullish ? price * 0.97 : price * 1.03);
+        const targetVal = s.target || (isBullish ? price * 1.05 : price * 0.95);
+        const slVal = s.sl || (isBullish ? price * 0.97 : price * 1.03);
 
-            const risk = Math.abs(price - slVal);
-            const reward = Math.abs(targetVal - price);
-            const rrRatio = risk > 0 ? (reward / risk).toFixed(1) : "3.0+";
+        const risk = Math.abs(price - slVal);
+        const reward = Math.abs(targetVal - price);
+        const rrRatio = risk > 0 ? (reward / risk).toFixed(1) : "3.0+";
 
-            const targetPct = ((reward / price) * 100).toFixed(1);
-            const slPct = ((risk / price) * 100).toFixed(1);
+        const targetPct = ((reward / price) * 100).toFixed(1);
+        const slPct = ((risk / price) * 100).toFixed(1);
 
-            const targets = `T1: ${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
-            const sl = `${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
-            const accumulation = `Zone: ${price.toFixed(2)}`;
+        const targets = `T1: ${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
+        const sl = `${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
+        const accumulation = `Zone: ${price.toFixed(2)}`;
 
-            html += `
+        html += `
             <tr>
                 <td>
                     <div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score}</div>
@@ -2362,8 +2446,8 @@ function applyScreenerFilters() {
                 </td>
             </tr>
         `;
-        });
-        tbody.innerHTML = html;
+    });
+    tbody.innerHTML = html;
 }
 
 async function openPaperTrade(isin, symbol, price, timeframe) {

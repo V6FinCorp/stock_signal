@@ -46,6 +46,8 @@
                         class="fas fa-shopping-cart"></i> <span>Paper Trading</span></a>
                 <a href="#" class="nav-item" id="nav-scenario-builder" onclick="switchTab('scenario-builder')"><i
                         class="fas fa-flask"></i> <span>Scenario Backtester</span></a>
+                <a href="#" class="nav-item" id="nav-strategy-lab" onclick="switchTab('strategy-lab')">
+                    <i class="fas fa-microchip"></i> <span>Strategy Lab</span></a>
                 <a href="#" class="nav-item" id="nav-db-manager" onclick="switchTab('db-manager')"><i
                         class="fas fa-database"></i> <span>Database Manager</span></a>
                 <a href="#" class="nav-item" id="nav-settings" onclick="switchTab('settings')"><i
@@ -54,13 +56,18 @@
                 <a href="#" class="nav-item"><i class="fas fa-history"></i> <span>Signal History</span></a>
             </nav>
 
-            <div class="sidebar-zoom" style="padding: 15px 24px; border-top: 1px solid var(--border-color); margin-top: auto;">
+            <div class="sidebar-zoom"
+                style="padding: 15px 24px; border-top: 1px solid var(--border-color); margin-top: auto;">
                 <div class="nav-label" style="margin-bottom: 10px;">Display Zoom</div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px;" onclick="adjustZoom(-0.05)"><i class="fas fa-minus"></i></button>
-                    <span id="zoom-level-text" style="font-size: 12px; font-weight: 600; color: var(--text-dim); min-width: 35px; text-align: center;">100%</span>
-                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px;" onclick="adjustZoom(0.05)"><i class="fas fa-plus"></i></button>
-                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px; margin-left: 5px;" onclick="resetZoom()" title="Reset"><i class="fas fa-undo"></i></button>
+                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px;"
+                        onclick="adjustZoom(-0.05)"><i class="fas fa-minus"></i></button>
+                    <span id="zoom-level-text"
+                        style="font-size: 12px; font-weight: 600; color: var(--text-dim); min-width: 35px; text-align: center;">100%</span>
+                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px;" onclick="adjustZoom(0.05)"><i
+                            class="fas fa-plus"></i></button>
+                    <button class="btn btn-dim" style="padding: 4px 8px; font-size: 10px; margin-left: 5px;"
+                        onclick="resetZoom()" title="Reset"><i class="fas fa-undo"></i></button>
                 </div>
             </div>
 
@@ -269,15 +276,19 @@
                 </div>
             </header>
 
-            <div class="controls-row" style="margin-bottom: 24px; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--border-color);">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
+            <div class="controls-row"
+                style="margin-bottom: 24px; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--border-color);">
+                <div
+                    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
                     <!-- Row 1: Search & Basic Filters -->
                     <div style="display: flex; gap: 12px; align-items: center;">
                         <div class="search-box" style="margin: 0; flex: 1;">
                             <i class="fas fa-search"></i>
-                            <input type="text" id="screener-search" placeholder="Search Symbol..." oninput="applyScreenerFilters()">
+                            <input type="text" id="screener-search" placeholder="Search Symbol..."
+                                oninput="applyScreenerFilters()">
                         </div>
-                        <select class="select-input" id="screener-filter-tf" onchange="applyScreenerFilters()" style="width: 120px;">
+                        <select class="select-input" id="screener-filter-tf" onchange="applyScreenerFilters()"
+                            style="width: 120px;">
                             <option value="all">Timeframe: All</option>
                             <option value="5m">5 Minute</option>
                             <option value="15m">15 Minute</option>
@@ -303,24 +314,34 @@
                     </div>
 
                     <!-- Row 2: Sliders -->
-                    <div class="rsi-filter-wrapper" style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
-                        <span style="font-size: 10px; font-weight: 700; color: var(--success); text-transform: uppercase;">Min Target %:</span>
+                    <div class="rsi-filter-wrapper"
+                        style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
+                        <span
+                            style="font-size: 10px; font-weight: 700; color: var(--success); text-transform: uppercase;">Min
+                            Target %:</span>
                         <div class="rsi-slider-container">
                             <div class="rsi-slider-track"></div>
                             <div class="rsi-slider-range" id="screener-target-range"></div>
-                            <input type="range" id="screener-target-min" min="0" max="20" value="0" step="0.5" oninput="applyScreenerFilters()">
-                            <input type="range" id="screener-target-max" min="0" max="20" value="20" step="0.5" oninput="applyScreenerFilters()">
+                            <input type="range" id="screener-target-min" min="0" max="20" value="0" step="0.5"
+                                oninput="applyScreenerFilters()">
+                            <input type="range" id="screener-target-max" min="0" max="20" value="20" step="0.5"
+                                oninput="applyScreenerFilters()">
                         </div>
                         <div class="rsi-values" id="screener-target-label" style="color: var(--success);">0% - 20%</div>
                     </div>
 
-                    <div class="rsi-filter-wrapper" style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
-                        <span style="font-size: 10px; font-weight: 700; color: var(--danger); text-transform: uppercase;">Max SL %:</span>
+                    <div class="rsi-filter-wrapper"
+                        style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
+                        <span
+                            style="font-size: 10px; font-weight: 700; color: var(--danger); text-transform: uppercase;">Max
+                            SL %:</span>
                         <div class="rsi-slider-container">
                             <div class="rsi-slider-track"></div>
                             <div class="rsi-slider-range" id="screener-sl-range"></div>
-                            <input type="range" id="screener-sl-min" min="0" max="10" value="0" step="0.2" oninput="applyScreenerFilters()">
-                            <input type="range" id="screener-sl-max" min="0" max="10" value="10" step="0.2" oninput="applyScreenerFilters()">
+                            <input type="range" id="screener-sl-min" min="0" max="10" value="0" step="0.2"
+                                oninput="applyScreenerFilters()">
+                            <input type="range" id="screener-sl-max" min="0" max="10" value="10" step="0.2"
+                                oninput="applyScreenerFilters()">
                         </div>
                         <div class="rsi-values" id="screener-sl-label" style="color: var(--danger);">0% - 10%</div>
                     </div>
