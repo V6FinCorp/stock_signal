@@ -1309,3 +1309,32 @@ input:checked+.slider:before {
     border-color: var(--primary);
     box-shadow: 0 0 15px rgba(var(--primary-rgb), 0.3);
 }
+
+/* Strategy Lab Sandbox Styles */
+.saved-strat-item:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: var(--primary) !important;
+    transform: translateX(4px);
+}
+
+.strategy-rule-row {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+#strat-results-grid::-webkit-scrollbar {
+    width: 6px;
+}
+
+#strat-results-grid::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 10px;
+}
+
+.rule-tf, .rule-ind, .rule-op {
+    font-weight: 600;
+}

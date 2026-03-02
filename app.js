@@ -895,6 +895,8 @@ function switchTab(tabId) {
         renderProScreener();
     } else if (tabId === 'trades') {
         fetchActiveTrades();
+    } else if (tabId === 'strategy-lab') {
+        initStrategyLab();
     }
 }
 
@@ -1015,9 +1017,9 @@ async function clearDbData(type) {
 
 function toggleSidebar() {
     const sidebar = document.getElementById('main-sidebar');
-    const mainContent = document.querySelector('.main-content');
+    const mainContents = document.querySelectorAll('.main-content');
     sidebar.classList.toggle('collapsed');
-    mainContent.classList.toggle('expanded');
+    mainContents.forEach(el => el.classList.toggle('expanded'));
 }
 
 // --- Auto Sync Logic ---
@@ -2463,9 +2465,8 @@ async function openPaperTrade(isin, symbol, price, timeframe) {
         mode: currentMode,
         timeframe: apiTf,
         entry_price: price,
-        target_1: price * 1.05,
-        target_2: price * 1.10,
-        stop_loss: price * 0.97,
+        target: price * 1.05, // Standard fallback
+        stop_loss: price * 0.97, // Standard fallback
         qty: parseInt(qty)
     };
 
@@ -2546,5 +2547,889 @@ async function closeTrade(id) {
         }
     } catch (e) {
         console.error("Failed to close trade", e);
+    }
+}
+
+// --- Strategy Lab Beta (DSL Query Engine) ---
+
+const STRAT_ALIASES = {
+    "Price": "LTP",
+    "Last Price": "LTP",
+    "CMP": "LTP",
+    "Super Trend": "ST",
+    "Super Trend Value": "ST_V",
+    "RSI": "RSI",
+    "Volume": "VOL",
+    "Volume Ratio": "VOL_R",
+    "Bullish Volume": "BULL_S",
+    "Bearish Volume": "BEAR_S",
+    "EMA Fast": "EMA_F",
+    "EMA Slow": "EMA_S",
+    "EMA Crossover": "EMA_C",
+    "Market Cap": "market_cap",
+    "PE Ratio": "pe",
+    "PB Ratio": "pb",
+    "ROE": "roe",
+    "EPS": "eps",
+    "OPM": "opm",
+    "NPM": "npm",
+    "Sector": "sector",
+    "Industry": "industry"
+};
+
+const STRAT_KEYWORDS = [
+    ...Object.keys(STRAT_ALIASES),
+    "AND", "OR", "NOT", "Timeframe =", "5m", "15m", "30m", "1h", "1d", "BUY", "SELL", "BULL_S", "BEAR_S"
+];
+
+function initStrategyLab() {
+    renderSavedStrategies();
+    setupStrategyAutoSuggest();
+    updateStrategyExplainer();
+}
+
+let lastScanMatches = []; // Global storage for filtering
+
+function toggleStrategyForm() {
+    const container = document.getElementById('strategy-editor-container');
+    const btn = document.getElementById('toggle-strat-form');
+    const text = document.getElementById('toggle-strat-text');
+
+    if (container.style.display === 'none') {
+        container.style.display = 'grid';
+        if (text) text.innerText = 'Collapse Form';
+        btn.querySelector('i').className = 'fas fa-compress-alt';
+    } else {
+        container.style.display = 'none';
+        if (text) text.innerText = 'Show Strategy Designer';
+        btn.querySelector('i').className = 'fas fa-expand-alt';
+    }
+}
+
+function filterStrategyResults() {
+    const term = document.getElementById('strat-results-search').value.toLowerCase();
+    if (!term) {
+        renderScanResults(lastScanMatches);
+        return;
+    }
+    const filtered = lastScanMatches.filter(m =>
+        m.symbol.toLowerCase().includes(term) ||
+        m.isin.toLowerCase().includes(term)
+    );
+    renderScanResults(filtered, true); // true = skip global update
+}
+
+function setupStrategyAutoSuggest() {
+    const textareas = document.querySelectorAll('.strategy-textarea');
+    const suggestList = document.getElementById('strat-suggestions');
+    if (textareas.length === 0 || !suggestList) return;
+
+    const handleInput = (e) => {
+        const textarea = e.target;
+        const value = textarea.value;
+        const cursor = textarea.selectionStart;
+
+        const before = value.substring(0, cursor);
+        const words = before.split(/[\s\n\(\)]+/);
+        const lastWord = words[words.length - 1];
+
+        if (lastWord.length < 2) {
+            suggestList.style.display = 'none';
+            return;
+        }
+
+        const matches = STRAT_KEYWORDS.filter(k => k.toLowerCase().startsWith(lastWord.toLowerCase())).slice(0, 10);
+
+        if (matches.length > 0) {
+            suggestList.innerHTML = matches.map(m => `
+                <div class="suggest-item" style="padding: 10px 16px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; color: var(--text-main);" 
+                    onclick="applyStratSuggestion('${m}', '${textarea.id}')">
+                    ${m}
+                </div>
+            `).join('');
+
+            // Position suggestions
+            suggestList.style.display = 'block';
+        } else {
+            suggestList.style.display = 'none';
+        }
+    };
+
+    textareas.forEach(ta => ta.addEventListener('input', handleInput));
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#strat-suggestions') && !e.target.closest('.strategy-textarea')) {
+            suggestList.style.display = 'none';
+        }
+    });
+}
+
+function clearStrategyLab() {
+    ['strat-name', 'strat-entry-query', 'strat-exit-query', 'strat-target-query', 'strat-sl-query', 'strat-accum-query'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = (id === 'strat-name') ? "" : "";
+        if (el) el.value = "";
+    });
+    updateStrategyExplainer();
+}
+
+function loadSampleQuery(type) {
+    const samples = {
+        'bullish_dip': {
+            name: "Institutional Dip Buyer",
+            side: "BUY", tf: "15m", universe: "swing",
+            entry: "(EMA_F > EMA_S AND RSI < 35)",
+            target: "1.2% OR Price > [1h].High",
+            sl: "[1h].ST_V - 0.2%",
+            exit: "SuperTrend == 'SELL'",
+            accum: "Add 50% on RSI breakout > 50"
+        },
+        'momentum_breakout': {
+            name: "Hyper Momentum Scan",
+            side: "BUY", tf: "5m", universe: "intraday",
+            entry: "(Price > [1h].EMA_F AND VOL == 'BULL_S')",
+            target: "2.5% OR Price > Prev_High",
+            sl: "EMA_F - 0.5%",
+            exit: "RSI > 80",
+            accum: "Pyramid 25% if Vol > 3x"
+        },
+        'bearish_reversal': {
+            name: "Bearish Rejection",
+            side: "SELL", tf: "15m", universe: "swing",
+            entry: "(RSI > 70 AND SuperTrend == 'SELL') AND (Timeframe = 1h AND SuperTrend == 'SELL')",
+            target: "1.5% OR Price < [1h].Low",
+            sl: "[1h].ST_V + 0.2%",
+            exit: "RSI < 30",
+            accum: ""
+        },
+        'fundamental_growth': {
+            name: "Structural Growth (Daily)",
+            side: "BUY", tf: "1d", universe: "swing",
+            entry: "(ROE > 18 AND PE < 35) AND (VOL_R > 1.5 AND SuperTrend == 'BUY')",
+            target: "5.0% OR Price > [1w].High",
+            sl: "2.5% OR Price < [1w].Low",
+            exit: "NPM < 10",
+            accum: ""
+        }
+    };
+
+    const s = samples[type];
+    if (s) {
+        document.getElementById('strat-name').value = s.name;
+        document.getElementById('strat-entry-query').value = s.entry || "";
+        document.getElementById('strat-target-query').value = s.target || "";
+        document.getElementById('strat-exit-query').value = s.exit || "";
+        document.getElementById('strat-sl-query').value = s.sl || "";
+        document.getElementById('strat-accum-query').value = s.accum || "";
+        document.getElementById('strat-side').value = s.side || "BUY";
+        document.getElementById('strat-timeframe').value = s.tf || "15m";
+        document.getElementById('strat-universe-mode').value = s.universe || "intraday";
+        updateStrategyExplainer();
+    }
+}
+
+function generatePlainEnglish(translation) {
+    const { query, primaryTf, side } = translation;
+    let explanation = [];
+    let lines = query.split('\n');
+    let currentTf = primaryTf;
+
+    // Basic Logic Explanation
+    lines.forEach(line => {
+        let l = line.toLowerCase();
+
+        // 1. Timeframe Assignments (Strict parsing)
+        const tfAssignment = line.match(/Timeframe\s*=\s*([a-z0-9]+)/i);
+        if (tfAssignment) {
+            currentTf = tfAssignment[1];
+            explanation.push(`🔍 <b>Scanning</b> on the <b>${currentTf}</b> chart:`);
+        }
+
+        // 2. Logic Triggers
+        if (l.includes('rsi <')) {
+            const match = l.match(/rsi <\s*(\d+)/);
+            const val = match ? match[1] : "??";
+            explanation.push(`• Look for <b>Oversold</b> conditions (RSI below ${val})`);
+        }
+        if (l.includes('rsi >')) {
+            const match = l.match(/rsi >\s*(\d+)/);
+            const val = match ? match[1] : "??";
+            explanation.push(`• Look for <b>Overbought</b> conditions (RSI above ${val})`);
+        }
+        if (l.includes('supertrend == \'buy\'')) {
+            explanation.push(`• Ensure <b>SuperTrend</b> is in a <b>Bullish</b> phase.`);
+        }
+        if (l.includes('supertrend == \'sell\'')) {
+            explanation.push(`• Ensure <b>SuperTrend</b> is in a <b>Bearish</b> phase.`);
+        }
+        if (l.includes('ema_f > ema_s')) {
+            explanation.push(`• Confirm <b>Bullish EMA Crossover</b> (Fast EMA above Slow EMA).`);
+        }
+        if (l.includes('ema_f < ema_s')) {
+            explanation.push(`• Confirm <b>Bearish EMA Crossover</b> (Fast EMA below Slow EMA).`);
+        }
+        if (l.includes('vol == \'bull_s\'')) {
+            explanation.push(`• Look for <b>Bullish Volume Spike</b>.`);
+        }
+        if (l.includes('vol == \'bear_s\'')) {
+            explanation.push(`• Look for <b>Bearish Volume Spike</b>.`);
+        }
+        if (l.includes('vol_r >')) {
+            const match = l.match(/vol_r >\s*([0-9.]+)/);
+            const val = match ? match[1] : "??";
+            explanation.push(`• Confirm <b>Volume Ratio</b> is above ${val} (strong buying interest).`);
+        }
+        if (l.includes('pe <')) {
+            const match = l.match(/pe <\s*(\d+)/);
+            const val = match ? match[1] : "??";
+            explanation.push(`• Consider stocks with a <b>P/E Ratio</b> below ${val} (value).`);
+        }
+        if (l.includes('roe >')) {
+            const match = l.match(/roe >\s*(\d+)/);
+            const val = match ? match[1] : "??";
+            explanation.push(`• Prioritize companies with <b>Return on Equity</b> above ${val}% (profitability).`);
+        }
+    });
+
+    return explanation;
+}
+
+function updateStrategyExplainer() {
+    const entry = document.getElementById('strat-entry-query').value;
+    const target = document.getElementById('strat-target-query').value;
+    const sl = document.getElementById('strat-sl-query').value;
+    const side = document.getElementById('strat-side').value;
+    const tf = document.getElementById('strat-timeframe').value;
+
+    const explainerEl = document.getElementById('strat-explainer-text');
+    const mathEl = document.getElementById('strat-math-content');
+    if (!explainerEl || !mathEl) return;
+
+    if (!entry.trim()) {
+        explainerEl.innerHTML = `<div style="opacity: 0.4; font-style: italic;">Provide entry condition to see blueprint...</div>`;
+        return;
+    }
+
+    const entryTrans = translateUserQuery(entry, side, tf);
+    const explanation = generatePlainEnglish(entryTrans);
+
+    explainerEl.innerHTML = `
+        <div style="font-weight: 800; color: ${side === 'BUY' ? 'var(--success)' : 'var(--danger)'}; margin-bottom: 15px; font-size: 15px;">
+            PLAN: ${side} @ ${tf}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="padding: 8px; background: rgba(var(--success-rgb), 0.05); border-left: 3px solid var(--success);">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 4px;">ENTRY LOGIC</span>
+                ${explanation.join('<br>')}
+            </div>
+            ${target ? `<div style="padding: 8px; background: rgba(var(--amber-rgb), 0.05); border-left: 3px solid var(--amber);">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 4px;">TARGET LOGIC</span>
+                • ${target}
+            </div>` : ''}
+            ${sl ? `<div style="padding: 8px; background: rgba(var(--danger-rgb), 0.05); border-left: 3px solid var(--danger);">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 4px;">STOP LOGIC</span>
+                • ${sl}
+            </div>` : ''}
+        </div>
+    `;
+
+    // Math Simulation for Explainer
+    const mathBase = 1000;
+    let tPct = 0.5, sPct = 0.3;
+
+    const tMatch = target.match(/(\d+\.?\d*)\s*%/);
+    if (tMatch) tPct = parseFloat(tMatch[1]);
+
+    const sMatch = sl.match(/(\d+\.?\d*)\s*%/);
+    if (sMatch) sPct = parseFloat(sMatch[1]);
+
+    const tVal = (side === 'BUY' ? mathBase * (1 + tPct / 100) : mathBase * (1 - tPct / 100));
+    const sVal = (side === 'BUY' ? mathBase * (1 - sPct / 100) : mathBase * (1 + sPct / 100));
+
+    mathEl.innerHTML = `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px;">
+            <span style="opacity: 0.6; font-size: 11px;">SIMULATION (Base ₹${mathBase})</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 12px; color: var(--success);">Profit Target</span>
+            <span style="font-weight:700; color: var(--success);">₹${tVal.toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 12px; color: var(--danger);">Hard Stop</span>
+            <span style="font-weight:700; color: var(--danger);">₹${sVal.toFixed(2)}</span>
+        </div>
+    `;
+}
+
+function applyStratSuggestion(word, targetId = null) {
+    let textarea;
+    if (targetId) {
+        textarea = document.getElementById(targetId);
+    } else {
+        textarea = document.activeElement;
+        if (!textarea || !textarea.classList.contains('strategy-textarea')) { // Check if it's one of the strategy textareas
+            textarea = document.getElementById('strat-entry-query'); // Fallback to entry query
+        }
+    }
+    if (!textarea) return;
+
+    const suggestList = document.getElementById('strat-suggestions');
+    const value = textarea.value;
+    const cursor = textarea.selectionStart;
+
+    const before = value.substring(0, cursor);
+    const words = before.split(/[\s\n\(\)]+/);
+    const lastWord = words[words.length - 1];
+
+    const newValue = value.substring(0, cursor - lastWord.length) + word + value.substring(cursor);
+    textarea.value = newValue;
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = cursor - lastWord.length + word.length;
+    suggestList.style.display = 'none';
+    updateStrategyExplainer();
+}
+
+function translateUserQuery(userQuery, side_override = null, tf_override = null) {
+    let q = userQuery;
+
+    // 1. Handle Assignments (Timeframe, Side/Action, Params)
+    let defaultTf = tf_override || '15m'; // Default to 15m if not overridden
+    let side = side_override || "BUY";
+
+    const tfMatch = q.match(/Timeframe\s*=\s*(\w+)/i);
+    if (tfMatch) {
+        defaultTf = tfMatch[1].trim();
+        q = q.replace(/Timeframe\s*=\s*\w+/i, "");
+    }
+
+    const sideMatch = q.match(/(Side|Action)\s*=\s*(\w+)/i);
+    if (sideMatch) {
+        side = sideMatch[2].trim().toUpperCase();
+        q = q.replace(/(Side|Action)\s*=\s*\w+/i, "");
+    } else if (!side_override) {
+        // Only infer if not explicitly overridden by segmented field
+        if (q.toLowerCase().includes('sell') || q.toLowerCase().includes('less')) {
+            if (!q.toLowerCase().includes('buy')) side = "SELL";
+        }
+    }
+
+    // Strip Target and StopLoss lines from logical evaluation
+    q = q.replace(/Target\s*=\s*.*?(?:\n|$)/gi, "");
+    q = q.replace(/StopLoss\s*=\s*.*?(?:\n|$)/gi, "");
+
+    // 2. Map Aliases
+    const sortedAliases = Object.keys(STRAT_ALIASES).sort((a, b) => b.length - a.length);
+
+    let lines = q.split('\n');
+    lines = lines.map(line => {
+        let l = line.trim();
+        if (!l) return "";
+
+        sortedAliases.forEach(alias => {
+            const regex = new RegExp(`(?<!\\[|\\.)\\b${alias}\\b`, 'gi');
+            l = l.replace(regex, `[${defaultTf}].${STRAT_ALIASES[alias]}`);
+        });
+
+        sortedAliases.forEach(alias => {
+            const regex = new RegExp(`\\.(${alias})\\b`, 'gi');
+            l = l.replace(regex, `.${STRAT_ALIASES[alias]}`);
+        });
+
+        return l;
+    });
+
+    return {
+        query: lines.join(" ").trim(),
+        primaryTf: defaultTf,
+        side: side
+    };
+}
+
+async function saveCurrentStrategy() {
+    const name = document.getElementById('strat-name').value || "Unnamed Strategy";
+    const entry = document.getElementById('strat-entry-query').value;
+    const target = document.getElementById('strat-target-query').value;
+    const sl = document.getElementById('strat-sl-query').value;
+    const exit = document.getElementById('strat-exit-query').value;
+    const accum = document.getElementById('strat-accum-query').value;
+
+    const side = document.getElementById('strat-side').value;
+    const tf = document.getElementById('strat-timeframe').value;
+    const universe = document.getElementById('strat-universe-mode').value;
+
+    if (!entry) return alert("Please enter Entry Criteria.");
+
+    // Store as JSON Blob in query_text
+    const structuredData = {
+        entry, target, sl, exit, accum, side, tf, universe, version: "3.0"
+    };
+
+    const payload = { name, query: JSON.stringify(structuredData) };
+
+    try {
+        const res = await fetch('/api/strategies/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            showToast("Strategy Blueprint Saved.", "success");
+            renderSavedStrategies();
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Storage Error.", "error");
+    }
+}
+
+function loadSavedStrategyLogic(base64Data) {
+    try {
+        const raw = atob(base64Data);
+        let data;
+        try {
+            data = JSON.parse(raw);
+        } catch (e) {
+            // Legacy support for plain text queries
+            document.getElementById('strat-entry-query').value = raw;
+            document.getElementById('strat-exit-query').value = ""; // Clear exit for legacy
+            document.getElementById('strat-target-query').value = "";
+            document.getElementById('strat-sl-query').value = "";
+            document.getElementById('strat-accum-query').value = "";
+            document.getElementById('strat-side').value = "BUY"; // Default for legacy
+            document.getElementById('strat-timeframe').value = "15m"; // Default for legacy
+            document.getElementById('strat-universe-mode').value = "intraday"; // Default for legacy
+            showToast("Legacy blueprint loaded into Lab.", "info");
+            updateStrategyExplainer();
+            return;
+        }
+
+        document.getElementById('strat-entry-query').value = data.entry || "";
+        document.getElementById('strat-target-query').value = data.target || "";
+        document.getElementById('strat-sl-query').value = data.sl || "";
+        document.getElementById('strat-exit-query').value = data.exit || "";
+        document.getElementById('strat-accum-query').value = data.accum || "";
+
+        document.getElementById('strat-side').value = data.side || "BUY";
+        document.getElementById('strat-timeframe').value = data.tf || "15m";
+        document.getElementById('strat-universe-mode').value = data.universe || "intraday";
+
+        showToast("Blueprint Expanded.", "success");
+        updateStrategyExplainer();
+    } catch (e) {
+        console.error("Load Error:", e);
+        showToast("Failed to load blueprint.", "error");
+    }
+}
+
+async function renderSavedStrategies() {
+    const list = document.getElementById('strat-saved-list');
+    if (!list) return;
+
+    try {
+        const res = await fetch('/api/strategies/list');
+        const json = await res.json();
+        const saved = json.data || [];
+
+        if (saved.length === 0) {
+            list.innerHTML = '<div style="font-size: 11px; color: var(--text-dim); text-align: center; padding: 10px;">No saved strategies.</div>';
+            return;
+        }
+
+        list.innerHTML = saved.map(s => `
+            <div class="saved-strat-item" onclick="loadSavedStrategyLogic('${btoa(s.query)}')" 
+                style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; transition: all 0.2s; margin-bottom: 6px;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">${s.name}</div>
+                    <div style="font-size: 10px; opacity: 0.5;">Last Mod: ${new Date(s.updated_at).toLocaleDateString()}</div>
+                </div>
+                <button class="btn btn-icon" onclick="event.stopPropagation(); deleteStrategyFromServer(${s.id})" style="color: var(--danger); opacity: 0.5;"><i class="fas fa-trash"></i></button>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error("Failed to load strategies:", e);
+    }
+}
+
+// This function is now redundant as loadSavedStrategyLogic handles structured data
+// Keeping it for potential legacy calls, but it will likely break if called with structured data
+function loadSavedStrategyLegacy(encodedQuery) {
+    const query = atob(encodedQuery);
+    document.getElementById('strat-entry-query').value = query;
+    document.getElementById('strat-exit-query').value = "";
+    document.getElementById('strat-side').value = "BUY";
+    document.getElementById('strat-timeframe').value = "15m";
+    document.getElementById('strat-universe-mode').value = "intraday";
+    document.getElementById('strat-target-query').value = ""; // Clear new fields
+    document.getElementById('strat-sl-query').value = ""; // Clear new fields
+    document.getElementById('strat-accum-query').value = ""; // Clear new fields
+    updateStrategyExplainer();
+    showToast("Strategy logic loaded into editor (legacy).", "info");
+}
+
+async function deleteStrategyFromServer(id) {
+    if (!confirm("Delete this strategy permanently?")) return;
+    try {
+        await fetch(`/api/strategies/${id}`, { method: 'DELETE' });
+        renderSavedStrategies();
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// This function is now deprecated as strategies are loaded from server
+function loadStrategy(id) {
+    const saved = JSON.parse(localStorage.getItem('app_strategies_v2') || '[]');
+    const strat = saved.find(s => s.id === id);
+    if (!strat) return;
+
+    document.getElementById('strat-name').value = strat.name;
+    document.getElementById('strat-entry-query').value = strat.query;
+    document.getElementById('strat-target-query').value = strat.target || ""; // Changed to query
+    document.getElementById('strat-sl-query').value = strat.sl || ""; // Changed to query
+    // document.getElementById('strat-pyramid').value = strat.pyramid || "50,25,25"; // This field is not in the new form
+    updateStrategyExplainer(); // Added to update explainer
+}
+
+// This function is now deprecated as strategies are managed on server
+function deleteStrategy(id) {
+    if (!confirm("Delete this query?")) return;
+    let saved = JSON.parse(localStorage.getItem('app_strategies_v2') || '[]');
+    saved = saved.filter(s => s.id !== id);
+    localStorage.setItem('app_strategies_v2', JSON.stringify(saved));
+    renderSavedStrategies();
+}
+
+/**
+ * CORE ENGINE: DSL Scanner
+ */
+let strategyLabState = {
+    cachedData: {}
+};
+
+async function runStrategyScan() {
+    const btn = document.getElementById('strategy-run-btn');
+    const statusEl = document.getElementById('query-status');
+    const entryLogic = document.getElementById('strat-entry-query').value.trim();
+    const side = document.getElementById('strat-side').value;
+    const timeframe = document.getElementById('strat-timeframe').value;
+    const universeMode = document.getElementById('strat-universe-mode').value;
+
+    if (!entryLogic) return alert("Define entry criteria first!");
+
+    // 1. Translate Segmented Logic
+    const translation = translateUserQuery(entryLogic, side, timeframe);
+    const query = translation.query;
+    const defaultTf = translation.primaryTf; // This now comes from the form field or query
+
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+    btn.disabled = true;
+    if (statusEl) statusEl.innerText = "Analyzing Query...";
+
+    const resultsGrid = document.getElementById('strat-results-grid');
+    const matchCountBadge = document.getElementById('strat-match-count');
+
+    try {
+        // 2. Parse Timeframes from the translated query
+        const tfRegex = /\[(.*?)\]/g;
+        let match;
+        const usedTfs = [];
+        while ((match = tfRegex.exec(query)) !== null) {
+            usedTfs.push(match[1]);
+        }
+
+        if (usedTfs.length === 0) {
+            usedTfs.push(defaultTf);
+        }
+
+        // 3. Fetch Data for all required timeframes
+        const tfDataMap = {};
+        await Promise.all([...new Set(usedTfs)].map(async (tf) => {
+            const apiTf = TF_MAP[tf] || tf;
+            // Respect the universe selection (intraday vs swing)
+            const res = await fetch(`/api/signals?mode=${universeMode}&timeframe=${apiTf}`);
+            const json = await res.json();
+            if (json.status === 'success') tfDataMap[tf] = json.data;
+        }));
+
+        // 4. Prepare Evaluation Engine
+        const indMap = {
+            'RSI': 'rsi',
+            'ST': 'supertrend_dir',
+            'ST_V': 'supertrend_value',
+            'LTP': 'ltp',
+            'EMA_C': 'ema_signal',
+            'EMA_F': 'ema_fast',
+            'EMA_S': 'ema_slow',
+            'EMA_V': 'ema_value',
+            'VOL': 'volume_signal',
+            'VOL_R': 'volume_ratio',
+            'roe': 'roe',
+            'pe': 'pe',
+            'pb': 'pb',
+            'eps': 'eps',
+            'opm': 'opm',
+            'npm': 'npm',
+            'sector': 'sector',
+            'industry': 'industry',
+            'market_cap': 'market_cap',
+            'prev_high': 'prev_high',
+            'prev_low': 'prev_low'
+        };
+
+        let processedQuery = query
+            .replace(/AND /gi, '&& ')
+            .replace(/OR /gi, '|| ')
+            .replace(/NOT /gi, '! ')
+            .replace(/==/g, '===');
+
+        // Handle Percentage Arithmetic: [token] +/- X%
+        // This regex handles patterns like [1h].ST_V - 0.15% or [5m].LTP + 1%
+        const pctRegex = /(\[.*?\]\.[A-Z_0-9]+)\s*([\+\-])\s*(\d+\.?\d*)%/g;
+        processedQuery = processedQuery.replace(pctRegex, (match, token, op, val) => {
+            const factor = op === '+' ? (1 + (parseFloat(val) / 100)) : (1 - (parseFloat(val) / 100));
+            return `(${token} * ${factor})`;
+        });
+
+        // 5. Token Resolution
+        const tokenRegex = /\[(.*?)\]\.([A-Z_a-z0-9]+)/g;
+        const tokens = [];
+        let tMatch;
+        while ((tMatch = tokenRegex.exec(query)) !== null) {
+            tokens.push({
+                full: tMatch[0],
+                tf: tMatch[1],
+                attr: indMap[tMatch[2]] || tMatch[2]
+            });
+        }
+
+        // 6. Evaluate Matches
+        const masterList = tfDataMap[usedTfs[0]] || [];
+        const matches = [];
+
+        masterList.forEach(stock => {
+            let evalStr = processedQuery;
+            let skip = false;
+
+            tokens.forEach(token => {
+                const tfData = tfDataMap[token.tf] || [];
+                const s = tfData.find(item => item.isin === stock.isin);
+                if (!s) { skip = true; return; }
+
+                let val = s[token.attr];
+                if (token.attr === 'volume_signal') { // Corrected from 'vol_signal'
+                    val = val === 'BULL_SPIKE' ? "'BULL_S'" : (val === 'BEAR_SPIKE' ? "'BEAR_S'" : "'NONE'");
+                } else if (typeof val === 'string') {
+                    val = `'${val}'`;
+                } else {
+                    val = val || 0;
+                }
+
+                // Global replacement for the token in the query
+                const escapedToken = token.full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                evalStr = evalStr.replace(new RegExp(escapedToken, 'g'), val);
+            });
+
+            if (skip) return;
+
+            try {
+                // Use the side from the form for evaluation
+                if (new Function(`return ${evalStr}`)()) {
+                    const levels = calculateStaticLevels(stock, tfDataMap);
+                    matches.push({ ...stock, levels, side: side, isMatch: true });
+                }
+            } catch (e) {
+                if (masterList.indexOf(stock) === 0) console.error("Eval Error for first stock:", e, "Code:", evalStr);
+            }
+        });
+
+        renderScanResults(matches);
+        if (matchCountBadge) {
+            matchCountBadge.innerText = `${matches.length} Matches`;
+            matchCountBadge.style.display = 'inline-block';
+        }
+        if (statusEl) {
+            statusEl.innerText = `Scan Complete: ${matches.length} Found`;
+            statusEl.style.color = "var(--success)";
+        }
+
+    } catch (err) {
+        console.error("Scan Error:", err);
+        if (statusEl) {
+            statusEl.innerText = "Execution Error";
+            statusEl.style.color = "var(--danger)";
+        }
+    } finally {
+        btn.innerHTML = '<i class="fas fa-bolt"></i> RUN STRATEGY SCAN';
+        btn.disabled = false;
+    }
+}
+
+function calculateStaticLevels(stock, tfDataMap) {
+    const ltp = stock.ltp;
+
+    const side = document.getElementById('strat-side').value;
+    const targetQuery = document.getElementById('strat-target-query').value;
+    const slQuery = document.getElementById('strat-sl-query').value;
+
+    let targetPrice = ltp * (side === 'BUY' ? 1.008 : 0.992); // Default small percentage
+    let slPrice = ltp * (side === 'BUY' ? 0.995 : 1.005); // Default small percentage
+
+    // Resolve Target
+    const tPctMatch = targetQuery.match(/(\d+\.?\d*)\s*%/);
+    if (tPctMatch) {
+        const pct = parseFloat(tPctMatch[1]);
+        targetPrice = side === 'BUY' ? ltp * (1 + pct / 100) : ltp * (1 - pct / 100);
+    } else if (targetQuery.includes('High') || targetQuery.includes('Low') || targetQuery.includes('Prev_High') || targetQuery.includes('Prev_Low')) {
+        // Dynamic Price Tagging (Simplified)
+        const tfKeyMatch = targetQuery.match(/\[(.*?)\]/);
+        const tfKey = tfKeyMatch ? tfKeyMatch[1] : '1d'; // Default to 1d if no TF specified
+        const tfData = tfDataMap[tfKey] || [];
+        const relevantStockData = tfData.find(s => s.isin === stock.isin);
+
+        if (relevantStockData) {
+            if (targetQuery.includes('High') || targetQuery.includes('Prev_High')) {
+                targetPrice = relevantStockData.prev_high || ltp * (side === 'BUY' ? 1.015 : 0.985);
+            } else if (targetQuery.includes('Low') || targetQuery.includes('Prev_Low')) {
+                targetPrice = relevantStockData.prev_low || ltp * (side === 'BUY' ? 1.015 : 0.985);
+            }
+        } else {
+            targetPrice = ltp * (side === 'BUY' ? 1.015 : 0.985); // Fallback
+        }
+    }
+
+    // Resolve SL
+    const sPctMatch = slQuery.match(/(\d+\.?\d*)\s*%/);
+    if (sPctMatch) {
+        const pct = parseFloat(sPctMatch[1]);
+        slPrice = side === 'BUY' ? ltp * (1 - pct / 100) : ltp * (1 + pct / 100);
+    } else if (slQuery.includes('ST_V') || slQuery.includes('SuperTrendValue')) {
+        const tfKeyMatch = slQuery.match(/\[(.*?)\]/);
+        const tfKey = tfKeyMatch ? tfKeyMatch[1] : '1h'; // Default to 1h if no TF specified
+        const tfData = tfDataMap[tfKey] || [];
+        const relevantStockData = tfData.find(s => s.isin === stock.isin);
+
+        if (relevantStockData && relevantStockData.supertrend_value) {
+            slPrice = relevantStockData.supertrend_value;
+        } else {
+            slPrice = ltp * (side === 'BUY' ? 0.97 : 1.03); // Fallback
+        }
+    } else if (slQuery.includes('EMA_F') || slQuery.includes('EMA_S')) {
+        const tfKeyMatch = slQuery.match(/\[(.*?)\]/);
+        const tfKey = tfKeyMatch ? tfKeyMatch[1] : '1h'; // Default to 1h if no TF specified
+        const tfData = tfDataMap[tfKey] || [];
+        const relevantStockData = tfData.find(s => s.isin === stock.isin);
+
+        if (relevantStockData) {
+            if (slQuery.includes('EMA_F')) {
+                slPrice = relevantStockData.ema_fast || ltp * (side === 'BUY' ? 0.97 : 1.03);
+            } else if (slQuery.includes('EMA_S')) {
+                slPrice = relevantStockData.ema_slow || ltp * (side === 'BUY' ? 0.97 : 1.03);
+            }
+        } else {
+            slPrice = ltp * (side === 'BUY' ? 0.97 : 1.03); // Fallback
+        }
+    }
+
+    return { target: targetPrice, sl: slPrice };
+}
+
+// Helper function for currency formatting (assuming it's not globally defined)
+function formatCurrency(value) {
+    return parseFloat(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderScanResults(matches, isFilter = false) {
+    const grid = document.getElementById('strat-results-grid');
+    if (!isFilter) lastScanMatches = matches;
+
+    if (!matches.length) {
+        grid.innerHTML = `<tr><td colspan="6" style="padding: 100px; text-align:center; opacity: 0.3;">
+            <i class="fas fa-ghost fa-3x" style="margin-bottom:20px;"></i>
+            <p style="font-size:14px;">No matching symbols found in current scan.</p>
+        </td></tr>`;
+        return;
+    }
+
+    grid.innerHTML = matches.map(s => {
+        const sideColor = s.side === 'BUY' ? 'var(--success)' : 'var(--danger)';
+        const ltpVal = formatCurrency(s.ltp);
+        const tgVal = formatCurrency(s.levels.target);
+        const slVal = formatCurrency(s.levels.sl);
+
+        return `
+            <tr class="strat-card" data-isin="${s.isin}" style="border-bottom: 1px solid rgba(255,255,255,0.02);">
+                <td style="padding: 15px 20px;">
+                    <div style="font-weight: 700; color: var(--text-main);" class="symbol-name">${s.symbol}</div>
+                    <div style="font-size: 10px; opacity: 0.5;">${s.isin}</div>
+                </td>
+                <td style="padding: 15px 20px; text-align: right; font-weight: 800; color: var(--amber);" class="ltp-val">
+                    ₹${ltpVal}
+                </td>
+                <td style="padding: 15px 20px; text-align: center;">
+                    <span class="badge" style="background: ${sideColor}20; color: ${sideColor}; border: 1px solid ${sideColor}40; font-weight: 800;">
+                        ${s.side}
+                    </span>
+                </td>
+                <td style="padding: 15px 20px; text-align: right; font-weight: 700; color: var(--success);">
+                    ₹${tgVal}
+                </td>
+                <td style="padding: 15px 20px; text-align: right; font-weight: 700; color: var(--danger);">
+                    ₹${slVal}
+                </td>
+                <td style="padding: 15px 20px; text-align: center;">
+                    <div style="display: flex; gap: 8px; justify-content: center;">
+                        <button class="btn btn-primary" style="height: 32px; padding: 0 12px; font-size: 11px;" 
+                            onclick="commitToTrade('${s.isin}', ${s.levels.target}, ${s.levels.sl})">
+                            <i class="fas fa-bolt"></i> Trade
+                        </button>
+                        <button class="btn btn-dim" style="height: 32px; width: 32px; padding: 0;" 
+                            onclick="showCandlesPopup('${s.isin}', '${s.symbol}')">
+                            <i class="fas fa-chart-line"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function commitToTrade(isin, target, sl) {
+    const symbol = document.querySelector(`.strat-card[data-isin="${isin}"] .symbol-name`)?.innerText || isin;
+    const ltp = parseFloat(document.querySelector(`.strat-card[data-isin="${isin}"] .ltp-val`)?.innerText.replace(/,/g, '')) || 0;
+
+    if (!ltp) return alert("Price unavailable for commit.");
+
+    const query = document.getElementById('strat-entry-query').value;
+    const side = document.getElementById('strat-side').value || "BUY";
+
+    const qty = prompt(`Enter quantity for confluence-validated ${side} trade in ${symbol} at ₹${ltp}:`, "100");
+    if (!qty || isNaN(qty)) return;
+
+    const payload = {
+        isin: isin,
+        symbol: symbol,
+        mode: document.getElementById('strat-universe-mode').value,
+        timeframe: 'confluence',
+        entry_price: ltp,
+        target: target,
+        stop_loss: sl,
+        side: side,
+        qty: parseInt(qty),
+        query_context: query
+    };
+
+    try {
+        const res = await fetch('/api/trades/open', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+            showToast(`🚀 Confluence ${side} trade active for ${symbol}! Check Paper Trading for monitoring.`, "success");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("Failed to commit trade logic.", "error");
     }
 }

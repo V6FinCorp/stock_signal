@@ -12,6 +12,39 @@ import json
 
 app = FastAPI(title="StockSignal Pro API")
 
+@app.on_event("startup")
+async def startup_db_setup():
+    """Ensure all required tables for Strat Lab exist on startup."""
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # Table for Strategy Lab (Natural Language Queries)
+                await cur.execute("""
+                    CREATE TABLE IF NOT EXISTS app_sg_confluence_strategies (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        query_text TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    )
+                """)
+                # Ensure notes/context exists in active trades
+                try:
+                    await cur.execute("ALTER TABLE app_sg_active_trades ADD COLUMN notes TEXT")
+                except: pass # Column likely exists
+                
+                # Ensure side exists in active trades (BUY/SELL)
+                try:
+                    await cur.execute("ALTER TABLE app_sg_active_trades ADD COLUMN side VARCHAR(10) DEFAULT 'BUY'")
+                except: pass # Column likely exists
+                
+                await conn.commit()
+        app_pool.close()
+        await app_pool.wait_closed()
+    except Exception as e:
+        print(f"Startup DB Setup Error: {e}")
+
 # --- Paper Trading Models ---
 class TradeOpen(BaseModel):
     isin: str
@@ -19,10 +52,16 @@ class TradeOpen(BaseModel):
     mode: str
     timeframe: str
     entry_price: float
-    target_1: float
-    target_2: float
+    target: float
     stop_loss: float
+    side: str = "BUY"
     qty: int = 1
+    query_context: Optional[str] = None # Stores the original query if from Strat Lab
+
+class StrategySave(BaseModel):
+    id: Optional[int] = None
+    name: str
+    query: str
 
 @app.post("/api/trades/open")
 async def api_open_trade(trade: TradeOpen):
@@ -33,10 +72,10 @@ async def api_open_trade(trade: TradeOpen):
                 # Ensure status is explicitly set to OPEN
                 await cur.execute("""
                     INSERT INTO app_sg_active_trades 
-                    (isin, symbol, profile_id, timeframe, entry_price, target_1, target_2, stop_loss, qty, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'OPEN')
+                    (isin, symbol, profile_id, timeframe, entry_price, target_1, stop_loss, qty, side, status, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'OPEN', %s)
                 """, (trade.isin, trade.symbol, trade.mode, trade.timeframe, trade.entry_price, 
-                      trade.target_1, trade.target_2, trade.stop_loss, trade.qty))
+                      trade.target, trade.stop_loss, trade.qty, trade.side, trade.query_context))
                 await conn.commit()
         app_pool.close()
         await app_pool.wait_closed()
@@ -142,6 +181,56 @@ async def save_settings(data: dict):
         return {"status": "success", "message": f"Settings for {profile} saved to database."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save settings: {str(e)}")
+# --- Strategy Lab Endpoints ---
+
+@app.get("/api/strategies/list")
+async def list_strategies():
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SELECT id, name, query_text as query, updated_at FROM app_sg_confluence_strategies ORDER BY updated_at DESC")
+                rows = await cur.fetchall()
+        app_pool.close()
+        return {"status": "success", "data": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/strategies/save")
+async def save_strategy(strat: StrategySave):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                if strat.id:
+                    await cur.execute("""
+                        UPDATE app_sg_confluence_strategies 
+                        SET name = %s, query_text = %s 
+                        WHERE id = %s
+                    """, (strat.name, strat.query, strat.id))
+                else:
+                    await cur.execute("""
+                        INSERT INTO app_sg_confluence_strategies (name, query_text) 
+                        VALUES (%s, %s)
+                    """, (strat.name, strat.query))
+                await conn.commit()
+        app_pool.close()
+        return {"status": "success", "message": "Strategy saved successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/strategies/{strat_id}")
+async def delete_strategy_api(strat_id: int):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("DELETE FROM app_sg_confluence_strategies WHERE id = %s", (strat_id,))
+                await conn.commit()
+        app_pool.close()
+        return {"status": "success", "message": "Strategy deleted."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sector/sentiment")
 async def get_sector_sentiment(mode: str = "swing", timeframe: str = None):
@@ -244,35 +333,52 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                 for row in rows:
                     isin = row['isin']
                     
-                    # Ensure JSON serializable formatting matches the structure expected by JS
+                    # Robust JSON handling: Some drivers pre-parse JSON, others return strings
+                    dma = row.get('dma_data', {})
+                    if isinstance(dma, str) and dma.strip():
+                        try: dma = json.loads(dma)
+                        except: dma = {}
+                    elif not dma: dma = {}
+                        
+                    candles = row.get('last_5_candles')
+                    if isinstance(candles, str) and candles.startswith('['):
+                        try: candles = json.loads(candles)
+                        except: candles = None
+                    elif not isinstance(candles, (list, dict)): 
+                        candles = None
+                    
+                    # Ensure timestamp is datetime or format correctly
+                    ts = row.get('timestamp')
+                    ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if hasattr(ts, 'strftime') else str(ts) if ts else None
+
                     signals.append({
                         "isin": isin,
                         "symbol": symbols_map.get(isin, isin),
-                        "ltp": float(row['ltp']) if row['ltp'] is not None else None,
-                        "rsi": float(row['rsi']) if row['rsi'] is not None else None,
-                        "rsi_day_high": float(row['rsi_day_high']) if row['rsi_day_high'] is not None else None,
-                        "rsi_day_low": float(row['rsi_day_low']) if row['rsi_day_low'] is not None else None,
-                        "ema_value": float(row['ema_value']) if row['ema_value'] is not None else None,
-                        "ema_signal": row['ema_signal'],
-                        "ema_fast": float(row['ema_fast']) if row['ema_fast'] is not None else None,
-                        "ema_slow": float(row['ema_slow']) if row['ema_slow'] is not None else None,
-                        "volume_signal": row['volume_signal'],
-                        "volume_ratio": float(row['volume_ratio']) if row['volume_ratio'] is not None else 1.0,
-                        "supertrend_dir": row['supertrend_dir'],
-                        "supertrend_value": float(row['supertrend_value']) if row['supertrend_value'] is not None else None,
-                        "dma_data": json.loads(row['dma_data']) if row['dma_data'] else {},
-                        "confluence_rank": int(row['confluence_rank']) if row['confluence_rank'] is not None else 0,
-                        "sl": float(row['sl']) if row['sl'] is not None else None,
-                        "target": float(row['target']) if row['target'] is not None else None,
-                        "trade_strategy": row['trade_strategy'] or "NORMAL",
+                        "ltp": float(row['ltp']) if row.get('ltp') is not None else None,
+                        "rsi": float(row['rsi']) if row.get('rsi') is not None else None,
+                        "rsi_day_high": float(row['rsi_day_high']) if row.get('rsi_day_high') is not None else None,
+                        "rsi_day_low": float(row['rsi_day_low']) if row.get('rsi_day_low') is not None else None,
+                        "ema_value": float(row['ema_value']) if row.get('ema_value') is not None else None,
+                        "ema_signal": row.get('ema_signal'),
+                        "ema_fast": float(row['ema_fast']) if row.get('ema_fast') is not None else None,
+                        "ema_slow": float(row['ema_slow']) if row.get('ema_slow') is not None else None,
+                        "volume_signal": row.get('volume_signal'),
+                        "volume_ratio": float(row['volume_ratio']) if row.get('volume_ratio') is not None else 1.0,
+                        "supertrend_dir": row.get('supertrend_dir'),
+                        "supertrend_value": float(row['supertrend_value']) if row.get('supertrend_value') is not None else None,
+                        "dma_data": dma,
+                        "confluence_rank": int(row['confluence_rank']) if row.get('confluence_rank') is not None else 0,
+                        "sl": float(row['sl']) if row.get('sl') is not None else None,
+                        "target": float(row['target']) if row.get('target') is not None else None,
+                        "trade_strategy": row.get('trade_strategy') or "NORMAL",
                         "candlestick_pattern": row.get('candlestick_pattern'),
-                        "last_5_candles": json.loads(row['last_5_candles']) if row.get('last_5_candles') and row['last_5_candles'].startswith('[') else None,
+                        "last_5_candles": candles,
                         "mtf_data": mtf_map.get(isin, {}),
                         "sector": row.get('sector'),
                         "i_group": row.get('i_group'),
                         "i_subgroup": row.get('i_subgroup'),
                         "industry": row.get('industry'),
-                        "timestamp": row['timestamp'].strftime("%Y-%m-%d %H:%M:%S") if row['timestamp'] else None,
+                        "timestamp": ts_str,
                         "pe": float(row['pe']) if row.get('pe') is not None else None,
                         "pb": float(row['pb']) if row.get('pb') is not None else None,
                         "roe": float(row['roe']) if row.get('roe') is not None else None,
@@ -282,8 +388,8 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
                     })
                     
     except Exception as e:
-        app_pool.close()
-        datamart_pool.close()
+        if 'app_pool' in locals(): app_pool.close()
+        if 'datamart_pool' in locals(): datamart_pool.close()
         raise HTTPException(status_code=500, detail=f"Database Query Failed: {str(e)}")
 
     app_pool.close()
