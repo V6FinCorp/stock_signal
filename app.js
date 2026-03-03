@@ -1,3 +1,30 @@
+// --- Utilities ---
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: ${type === 'success' ? '#089981' : (type === 'error' ? '#F23645' : '#2962FF')};
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        z-index: 9999;
+        animation: slideUp 0.3s ease-out;
+    `;
+    toast.innerText = message;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.5s';
+        setTimeout(() => toast.remove(), 500);
+    }, 3000);
+}
+
 // --- Application State ---
 const MODES = {
     swing: {
@@ -1020,6 +1047,14 @@ async function loadSignalHistory() {
 function closeConfirmModal() {
     document.getElementById('confirm-modal').classList.add('hidden');
     document.getElementById('confirm-input').value = '';
+}
+
+function openStrategyHelp() {
+    document.getElementById('strategy-help-modal').classList.remove('hidden');
+}
+
+function closeStrategyHelp() {
+    document.getElementById('strategy-help-modal').classList.add('hidden');
 }
 
 async function clearDbData(type) {
@@ -2622,52 +2657,53 @@ async function closeTrade(id) {
 // --- Strategy Lab Beta (DSL Query Engine) ---
 
 const STRAT_ALIASES = {
-    "Price": "LTP",
-    "Last Price": "LTP",
     "CMP": "LTP",
     "LTP": "LTP",
-    "Super Trend": "ST",
-    "SuperTrend": "ST", // Common variant
+    "SuperTrend": "ST",
     "ST": "ST",
-    "Super Trend Value": "ST_V",
-    "SuperTrendValue": "ST_V", // Common variant
+    "SuperTrendValue": "ST_V",
     "ST_V": "ST_V",
     "STV": "ST_V",
     "RSI": "RSI",
-    "Volume": "VOL",
     "VOL": "VOL",
-    "Volume Ratio": "VOL_R",
     "VOL_R": "VOL_R",
-    "Bullish Volume": "BULL_S",
     "BULL_S": "BULL_S",
-    "Bearish Volume": "BEAR_S",
     "BEAR_S": "BEAR_S",
-    "EMA Fast": "EMA_F",
     "EMA_F": "EMA_F",
-    "EMA Slow": "EMA_S",
     "EMA_S": "EMA_S",
-    "EMA Crossover": "EMA_C",
     "EMA_C": "EMA_C",
-    "EMA Value": "EMA_V",
     "EMA_V": "EMA_V",
-    "Market Cap": "market_cap",
-    "PE Ratio": "pe",
     "PE": "pe",
-    "PB Ratio": "pb",
     "PB": "pb",
     "ROE": "roe",
     "EPS": "eps",
     "OPM": "opm",
     "NPM": "npm",
-    "Sector": "sector",
-    "Industry": "industry",
     "Prev_High": "prev_high",
     "Prev_Low": "prev_low"
 };
 
 const STRAT_KEYWORDS = [
-    ...Object.keys(STRAT_ALIASES),
-    "AND", "OR", "NOT", "Timeframe =", "5m", "15m", "30m", "1h", "1d", "BUY", "SELL", "BULL_S", "BEAR_S", "EMA_F", "EMA_S", "ST_V", "ST"
+    // Core Indicators & Tokens
+    "ST", "ST_V", "STV", "SuperTrend", "SuperTrendValue",
+    "RSI", "LTP", "CMP", "VOL", "VOL_R",
+    "EMA_F", "EMA_S", "EMA_C", "EMA_V",
+    "PE", "PB", "ROE", "EPS", "OPM", "NPM",
+    "Prev_High", "Prev_Low", "High", "Low",
+    "Market_Cap", "BULL_S", "BEAR_S",
+
+    // Timeframes
+    "[5m]", "[15m]", "[30m]", "[1h]", "[Daily]", "[Weekly]", "[Monthly]",
+
+    // Commands & Logic
+    "AND", "OR", "NOT", "Timeframe =", "BUY", "SELL"
+];
+
+const STRAT_INDICATOR_TOKENS = [
+    "RSI", "ST_V", "ST", "STV", "SuperTrend", "SuperTrendValue",
+    "LTP", "CMP", "High", "Low", "Prev_High", "Prev_Low",
+    "EMA_F", "EMA_S", "EMA_V", "EMA_C", "VOL_R", "VOL",
+    "PE", "PB", "ROE", "OPM", "NPM", "EPS", "Market_Cap"
 ];
 
 function initStrategyLab() {
@@ -2717,40 +2753,132 @@ function setupStrategyAutoSuggest() {
         const textarea = e.target;
         const value = textarea.value;
         const cursor = textarea.selectionStart;
-
         const before = value.substring(0, cursor);
-        const words = before.split(/[\s\n\(\)]+/);
-        const lastWord = words[words.length - 1];
 
-        if (lastWord.length < 2) {
+        // Logic to determine context: standalone word OR after a dot
+        let lastWord = "";
+        let isAfterDot = false;
+
+        const lastDotIdx = before.lastIndexOf('.');
+        const delimiters = [' ', '\n', '(', '[', ']', '+', '-', '*', '/', '>', '<', '='];
+        let lastDelimIdx = -1;
+        delimiters.forEach(d => {
+            const idx = before.lastIndexOf(d);
+            if (idx > lastDelimIdx) lastDelimIdx = idx;
+        });
+
+        if (lastDotIdx > lastDelimIdx) {
+            isAfterDot = true;
+            lastWord = before.substring(lastDotIdx + 1);
+        } else if (before.endsWith('[')) {
+            lastWord = '[';
+        } else {
+            // Split by same delimiters to find the word fragment
+            const words = before.split(/[\s\n\(\)\[\]\+\-\*\/\>\<\=]+/);
+            lastWord = words[words.length - 1];
+        }
+
+        if (lastWord.length < 1 && !isAfterDot) {
             suggestList.style.display = 'none';
             return;
         }
 
-        const matches = STRAT_KEYWORDS.filter(k => k.toLowerCase().startsWith(lastWord.toLowerCase())).slice(0, 10);
+        // Search in Appropriate List
+        const searchList = isAfterDot ? STRAT_INDICATOR_TOKENS : STRAT_KEYWORDS;
+        const matches = searchList.filter(k => k.toLowerCase().startsWith(lastWord.toLowerCase())).slice(0, 10);
 
         if (matches.length > 0) {
-            suggestList.innerHTML = matches.map(m => `
-                <div class="suggest-item" style="padding: 10px 16px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; color: var(--text-main);" 
-                    onclick="applyStratSuggestion('${m}', '${textarea.id}')">
-                    ${m}
+            suggestList.innerHTML = matches.map((m, idx) => `
+                <div class="suggest-item" 
+                    style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: var(--text-main); font-family: 'Fira Code', monospace; display: flex; align-items: center; gap: 10px;" 
+                    onclick="applyStratSuggestion('${m}', '${textarea.id}')"
+                    onmouseover="this.style.background='rgba(var(--primary-rgb), 0.2)'"
+                    onmouseout="this.style.background='transparent'">
+                    <span style="color: var(--primary); font-size: 14px;">◈</span>
+                    <span style="flex: 1;">${m}</span>
+                    <span style="font-size: 9px; opacity: 0.4; text-transform: uppercase;">${isAfterDot ? 'Token' : 'Keyword'}</span>
                 </div>
             `).join('');
 
-            // Position suggestions
+            const rect = textarea.getBoundingClientRect();
+            suggestList.style.position = 'fixed';
+            suggestList.style.top = `${rect.bottom + 5}px`;
+            suggestList.style.left = `${rect.left}px`;
+            suggestList.style.width = `${rect.width}px`;
             suggestList.style.display = 'block';
+            suggestList.style.zIndex = '100000';
         } else {
             suggestList.style.display = 'none';
         }
     };
 
-    textareas.forEach(ta => ta.addEventListener('input', handleInput));
+    textareas.forEach(ta => {
+        ta.addEventListener('input', handleInput);
+        ta.addEventListener('focus', handleInput);
+    });
 
-    document.addEventListener('click', (e) => {
+    document.addEventListener('mousedown', (e) => {
         if (!e.target.closest('#strat-suggestions') && !e.target.closest('.strategy-textarea')) {
-            suggestList.style.display = 'none';
+            setTimeout(() => suggestList.style.display = 'none', 100);
         }
     });
+
+    // Handle Tab/Enter key for selection
+    textareas.forEach(ta => {
+        ta.addEventListener('keydown', (e) => {
+            if ((e.key === 'Tab' || e.key === 'Enter') && suggestList.style.display === 'block') {
+                const first = suggestList.querySelector('.suggest-item');
+                if (first) {
+                    e.preventDefault();
+                    first.click();
+                }
+            }
+        });
+    });
+}
+
+function applyStratSuggestion(word, targetId = null) {
+    let textarea;
+    if (targetId) {
+        textarea = document.getElementById(targetId);
+    } else {
+        textarea = document.activeElement;
+    }
+    if (!textarea || !textarea.classList.contains('strategy-textarea')) return;
+
+    const value = textarea.value;
+    const cursor = textarea.selectionStart;
+    const before = value.substring(0, cursor);
+
+    const lastDotIdx = before.lastIndexOf('.');
+    const delimiters = [' ', '\n', '(', '[', ']', '+', '-', '*', '/', '>', '<', '='];
+    let lastDelimIdx = -1;
+    delimiters.forEach(d => {
+        const idx = before.lastIndexOf(d);
+        if (idx > lastDelimIdx) lastDelimIdx = idx;
+    });
+
+    let matchStart;
+    if (word.startsWith('[') && before.endsWith('[')) {
+        // We typed the trigger [ and are now selecting the full [TF]
+        matchStart = before.lastIndexOf('[');
+    } else if (lastDotIdx > lastDelimIdx) {
+        // Appending indicator after dot
+        matchStart = lastDotIdx + 1;
+    } else {
+        // Replaying after a space/bracket or start of line
+        matchStart = lastDelimIdx + 1;
+    }
+
+    const newValue = value.substring(0, matchStart) + word + value.substring(cursor);
+    textarea.value = newValue;
+
+    const newPos = matchStart + word.length;
+    textarea.setSelectionRange(newPos, newPos);
+    textarea.focus();
+
+    document.getElementById('strat-suggestions').style.display = 'none';
+    updateStrategyExplainer();
 }
 
 function clearStrategyLab() {
@@ -2900,13 +3028,60 @@ function generatePlainEnglish(translation) {
         }
     });
 
+    if (explanation.length === 0) {
+        explanation.push("• Scan for stocks matching defined criteria.");
+    }
+
     return explanation;
+}
+
+/**
+ * Generates human readable explanation for Target and SL queries
+ */
+function generateLevelExplanation(query, type, side) {
+    const q = query.trim();
+    if (!q) return type === 'TP' ? "Default profit target (+1.5%)" : "Default risk floor (-1.5%)";
+
+    let base = "Price (LTP)";
+    let adjustment = "";
+
+    // 1. Identify Token
+    const tokenMatch = q.match(/\[(.*?)\]\.(HIGH|LOW|PREV_HIGH|PREV_LOW|ST_V|ST|SUPERTRENDVALUE|EMA_F|EMA_S)/i);
+    if (tokenMatch) {
+        const tf = tokenMatch[1];
+        const ind = tokenMatch[2].toUpperCase();
+        let name = "Indicator";
+        if (ind.includes('ST')) name = "SuperTrend Value";
+        else if (ind === 'EMA_F') name = "Fast EMA";
+        else if (ind === 'EMA_S') name = "Slow EMA";
+        else if (ind.includes('HIGH')) name = "Prev Day High";
+        else if (ind.includes('LOW')) name = "Prev Day Low";
+
+        base = `<b>${name}</b> on <b>${tf}</b>`;
+    }
+
+    // 2. Identify Arithmetic
+    const arthMatch = q.match(/([\+\-])\s*(\d+\.?\d*)\s*%/);
+    if (arthMatch) {
+        adjustment = `, adjusted by <b>${arthMatch[1]}${arthMatch[2]}%</b>`;
+    }
+
+    // 3. Pure Percentage
+    const pctMatch = q.match(/^(\d+\.?\d*)\s*%$/);
+    if (pctMatch && !tokenMatch) {
+        return `Set exit at <b>${pctMatch[1]}%</b> from entry cost.`;
+    }
+
+    const action = type === 'TP' ? "Take profit" : "Cut loss";
+    return `${action} at ${base}${adjustment}.`;
 }
 
 function updateStrategyExplainer() {
     const entry = document.getElementById('strat-entry-query').value;
     const target = document.getElementById('strat-target-query').value;
     const sl = document.getElementById('strat-sl-query').value;
+    const exit = document.getElementById('strat-exit-query').value;
+    const accum = document.getElementById('strat-accum-query').value;
     const side = document.getElementById('strat-side').value;
     const tf = document.getElementById('strat-timeframe').value;
 
@@ -2921,23 +3096,37 @@ function updateStrategyExplainer() {
 
     const entryTrans = translateUserQuery(entry, side, tf);
     const explanation = generatePlainEnglish(entryTrans);
+    const targetExp = generateLevelExplanation(target, 'TP', side);
+    const slExp = generateLevelExplanation(sl, 'SL', side);
+    const exitTrans = exit ? translateUserQuery(exit, side, tf) : null;
+    const exitExp = exitTrans ? generatePlainEnglish(exitTrans) : ["No condition set"];
+    const accumTrans = accum ? translateUserQuery(accum, side, tf) : null;
+    const accumExp = accumTrans ? generatePlainEnglish(accumTrans) : ["No condition set"];
 
     explainerEl.innerHTML = `
-        <div style="font-weight: 800; color: ${side === 'BUY' ? 'var(--success)' : 'var(--danger)'}; margin-bottom: 15px; font-size: 15px;">
+        <div style="font-weight: 800; color: ${side === 'BUY' ? 'var(--success)' : 'var(--danger)'}; margin-bottom: 20px; font-size: 15px;">
             PLAN: ${side} @ ${tf}
         </div>
         <div style="display: flex; flex-direction: column; gap: 12px;">
-            <div style="padding: 8px; background: rgba(var(--success-rgb), 0.05); border-left: 3px solid var(--success);">
-                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 4px;">ENTRY LOGIC</span>
-                ${explanation.join('<br>')}
+            <div style="padding: 10px; background: rgba(var(--success-rgb), 0.05); border-left: 3px solid var(--success); border-radius: 4px;">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 6px; letter-spacing: 0.5px;">1. ENTRY LOGIC</span>
+                <div style="font-size: 13px;">${explanation.join('<br>')}</div>
             </div>
-            ${target ? `<div style="padding: 8px; background: rgba(var(--amber-rgb), 0.05); border-left: 3px solid var(--amber);">
-                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 4px;">TARGET LOGIC</span>
-                • ${target}
-            </div>` : ''}
-            ${sl ? `<div style="padding: 8px; background: rgba(var(--danger-rgb), 0.05); border-left: 3px solid var(--danger);">
-                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 4px;">STOP LOGIC</span>
-                • ${sl}
+            <div style="padding: 10px; background: rgba(var(--amber-rgb), 0.05); border-left: 3px solid var(--amber); border-radius: 4px;">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 6px; letter-spacing: 0.5px;">2. TARGET LOGIC</span>
+                <div style="font-size: 13px;">• ${targetExp}</div>
+            </div>
+            <div style="padding: 10px; background: rgba(var(--primary-rgb), 0.05); border-left: 3px solid var(--primary); border-radius: 4px;">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 6px; letter-spacing: 0.5px;">3. EXIT CONDITION</span>
+                <div style="font-size: 13px;">${exitExp.join('<br>')}</div>
+            </div>
+            <div style="padding: 10px; background: rgba(var(--danger-rgb), 0.05); border-left: 3px solid var(--danger); border-radius: 4px;">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 6px; letter-spacing: 0.5px;">4. STOP LOGIC</span>
+                <div style="font-size: 13px;">• ${slExp}</div>
+            </div>
+            ${accum ? `<div style="padding: 10px; background: rgba(var(--purple-rgb), 0.05); border-left: 3px solid var(--purple); border-radius: 4px;">
+                <span style="font-size: 10px; font-weight: 800; opacity: 0.6; display: block; margin-bottom: 6px; letter-spacing: 0.5px;">5. ACCUMULATION LOGIC</span>
+                <div style="font-size: 13px;">${accumExp.join('<br>')}</div>
             </div>` : ''}
         </div>
     `;
@@ -2970,33 +3159,7 @@ function updateStrategyExplainer() {
     `;
 }
 
-function applyStratSuggestion(word, targetId = null) {
-    let textarea;
-    if (targetId) {
-        textarea = document.getElementById(targetId);
-    } else {
-        textarea = document.activeElement;
-        if (!textarea || !textarea.classList.contains('strategy-textarea')) { // Check if it's one of the strategy textareas
-            textarea = document.getElementById('strat-entry-query'); // Fallback to entry query
-        }
-    }
-    if (!textarea) return;
 
-    const suggestList = document.getElementById('strat-suggestions');
-    const value = textarea.value;
-    const cursor = textarea.selectionStart;
-
-    const before = value.substring(0, cursor);
-    const words = before.split(/[\s\n\(\)]+/);
-    const lastWord = words[words.length - 1];
-
-    const newValue = value.substring(0, cursor - lastWord.length) + word + value.substring(cursor);
-    textarea.value = newValue;
-    textarea.focus();
-    textarea.selectionStart = textarea.selectionEnd = cursor - lastWord.length + word.length;
-    suggestList.style.display = 'none';
-    updateStrategyExplainer();
-}
 
 function translateUserQuery(userQuery, side_override = null, tf_override = null) {
     let q = userQuery;
@@ -3064,7 +3227,7 @@ async function saveCurrentStrategy() {
 
     const side = document.getElementById('strat-side').value;
     const tf = document.getElementById('strat-timeframe').value;
-    const universe = document.getElementById('strat-universe-mode').value;
+    const universe = currentMode; // Using global currentMode as universe UI is gone
 
     if (!entry) return alert("Please enter Entry Criteria.");
 
@@ -3247,13 +3410,27 @@ async function runStrategyScan() {
     const matchCountBadge = document.getElementById('strat-match-count');
 
     try {
-        // 2. Parse Timeframes from the translated query
+        // 2. Parse Timeframes from the translated query AND the Target/SL boxes
         const tfRegex = /\[(.*?)\]/g;
         let match;
         const usedTfs = [];
+
+        // Scan the translated entry logic
         while ((match = tfRegex.exec(query)) !== null) {
             usedTfs.push(match[1]);
         }
+
+        // ALSO scan the raw Target and SL logic boxes for extra timeframes
+        const targetRaw = document.getElementById('strat-target-query').value;
+        const slRaw = document.getElementById('strat-sl-query').value;
+
+        [targetRaw, slRaw].forEach(q => {
+            let m;
+            const re = /\[(.*?)\]/g;
+            while ((m = re.exec(q)) !== null) {
+                usedTfs.push(m[1]);
+            }
+        });
 
         if (usedTfs.length === 0) {
             usedTfs.push(defaultTf);
@@ -3384,71 +3561,62 @@ async function runStrategyScan() {
 
 function calculateStaticLevels(stock, tfDataMap) {
     const ltp = stock.ltp;
-
     const side = document.getElementById('strat-side').value;
     const targetQuery = document.getElementById('strat-target-query').value;
     const slQuery = document.getElementById('strat-sl-query').value;
 
-    let targetPrice = ltp * (side === 'BUY' ? 1.008 : 0.992); // Default small percentage
-    let slPrice = ltp * (side === 'BUY' ? 0.995 : 1.005); // Default small percentage
+    const resolve = (query, type) => {
+        const q = query.trim();
+        if (!q) {
+            if (type === 'TP') return ltp * (side === 'BUY' ? 1.015 : 0.985);
+            return ltp * (side === 'BUY' ? 0.985 : 1.015);
+        }
 
-    // Resolve Target
-    const tPctMatch = targetQuery.match(/(\d+\.?\d*)\s*%/);
-    if (tPctMatch) {
-        const pct = parseFloat(tPctMatch[1]);
-        targetPrice = side === 'BUY' ? ltp * (1 + pct / 100) : ltp * (1 - pct / 100);
-    } else if (targetQuery.includes('High') || targetQuery.includes('Low') || targetQuery.includes('Prev_High') || targetQuery.includes('Prev_Low')) {
-        // Dynamic Price Tagging (Simplified)
-        const tfKeyMatch = targetQuery.match(/\[(.*?)\]/);
-        const tfKey = tfKeyMatch ? tfKeyMatch[1] : '1d'; // Default to 1d if no TF specified
-        const tfData = tfDataMap[tfKey] || [];
-        const relevantStockData = tfData.find(s => s.isin === stock.isin);
+        let baseValue = ltp;
+        let isToken = false;
 
-        if (relevantStockData) {
-            if (targetQuery.includes('High') || targetQuery.includes('Prev_High')) {
-                targetPrice = relevantStockData.prev_high || ltp * (side === 'BUY' ? 1.015 : 0.985);
-            } else if (targetQuery.includes('Low') || targetQuery.includes('Prev_Low')) {
-                targetPrice = relevantStockData.prev_low || ltp * (side === 'BUY' ? 1.015 : 0.985);
+        // 1. Identify Token and Base Price
+        const tokenMatch = q.match(/\[(.*?)\]\.(HIGH|LOW|PREV_HIGH|PREV_LOW|ST_V|ST|SUPERTRENDVALUE|EMA_F|EMA_S)/i);
+        if (tokenMatch) {
+            const tfKey = tokenMatch[1];
+            const indicator = tokenMatch[2].toUpperCase();
+            const tfData = tfDataMap[tfKey] || [];
+            const s = tfData.find(item => item.isin === stock.isin);
+
+            if (s) {
+                isToken = true;
+                if (indicator === 'ST_V' || indicator === 'ST' || indicator === 'SUPERTRENDVALUE') baseValue = s.supertrend_value;
+                else if (indicator === 'EMA_F') baseValue = s.ema_fast;
+                else if (indicator === 'EMA_S') baseValue = s.ema_slow;
+                else if (indicator === 'HIGH' || indicator === 'PREV_HIGH') baseValue = s.prev_high;
+                else if (indicator === 'LOW' || indicator === 'PREV_LOW') baseValue = s.prev_low;
             }
-        } else {
-            targetPrice = ltp * (side === 'BUY' ? 1.015 : 0.985); // Fallback
         }
-    }
 
-    // Resolve SL
-    const sPctMatch = slQuery.match(/(\d+\.?\d*)\s*%/);
-    if (sPctMatch) {
-        const pct = parseFloat(sPctMatch[1]);
-        slPrice = side === 'BUY' ? ltp * (1 - pct / 100) : ltp * (1 + pct / 100);
-    } else if (slQuery.includes('ST_V') || slQuery.includes('SuperTrendValue')) {
-        const tfKeyMatch = slQuery.match(/\[(.*?)\]/);
-        const tfKey = tfKeyMatch ? tfKeyMatch[1] : '1h'; // Default to 1h if no TF specified
-        const tfData = tfDataMap[tfKey] || [];
-        const relevantStockData = tfData.find(s => s.isin === stock.isin);
-
-        if (relevantStockData && relevantStockData.supertrend_value) {
-            slPrice = relevantStockData.supertrend_value;
-        } else {
-            slPrice = ltp * (side === 'BUY' ? 0.97 : 1.03); // Fallback
+        // 2. Handle Arithmetic Adjustment (e.g. - 0.5%)
+        const arithmeticMatch = q.match(/([\+\-])\s*(\d+\.?\d*)\s*%/);
+        if (arithmeticMatch) {
+            const op = arithmeticMatch[1];
+            const pct = parseFloat(arithmeticMatch[2]) / 100;
+            const startVal = baseValue || ltp;
+            return op === '+' ? startVal * (1 + pct) : startVal * (1 - pct);
         }
-    } else if (slQuery.includes('EMA_F') || slQuery.includes('EMA_S')) {
-        const tfKeyMatch = slQuery.match(/\[(.*?)\]/);
-        const tfKey = tfKeyMatch ? tfKeyMatch[1] : '1h'; // Default to 1h if no TF specified
-        const tfData = tfDataMap[tfKey] || [];
-        const relevantStockData = tfData.find(s => s.isin === stock.isin);
 
-        if (relevantStockData) {
-            if (slQuery.includes('EMA_F')) {
-                slPrice = relevantStockData.ema_fast || ltp * (side === 'BUY' ? 0.97 : 1.03);
-            } else if (slQuery.includes('EMA_S')) {
-                slPrice = relevantStockData.ema_slow || ltp * (side === 'BUY' ? 0.97 : 1.03);
-            }
-        } else {
-            slPrice = ltp * (side === 'BUY' ? 0.97 : 1.03); // Fallback
+        // 3. Standalone Percentage (e.g. 5%)
+        const purePctMatch = q.match(/^(\d+\.?\d*)\s*%$/);
+        if (purePctMatch && !isToken) {
+            const pct = parseFloat(purePctMatch[1]) / 100;
+            if (type === 'TP') return side === 'BUY' ? ltp * (1 + pct) : ltp * (1 - pct);
+            return side === 'BUY' ? ltp * (1 - pct) : ltp * (1 + pct);
         }
-    }
 
-    return { target: targetPrice, sl: slPrice };
+        return baseValue || ltp;
+    };
+
+    return {
+        target: resolve(targetQuery, 'TP'),
+        sl: resolve(slQuery, 'SL')
+    };
 }
 
 // Strategy Lab Sorting & Export
@@ -3672,7 +3840,7 @@ async function commitToTrade(isin, target, sl) {
     const payload = {
         isin: isin,
         symbol: symbol,
-        mode: document.getElementById('strat-universe-mode').value,
+        mode: currentMode, // UI element is missing, using current app mode
         timeframe: 'confluence',
         entry_price: ltp,
         target: target,
