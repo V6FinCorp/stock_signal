@@ -97,6 +97,82 @@ let HUD_STATES = {
 
 let autoSyncTimerId = null;
 let isAutoSyncEnabled = false;
+let currentUsername = 'admin'; // Fallback
+
+// --- Authentication & Session ---
+async function verifySession() {
+    try {
+        const res = await fetch('/api/auth/verify');
+        const data = await res.json();
+        if (data.status === 'success') {
+            currentUsername = data.username;
+            // Update UI username if exists
+            const el = document.querySelector('.user-name');
+            if (el) el.innerText = currentUsername === 'admin' ? 'V6 Admin' : currentUsername;
+        } else {
+            window.location.reload(); // Redirect to login via '/'
+        }
+    } catch (e) {
+        console.warn("Auth verification error:", e);
+    }
+}
+
+async function logoutSession() {
+    if (confirm("Are you sure you want to log out from SignalPro?")) {
+        try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        } catch (e) {
+            alert("Logout failed. Please check connection.");
+        }
+    }
+}
+
+async function changeUserPassword() {
+    const oldPass = document.getElementById('change-old-pass').value;
+    const newPass = document.getElementById('change-new-pass').value;
+    const confirmPass = document.getElementById('change-confirm-pass').value;
+
+    if (!oldPass || !newPass) {
+        showToast("Please fill all password fields", "error");
+        return;
+    }
+
+    if (newPass !== confirmPass) {
+        showToast("New passwords do not match", "error");
+        return;
+    }
+
+    if (newPass.length < 6) {
+        showToast("Password must be at least 6 characters", "error");
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: currentUsername,
+                old_password: oldPass,
+                new_password: newPass
+            })
+        });
+        const result = await res.json();
+
+        if (result.status === 'success') {
+            showToast("Password updated. Please log in again.", "success");
+            // Automatically log out so they have to use the new password
+            setTimeout(() => {
+                fetch('/api/auth/logout', { method: 'POST' }).then(() => window.location.reload());
+            }, 2000);
+        } else {
+            showToast(result.detail || "Failed to update password. Current password may be wrong.", "error");
+        }
+    } catch (e) {
+        showToast("An error occurred. check server log.", "error");
+    }
+}
 
 // --- Core API Logic ---
 
@@ -970,10 +1046,11 @@ async function fetchDbStats() {
             const tbody = document.getElementById('db-coverage-tbody');
             tbody.innerHTML = '';
 
-            if (Object.keys(result.data.coverage).length === 0) {
+            const coverage = result.data.coverage || {};
+            if (Object.keys(coverage).length === 0) {
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;" class="text-dim">No raw OHLCV data found.</td></tr>';
             } else {
-                for (const [tf, stats] of Object.entries(result.data.coverage)) {
+                for (const [tf, stats] of Object.entries(coverage)) {
                     let gapHtml = '';
                     if (stats.gaps && stats.gaps.length > 0) {
                         const gapList = stats.gaps.join(', ');
@@ -2360,7 +2437,10 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
 }
 
 // --- App Initialization ---
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Brief verify check
+    await verifySession();
+
     console.log("App Initialized. Defaulting to Swing Dashboard.");
     loadConfigsFromLocalStorage();
     setMode('swing');
