@@ -39,6 +39,26 @@ async def startup_db_setup():
                     await cur.execute("ALTER TABLE app_sg_active_trades ADD COLUMN side VARCHAR(10) DEFAULT 'BUY'")
                 except: pass # Column likely exists
                 
+                # Table for Signal History (Logging high conviction signals)
+                await cur.execute("""
+                    CREATE TABLE IF NOT EXISTS app_sg_signal_history (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        isin VARCHAR(20),
+                        symbol VARCHAR(50),
+                        profile_id VARCHAR(20),
+                        timeframe VARCHAR(10),
+                        timestamp DATETIME,
+                        ltp DECIMAL(10, 4),
+                        rsi DECIMAL(10, 4),
+                        confluence_rank INT,
+                        trade_strategy VARCHAR(50),
+                        sl DECIMAL(10, 4),
+                        target DECIMAL(10, 4),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY unique_log (isin, profile_id, timeframe, timestamp)
+                    )
+                """)
+                
                 await conn.commit()
         app_pool.close()
         await app_pool.wait_closed()
@@ -398,6 +418,45 @@ async def get_signals(mode: str = "swing", timeframe: str = None):
     await datamart_pool.wait_closed()
     
     return {"status": "success", "data": signals}
+    
+@app.get("/api/history")
+async def get_signal_history(mode: str = "all", timeframe: str = "all", limit: int = 100):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                query = "SELECT * FROM app_sg_signal_history"
+                params = []
+                where_clauses = []
+                
+                if mode != "all":
+                    where_clauses.append("profile_id = %s")
+                    params.append(mode)
+                
+                if timeframe != "all":
+                    where_clauses.append("timeframe = %s")
+                    params.append(timeframe)
+                
+                if where_clauses:
+                    query += " WHERE " + " AND ".join(where_clauses)
+                
+                query += " ORDER BY timestamp DESC LIMIT %s"
+                params.append(limit)
+                
+                await cur.execute(query, tuple(params))
+                rows = await cur.fetchall()
+                
+                # Format timestamps
+                for r in rows:
+                    if r['timestamp']:
+                        r['timestamp'] = r['timestamp'].strftime("%Y-%m-%d %H:%M:%S")
+                
+        app_pool.close()
+        await app_pool.wait_closed()
+        return {"status": "success", "data": rows}
+    except Exception as e:
+        if 'app_pool' in locals(): app_pool.close()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/chart/details")
 async def api_chart_details(isin: str, timeframe: str, profile: str = "swing", bars: int = 30):

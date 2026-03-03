@@ -623,6 +623,17 @@ h1 {
     color: var(--text-dim);
 }
 
+.badge-perfect {
+    background: linear-gradient(135deg, #f59e0b, #10b981);
+    color: white;
+}
+
+.badge-normal {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-dim);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .trade-plan-box {
     font-size: 12px;
     line-height: 1.4;
@@ -1322,8 +1333,15 @@ input:checked+.slider:before {
 }
 
 @keyframes slideIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 #strat-results-grid::-webkit-scrollbar {
@@ -1335,6 +1353,8 @@ input:checked+.slider:before {
     border-radius: 10px;
 }
 
-.rule-tf, .rule-ind, .rule-op {
+.rule-tf,
+.rule-ind,
+.rule-op {
     font-weight: 600;
 }

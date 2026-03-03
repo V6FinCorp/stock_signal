@@ -924,6 +924,8 @@ function switchTab(tabId) {
         fetchActiveTrades();
     } else if (tabId === 'strategy-lab') {
         initStrategyLab();
+    } else if (tabId === 'history') {
+        loadSignalHistory();
     }
 }
 
@@ -972,6 +974,46 @@ async function fetchDbStats() {
     } catch (e) {
         console.error("Failed to load DB Stats", e);
         document.getElementById('db-coverage-tbody').innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger);">Failed to load stats</td></tr>';
+    }
+}
+
+async function loadSignalHistory() {
+    const tbody = document.getElementById('history-tbody');
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i> Loading historical intelligence...</td></tr>';
+
+    const mode = document.getElementById('history-filter-mode').value;
+    const tf = document.getElementById('history-filter-tf').value;
+
+    try {
+        const res = await fetch(`/api/history?mode=${mode}&timeframe=${tf}&limit=100`);
+        const result = await res.json();
+
+        if (result.status === 'success' && result.data.length > 0) {
+            tbody.innerHTML = '';
+            result.data.forEach(log => {
+                const tr = document.createElement('tr');
+                const rankClass = log.confluence_rank >= 4 ? 'text-success' : 'text-danger';
+                const strategyClass = log.trade_strategy.includes('PERFECT') ? 'badge-perfect' : 'badge-normal';
+
+                tr.innerHTML = `
+                    <td class="text-dim" style="font-size: 11px;">${log.timestamp}</td>
+                    <td style="font-weight: 700;">${log.symbol || log.isin}</td>
+                    <td><span class="strategy-badge ${strategyClass}" style="font-size: 10px; padding: 2px 6px;">${log.trade_strategy}</span></td>
+                    <td class="text-dim">${log.timeframe}</td>
+                    <td class="${rankClass}" style="font-weight: 800;">${log.confluence_rank > 0 ? '+' : ''}${log.confluence_rank}</td>
+                    <td style="font-weight: 600;">₹${parseFloat(log.ltp).toFixed(1)}</td>
+                    <td class="text-dim">${log.rsi ? parseFloat(log.rsi).toFixed(1) : '-'}</td>
+                    <td class="text-success" style="font-size: 12px; font-weight: 600;">${log.target ? log.target.toFixed(1) : '-'}</td>
+                    <td class="text-danger" style="font-size: 12px; font-weight: 600;">${log.sl ? log.sl.toFixed(1) : '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:40px; color:var(--text-dim);">No significant historical signals found yet. Run calculations to generate logs.</td></tr>';
+        }
+    } catch (e) {
+        console.error("History Load Error:", e);
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:40px; color:var(--danger);">Connection failed while fetching history.</td></tr>';
     }
 }
 
@@ -3409,6 +3451,79 @@ function calculateStaticLevels(stock, tfDataMap) {
     return { target: targetPrice, sl: slPrice };
 }
 
+// Strategy Lab Sorting & Export
+let lastStrategySortColumn = 'symbol';
+let lastStrategySortDirection = 'asc';
+
+function sortStrategyResults(column) {
+    if (lastStrategySortColumn === column) {
+        lastStrategySortDirection = lastStrategySortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        lastStrategySortColumn = column;
+        lastStrategySortDirection = 'desc';
+    }
+
+    if (!lastScanMatches || !lastScanMatches.length) return;
+
+    const sorted = [...lastScanMatches].sort((a, b) => {
+        let v1 = a[column];
+        let v2 = b[column];
+
+        // Handle nested or computed objects if necessary
+        if (column === 'i_group') v1 = a.i_group || a.industry || '';
+        if (column === 'i_group') v2 = b.i_group || b.industry || '';
+
+        // Type-specific comparison
+        if (typeof v1 === 'string') {
+            return lastStrategySortDirection === 'asc'
+                ? v1.localeCompare(v2)
+                : v2.localeCompare(v1);
+        } else {
+            return lastStrategySortDirection === 'asc' ? v1 - v2 : v2 - v1;
+        }
+    });
+
+    renderScanResults(sorted, true);
+}
+
+function exportStrategyToExcel() {
+    if (!lastScanMatches || !lastScanMatches.length) return alert("No scan results to export.");
+
+    const headers = ["Symbol", "ISIN", "LTP", "Industry", "Sub-Group", "RSI", "PE", "Side", "Target", "Tgt %", "Stop Loss", "SL %"];
+    const rows = lastScanMatches.map(s => {
+        const tgtDiff = ((s.levels.target - s.ltp) / s.ltp * 100).toFixed(2);
+        const slDiff = ((s.levels.sl - s.ltp) / s.ltp * 100).toFixed(2);
+        return [
+            s.symbol,
+            s.isin,
+            s.ltp,
+            s.i_group || '-',
+            s.i_subgroup || '-',
+            s.rsi || '-',
+            s.pe || '-',
+            s.side,
+            s.levels.target.toFixed(2),
+            tgtDiff + "%",
+            s.levels.sl.toFixed(2),
+            slDiff + "%"
+        ];
+    });
+
+    const csvContent = [
+        headers.join(","),
+        ...rows.map(e => e.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Strategy_Scan_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 // Helper function for currency formatting (assuming it's not globally defined)
 function formatCurrency(value) {
     return parseFloat(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -3419,7 +3534,7 @@ function renderScanResults(matches, isFilter = false) {
     if (!isFilter) lastScanMatches = matches;
 
     if (!matches.length) {
-        grid.innerHTML = `<tr><td colspan="6" style="padding: 100px; text-align:center; opacity: 0.3;">
+        grid.innerHTML = `<tr><td colspan="12" style="padding: 100px; text-align:center; opacity: 0.3;">
             <i class="fas fa-ghost fa-3x" style="margin-bottom:20px;"></i>
             <p style="font-size:14px;">No matching symbols found in current scan.</p>
         </td></tr>`;
@@ -3432,6 +3547,65 @@ function renderScanResults(matches, isFilter = false) {
         const tgVal = formatCurrency(s.levels.target);
         const slVal = formatCurrency(s.levels.sl);
 
+        const tgtDiff = ((s.levels.target - s.ltp) / s.ltp * 100).toFixed(1);
+        const slDiff = ((s.levels.sl - s.ltp) / s.ltp * 100).toFixed(1);
+
+        // Industry & Subgroup
+        const industryHtml = `
+            <div style="font-size: 13px; color: var(--text-main); font-weight: 500; overflow: hidden; text-overflow: ellipsis; max-width: 140px;" title="${s.i_group || '-'}">${s.i_group || '-'}</div>
+            <div style="font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; max-width: 140px; margin-top: 2px;" title="${s.i_subgroup || '-'}">${s.i_subgroup || '-'}</div>
+        `;
+
+        const rsi = s.rsi ? s.rsi.toFixed(1) : '-';
+        const pe = s.pe ? s.pe.toFixed(2) : '-';
+
+        // Sparkline logic (Formation)
+        let sparklineHtml = '-';
+        const l5_data = s.last_5_candles;
+        if (Array.isArray(l5_data) && l5_data.length > 0) {
+            const rawDataJson = encodeURIComponent(JSON.stringify(l5_data));
+            let minLow = Infinity;
+            let maxHigh = -Infinity;
+            l5_data.forEach(c => {
+                if (c.l < minLow) minLow = c.l;
+                if (c.h > maxHigh) maxHigh = c.h;
+            });
+            let range = maxHigh - minLow;
+            if (range === 0) range = maxHigh * 0.01 || 1;
+
+            const svgHeight = 28;
+            const candleWidth = 8;
+            const gap = 4;
+            const svgWidth = (candleWidth * 5) + (gap * 4);
+            const pad = 2;
+            const usableHeight = svgHeight - (pad * 2);
+            const patternLabel = s.candlestick_pattern || '';
+
+            let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup('${s.isin}', '${s.symbol}', this.dataset.pattern, this.dataset.candles)" data-candles="${rawDataJson}" data-pattern="${patternLabel}">`;
+
+            l5_data.forEach((c, i) => {
+                const isGreen = c.c > c.o;
+                const color = isGreen ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
+                const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2);
+                const yHigh = pad + usableHeight - ((c.h - minLow) / range) * usableHeight;
+                const yLow = pad + usableHeight - ((c.l - minLow) / range) * usableHeight;
+                const yOpen = pad + usableHeight - ((c.o - minLow) / range) * usableHeight;
+                const yClose = pad + usableHeight - ((c.c - minLow) / range) * usableHeight;
+                const topBody = Math.min(yOpen, yClose);
+                const bottomBody = Math.max(yOpen, yClose);
+                let bodyHeight = Math.max(1, bottomBody - topBody);
+
+                svgContent += `<line x1="${xCenter}" y1="${yHigh}" x2="${xCenter}" y2="${yLow}" stroke="${color}" stroke-width="1.2" shape-rendering="crispEdges"/>`;
+                svgContent += `<rect x="${xCenter - candleWidth / 2}" y="${topBody}" width="${candleWidth}" height="${bodyHeight}" fill="${color}" shape-rendering="crispEdges"/>`;
+            });
+            svgContent += `</svg>`;
+
+            sparklineHtml = `
+                <div style="background: rgba(14, 21, 31, 0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; padding: 4px 6px; display: inline-block;">
+                    ${svgContent}
+                </div>`;
+        }
+
         return `
             <tr class="strat-card" data-isin="${s.isin}" style="border-bottom: 1px solid rgba(255,255,255,0.02);">
                 <td style="padding: 15px 20px;">
@@ -3439,28 +3613,42 @@ function renderScanResults(matches, isFilter = false) {
                     <div style="font-size: 10px; opacity: 0.5;">${s.isin}</div>
                 </td>
                 <td style="padding: 15px 20px; text-align: right; font-weight: 800; color: var(--amber);" class="ltp-val">
-                    ₹${ltpVal}
+                    ${ltpVal}
+                </td>
+                <td style="padding: 15px 20px; text-align: left;">
+                    ${industryHtml}
+                </td>
+                <td style="padding: 15px 20px; text-align: right; font-weight: 600; color: var(--primary);">
+                    ${rsi}
+                </td>
+                <td style="padding: 15px 20px; text-align: right; font-weight: 600; color: var(--text-main);">
+                    ${pe}
                 </td>
                 <td style="padding: 15px 20px; text-align: center;">
-                    <span class="badge" style="background: ${sideColor}20; color: ${sideColor}; border: 1px solid ${sideColor}40; font-weight: 800;">
+                    ${sparklineHtml}
+                </td>
+                <td style="padding: 15px 20px; text-align: center;">
+                    <span class="badge" style="background: ${sideColor}20; color: ${sideColor}; border: 1px solid ${sideColor}40; font-weight: 800; padding: 2px 8px;">
                         ${s.side}
                     </span>
                 </td>
-                <td style="padding: 15px 20px; text-align: right; font-weight: 700; color: var(--success);">
-                    ₹${tgVal}
+                <td style="padding: 15px 10px; text-align: right; font-weight: 700; color: var(--success);">
+                    ${tgVal}
                 </td>
-                <td style="padding: 15px 20px; text-align: right; font-weight: 700; color: var(--danger);">
-                    ₹${slVal}
+                <td style="padding: 15px 10px; text-align: right; font-size: 12px; color: var(--success); opacity: 0.8;">
+                    ${tgtDiff}%
+                </td>
+                <td style="padding: 15px 10px; text-align: right; font-weight: 700; color: var(--danger);">
+                    ${slVal}
+                </td>
+                <td style="padding: 15px 10px; text-align: right; font-size: 12px; color: var(--danger); opacity: 0.8;">
+                    ${slDiff}%
                 </td>
                 <td style="padding: 15px 20px; text-align: center;">
                     <div style="display: flex; gap: 8px; justify-content: center;">
                         <button class="btn btn-primary" style="height: 32px; padding: 0 12px; font-size: 11px;" 
                             onclick="commitToTrade('${s.isin}', ${s.levels.target}, ${s.levels.sl})">
                             <i class="fas fa-bolt"></i> Trade
-                        </button>
-                        <button class="btn btn-dim" style="height: 32px; width: 32px; padding: 0;" 
-                            onclick="showCandlesPopup('${s.isin}', '${s.symbol}')">
-                            <i class="fas fa-chart-line"></i>
                         </button>
                     </div>
                 </td>
@@ -3478,7 +3666,7 @@ async function commitToTrade(isin, target, sl) {
     const query = document.getElementById('strat-entry-query').value;
     const side = document.getElementById('strat-side').value || "BUY";
 
-    const qty = prompt(`Enter quantity for confluence-validated ${side} trade in ${symbol} at ₹${ltp}:`, "100");
+    const qty = prompt(`Enter quantity for confluence-validated ${side} trade in ${symbol} at ${ltp}:`, "100");
     if (!qty || isNaN(qty)) return;
 
     const payload = {

@@ -50,10 +50,11 @@
                     <i class="fas fa-microchip"></i> <span>Strategy Lab</span></a>
                 <a href="#" class="nav-item" id="nav-db-manager" onclick="switchTab('db-manager')"><i
                         class="fas fa-database"></i> <span>Database Manager</span></a>
+                <a href="#" class="nav-item" id="nav-history" onclick="switchTab('history')"><i
+                        class="fas fa-history"></i> <span>Signal History</span></a>
                 <a href="#" class="nav-item" id="nav-settings" onclick="switchTab('settings')"><i
                         class="fas fa-cog"></i>
                     <span>Settings</span></a>
-                <a href="#" class="nav-item"><i class="fas fa-history"></i> <span>Signal History</span></a>
             </nav>
 
             <div class="sidebar-zoom"
@@ -903,11 +904,16 @@
                                         style="font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 15px;">
                                         <i class="fas fa-fire" style="color: var(--amber);"></i> Live Scanner Output
                                         <span id="strat-match-count" class="badge"
-                                            style="display:none; background: var(--success); font-weight: 700; padding: 4px 12px;">0
+                                            style="display:none; background: var(--success); border-radius: 14px;font-weight: 500; font-size: 14px; padding: 4px 12px;">0
                                             Matches</span>
                                     </h2>
                                 </div>
                                 <div style="display: flex; gap: 12px; align-items: center;">
+                                    <button class="btn btn-dim"
+                                        style="height: 38px; color: var(--success); border-color: rgba(16, 185, 129, 0.2);"
+                                        onclick="exportStrategyToExcel()">
+                                        <i class="fas fa-file-excel"></i> Export Excel
+                                    </button>
                                     <div style="position: relative;">
                                         <i class="fas fa-search"
                                             style="position: absolute; left: 12px; top: 13px; font-size: 12px; opacity: 0.4;"></i>
@@ -929,18 +935,33 @@
                                     id="strat-results-table">
                                     <thead>
                                         <tr>
-                                            <th style="text-align: left; padding: 15px 20px;">Instrument</th>
-                                            <th style="text-align: right; padding: 15px 20px;">LTP</th>
-                                            <th style="text-align: center; padding: 15px 20px;">Side</th>
-                                            <th style="text-align: right; padding: 15px 20px;">Target (TP)</th>
-                                            <th style="text-align: right; padding: 15px 20px;">Stop Loss (SL)</th>
+                                            <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('symbol')">Instrument <i
+                                                    class="fas fa-sort"></i></th>
+                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('ltp')">LTP <i class="fas fa-sort"></i>
+                                            </th>
+                                            <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('i_group')">Industry <i
+                                                    class="fas fa-sort"></i></th>
+                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('rsi')">RSI <i class="fas fa-sort"></i>
+                                            </th>
+                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('pe')">PE <i class="fas fa-sort"></i></th>
+                                            <th style="text-align: left; padding: 15px 20px;">Formation</th>
+                                            <th style="text-align: center; padding: 15px 10px;">Side</th>
+                                            <th style="text-align: right; padding: 15px 10px;">Target</th>
+                                            <th style="text-align: right; padding: 15px 10px;">Tgt %</th>
+                                            <th style="text-align: right; padding: 15px 10px;">SL</th>
+                                            <th style="text-align: right; padding: 15px 10px;">SL %</th>
                                             <th style="text-align: center; padding: 15px 20px;">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody id="strat-results-grid">
                                         <!-- Table rows injected here -->
                                         <tr>
-                                            <td colspan="6" style="padding: 60px; text-align: center; opacity: 0.3;">
+                                            <td colspan="12" style="padding: 60px; text-align: center; opacity: 0.3;">
                                                 <i class="fas fa-radar fa-3x"
                                                     style="margin-bottom: 15px; display: block;"></i>
                                                 Waiting for scan...
@@ -1307,6 +1328,56 @@
                         </div> <!-- End of right column -->
                     </div>
                 </div>
+            </div>
+        </main>
+
+        <!-- SIGNAL HISTORY VIEW -->
+        <main class="main-content hidden" id="history-view">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1>Signal Intelligence History</h1>
+                    <p class="text-dim">Historical log of Rank ±4 or ±5 signals detected by the engine</p>
+                </div>
+            </header>
+
+            <div class="controls-row">
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <select class="select-input" id="history-filter-mode" onchange="loadSignalHistory()">
+                        <option value="all">All Modes</option>
+                        <option value="swing">Swing Only</option>
+                        <option value="intraday">Intraday Only</option>
+                    </select>
+                    <select class="select-input" id="history-filter-tf" onchange="loadSignalHistory()">
+                        <option value="all">All Timeframes</option>
+                        <option value="1d">Daily</option>
+                        <option value="1w">Weekly</option>
+                        <option value="15m">15m</option>
+                        <option value="60m">1h</option>
+                    </select>
+                </div>
+                <button class="btn btn-dim" onclick="loadSignalHistory()"><i class="fas fa-sync-alt"></i> Refresh
+                    Log</button>
+            </div>
+
+            <div class="table-container">
+                <table class="signal-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Stock</th>
+                            <th>Type</th>
+                            <th>TF</th>
+                            <th>Rank</th>
+                            <th>Price</th>
+                            <th>RSI</th>
+                            <th>Target</th>
+                            <th>Stop Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody">
+                        <!-- History Rows -->
+                    </tbody>
+                </table>
             </div>
         </main>
     </div>

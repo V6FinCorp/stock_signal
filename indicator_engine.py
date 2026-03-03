@@ -638,6 +638,25 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 await cur.executemany(upsert_query, signals_to_insert)
                 logging.info(f"✅ Successfully updated {len(signals_to_insert)} signals for {profile_id} ({timeframe}).")
 
+                # --- Signal History Logging ---
+                history_to_insert = []
+                for s in signals_to_insert:
+                    # s[17] is rank
+                    if abs(s[17]) >= 4:
+                        # Extract: isin, profile_id, timeframe, timestamp, ltp, rsi, rank, strategy, sl, target
+                        history_to_insert.append((
+                            s[0], isin_to_symbol.get(s[0]), s[1], s[2], s[3], s[4], s[5], s[17], s[20], s[18], s[19]
+                        ))
+                
+                if history_to_insert:
+                    history_query = """
+                        INSERT IGNORE INTO app_sg_signal_history 
+                        (isin, symbol, profile_id, timeframe, timestamp, ltp, rsi, confluence_rank, trade_strategy, sl, target)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    await cur.executemany(history_query, history_to_insert)
+                    logging.info(f"📜 Logged {len(history_to_insert)} high-conviction signals to history.")
+
 async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30):
     """Calculates full technical indicators for a chart range. Used for zoomed modal charts."""
     settings = await get_profile_settings(app_pool, profile_id)
