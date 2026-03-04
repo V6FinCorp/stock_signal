@@ -1159,6 +1159,22 @@
                                 </div>
                             </div>
 
+                            <!-- Localization Settings -->
+                            <div class="settings-group" style="margin-top: 24px;">
+                                <h3>Localization & Standards</h3>
+                                <div class="control-field">
+                                    <label><i class="fas fa-globe"
+                                            style="margin-right: 6px; color: var(--primary);"></i> Time Standard</label>
+                                    <select class="select-input" id="setting-timezone-standard" style="width: 100%;">
+                                        <option value="IST">Indian Standard Time (IST - UTC+5:30)</option>
+                                        <option value="UTC">Coordinated Universal Time (UTC)</option>
+                                    </select>
+                                    <p class="text-dim" style="font-size: 11px; margin-top: 5px;">
+                                        Applies to all timestamps across Fetch, Calc, and OHLC data.
+                                    </p>
+                                </div>
+                            </div>
+
                             <!-- Chart Visualization settings -->
                             <div class="settings-group" style="margin-top: 24px;">
                                 <h3>Chart Visualization (Modal)</h3>
@@ -1229,13 +1245,30 @@
                                 </div>
                             </div>
 
-                            <!-- Security Settings -->
+                            <!-- Security & Session Settings -->
                             <div class="settings-group"
                                 style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 24px;">
                                 <h3 style="color: var(--amber);"><i class="fas fa-shield-alt"></i> Security & Access
                                 </h3>
                                 <div class="indicator-config-card"
                                     style="background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2);">
+
+                                    <div class="control-field"
+                                        style="margin-bottom: 20px; border-bottom: 1px solid rgba(245,158,11,0.1); padding-bottom: 15px;">
+                                        <label
+                                            style="display: block; font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 8px;">
+                                            <i class="fas fa-clock" style="margin-right: 6px; color: var(--amber);"></i>
+                                            Session Duration (Hours)
+                                        </label>
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <input type="number" id="setting-session-duration" class="select-input"
+                                                style="width: 100px; text-align: center; font-weight: 700;" value="24"
+                                                min="1" max="168">
+                                            <span class="text-dim" style="font-size: 12px;">Hours (Max 168h / 1
+                                                week)</span>
+                                        </div>
+                                    </div>
+
                                     <div class="control-field" style="margin-bottom: 12px;">
                                         <label style="display: block; font-size: 12px; margin-bottom: 5px;">Current
                                             Password</label>

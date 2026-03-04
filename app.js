@@ -871,6 +871,19 @@ function loadProfileSettings() {
     document.getElementById('setting-chart-st').checked = conf.chart.st;
     document.getElementById('setting-chart-dma').checked = conf.chart.dma;
     document.getElementById('setting-chart-vol').checked = conf.chart.vol;
+
+    if (!conf.localization) conf.localization = { timezone: 'IST' };
+    const tzEl = document.getElementById('setting-timezone-standard');
+    if (tzEl) tzEl.value = conf.localization.timezone || 'IST';
+
+    // Fetch Global Session Settings
+    fetch(`/api/settings/load?profile=global`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success' && data.settings && data.settings.session) {
+                document.getElementById('setting-session-duration').value = data.settings.session.hours || 24;
+            }
+        }).catch(err => console.warn("Failed to load global session settings"));
 }
 
 function saveProfileSettings() {
@@ -934,6 +947,10 @@ function saveProfileSettings() {
     conf.chart.dma = document.getElementById('setting-chart-dma').checked;
     conf.chart.vol = document.getElementById('setting-chart-vol').checked;
 
+    if (!conf.localization) conf.localization = {};
+    const tzEl = document.getElementById('setting-timezone-standard');
+    if (tzEl) conf.localization.timezone = tzEl.value;
+
     if (currentMode === profile) {
         updateTableHeader();
         renderSignals();
@@ -953,17 +970,29 @@ function saveProfileSettings() {
         syncBtn.disabled = true;
     }
 
-    fetch('/api/settings/save', {
+    // Prepare promises for parallel saving
+    const saveMode = fetch('/api/settings/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             profile: profile,
             settings: conf
         })
-    })
-        .then(res => res.json())
-        .then(data => {
-            console.log("DB Settings Sync:", data.message);
+    }).then(res => res.json());
+
+    const sessionHours = parseInt(document.getElementById('setting-session-duration').value) || 24;
+    const saveGlobal = fetch('/api/settings/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            profile: 'global',
+            settings: { session: { hours: sessionHours } }
+        })
+    }).then(res => res.json());
+
+    Promise.all([saveMode, saveGlobal])
+        .then(results => {
+            console.log("DB Settings Sync Results:", results);
             if (syncBtn) {
                 syncBtn.innerHTML = '<i class="fas fa-check"></i> Applied Successfully';
                 syncBtn.disabled = false;
@@ -981,7 +1010,7 @@ function saveProfileSettings() {
                 syncBtn.innerHTML = originalBtnHtml;
                 syncBtn.disabled = false;
             }
-            alert("Settings saved locally, but failed to sync with Database. Indicators may use old periods.");
+            alert("Settings saved locally, but failed to sync with Database.");
             switchTab('dashboard');
         });
 }
@@ -1304,9 +1333,9 @@ function syncHudVisibility() {
 }
 
 function toggleHudExpand(mode) {
-    const console = document.getElementById(`hud-console-${mode}`);
+    const consoleEl = document.getElementById(`hud-console-${mode}`);
     HUD_STATES[mode].expanded = !HUD_STATES[mode].expanded;
-    console.classList.toggle('hidden', !HUD_STATES[mode].expanded);
+    consoleEl.classList.toggle('hidden', !HUD_STATES[mode].expanded);
 }
 
 async function fetchMarketData() {
@@ -1316,7 +1345,7 @@ async function fetchMarketData() {
     const bar = document.getElementById(`hud-bar-${mode}`);
     const percent = document.getElementById(`hud-percent-${mode}`);
     const statusText = document.getElementById(`hud-status-${mode}`);
-    const console = document.getElementById(`hud-console-${mode}`);
+    const consoleEl = document.getElementById(`hud-console-${mode}`);
 
     const originalHTML = btn.innerHTML;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
@@ -1325,11 +1354,16 @@ async function fetchMarketData() {
 
     HUD_STATES[mode].active = true;
     syncHudVisibility();
-    console.innerHTML = '';
+    consoleEl.innerHTML = '';
     statusText.innerText = `Fetching ${mode.toUpperCase()} Market Data...`;
 
     const evtSource = new EventSource(`/api/stream/fetch-data?mode=${mode}`);
     fetchEvtSource = evtSource;
+
+    evtSource.onopen = function () {
+        console.log("SSE Connection Opened for Fetching...");
+        statusText.innerText = "Connection Established. Fetching Data...";
+    };
 
     evtSource.onmessage = function (event) {
         if (event.data === "[DONE]") {
@@ -1369,17 +1403,19 @@ async function fetchMarketData() {
         if (event.data.includes("✅")) logLine.style.color = "var(--success)";
         else if (event.data.includes("ERROR:") || event.data.includes("WARNING:")) logLine.style.color = "var(--danger)";
 
-        console.appendChild(logLine);
-        console.scrollTop = console.scrollHeight;
+        consoleEl.appendChild(logLine);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
     };
 
-    evtSource.onerror = function () {
+    evtSource.onerror = function (err) {
+        console.error("SSE Connection Error:", err);
         evtSource.close();
         fetchEvtSource = null;
         HUD_STATES[mode].active = false;
         syncHudVisibility();
         btn.innerHTML = originalHTML;
         btn.disabled = false;
+        alert("Failed to connect to the data stream. Check if the server is running.");
     };
 }
 
@@ -1400,73 +1436,57 @@ async function stopFetch() {
 }
 
 async function refreshSignals() {
-    const mode = currentMode;
-    const btnIcon = document.getElementById('refresh-icon');
-    const hud = document.getElementById(`job-hud-${mode}`);
-    const bar = document.getElementById(`hud-bar-${mode}`);
-    const percent = document.getElementById(`hud-percent-${mode}`);
-    const statusText = document.getElementById(`hud-status-${mode}`);
-    const console = document.getElementById(`hud-console-${mode}`);
+    const btn = document.getElementById('calc-signals-btn');
+    const icon = document.getElementById('refresh-icon');
+    const originalHTML = btn.innerHTML;
 
-    HUD_STATES[mode].active = true;
-    syncHudVisibility();
-    btnIcon.classList.add('fa-spin');
-    console.innerHTML = '<div>Starting indicator calculation...</div>';
-
-    const timeframes = MODES[mode].timeframes;
-    let currentStep = 0;
-    const totalSteps = timeframes.length;
+    icon.classList.add('fa-spin');
+    btn.disabled = true;
 
     try {
-        const conf = CONFIGS[mode];
-        const useFundamentals = conf.fundamentals ? conf.fundamentals.enabled : false;
+        const mode = currentMode;
+        const fundamentals = (CONFIGS[mode] && CONFIGS[mode].fundamentals && CONFIGS[mode].fundamentals.enabled) || false;
 
-        // Start Stage-based progress
-        statusText.innerText = `Calculating: ${timeframes[0]}...`;
+        const res = await fetch(`/api/calculate?mode=${mode}&fundamentals=${fundamentals}`, { method: 'POST' });
+        const result = await res.json();
 
-        // Since the backend doesn't stream progress yet, we simulate the bar movement per stage
-        const calcFetch = fetch(`/api/calculate?mode=${mode}&fundamentals=${useFundamentals}`, { method: 'POST' });
-
-        // Fake Smooth Bar
-        let p = 5;
-        const interval = setInterval(() => {
-            p += Math.random() * 2;
-            if (p > 95) clearInterval(interval);
-            bar.style.width = `${Math.floor(p)}%`;
-            percent.innerText = `${Math.floor(p)}%`;
-
-            // Periodically update console with "Working" logs
-            if (Math.random() > 0.8) {
-                const log = document.createElement('div');
-                log.innerText = `Processing batch for ${mode}...`;
-                console.appendChild(log);
-                console.scrollTop = console.scrollHeight;
-            }
-        }, 500);
-
-        await calcFetch;
-        clearInterval(interval);
-
-        bar.style.width = '100%';
-        percent.innerText = '100%';
-        statusText.innerText = 'Calculations Ready';
-        console.innerHTML += '<div style="color:var(--success)">✅ Calculations completed successfully.</div>';
-
-        await fetchAndRenderSignals(true);
-        fetchSystemStatus();
-
+        if (result.status === 'success') {
+            await fetchAndRenderSignals(true);
+            await fetchSystemStatus();
+            showToast("Calculations updated successfully.", "success");
+        } else {
+            showToast("Calculation failed: " + result.detail, "error");
+        }
     } catch (e) {
-        console.error("Calculation failed:", e);
-        statusText.innerText = 'Calculation Failed';
-        console.innerHTML += `<div style="color:var(--danger)">❌ Error: ${e.message}</div>`;
+        showToast("Error during calculation. Check server.", "error");
     } finally {
-        setTimeout(() => {
-            HUD_STATES[mode].active = false;
-            syncHudVisibility();
-            btnIcon.classList.remove('fa-spin');
-        }, 2000);
+        icon.classList.remove('fa-spin');
+        btn.disabled = false;
     }
 }
+
+async function fetchSystemStatus() {
+    try {
+        const res = await fetch(`/api/status?mode=${currentMode}`);
+        const result = await res.json();
+        if (result.status === 'success') {
+            const fetchEl = document.getElementById('last-fetch-time');
+            const calcEl = document.getElementById('last-calc-time');
+            const ohlcEl = document.getElementById('latest-ohlc-time');
+
+            const tzSuffix = (CONFIGS[currentMode] && CONFIGS[currentMode].localization && CONFIGS[currentMode].localization.timezone === 'IST') ? ' IST' : '';
+
+            if (fetchEl) fetchEl.innerText = result.last_fetch + (result.last_fetch !== "Never" ? tzSuffix : "");
+            if (calcEl) calcEl.innerText = result.last_calc + (result.last_calc !== "Never" ? tzSuffix : "");
+            if (ohlcEl) ohlcEl.innerText = result.ohlc_time + (result.ohlc_time !== "Never" ? tzSuffix : "");
+        } else if (result.status === 'error') {
+            console.error("System Status Error:", result.message);
+        }
+    } catch (e) {
+        console.error("Failed to fetch system status:", e);
+    }
+}
+
 
 // Consolidated switchTab logic above. Removed duplicate definition here.
 

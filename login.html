@@ -175,8 +175,8 @@
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    // Force navigation to the main route
-                    window.location.replace("/");
+                    // Force navigation to the main route with cache-busting
+                    window.location.href = "/?v=" + Date.now();
                 } else {
                     throw new Error();
                 }

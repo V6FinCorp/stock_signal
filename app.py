@@ -11,8 +11,11 @@ from pydantic import BaseModel
 import json
 import hashlib
 from datetime import datetime, timedelta
+import httpx
+import asyncio
 
 app = FastAPI(title="StockSignal Pro API")
+fetching_active = {"swing": True, "intraday": True}
 
 @app.on_event("startup")
 async def startup_db_setup():
@@ -55,6 +58,10 @@ async def startup_db_setup():
                 except: pass
                 try: await cur.execute("ALTER TABLE app_sg_active_trades ADD COLUMN side VARCHAR(10) DEFAULT 'BUY'")
                 except: pass
+
+                # Global Settings Profile
+                await cur.execute("INSERT IGNORE INTO app_sg_profiles (profile_id) VALUES ('global')")
+                await cur.execute("INSERT IGNORE INTO app_sg_indicator_settings (profile_id, indicator_key, params_json) VALUES ('global', 'session', '{\"hours\": 24}')")
                 
                 await cur.execute("""
                     CREATE TABLE IF NOT EXISTS app_sg_signal_history (
@@ -74,7 +81,15 @@ async def startup_db_setup():
                         UNIQUE KEY unique_log (isin, profile_id, timeframe, timestamp)
                     )
                 """)
-                
+                await cur.execute("""
+                    CREATE TABLE IF NOT EXISTS app_sg_system_status (
+                        mode VARCHAR(20) PRIMARY KEY,
+                        last_fetch_run TIMESTAMP NULL,
+                        last_calc_run TIMESTAMP NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    )
+                """)
+                await cur.execute("INSERT IGNORE INTO app_sg_system_status (mode) VALUES ('swing'), ('intraday')")
                 await conn.commit()
         app_pool.close()
         await app_pool.wait_closed()
@@ -127,10 +142,23 @@ async def login(req: LoginRequest, response: Response):
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute("SELECT * FROM app_sg_users WHERE username = %s AND password_hash = %s", (req.username, passwd_hash))
                 user = await cur.fetchone()
+                
+                # Fetch dynamic session duration
+                await cur.execute("SELECT params_json FROM app_sg_indicator_settings WHERE profile_id = 'global' AND indicator_key = 'session'")
+                session_row = await cur.fetchone()
+                duration_hours = 24
+                if session_row:
+                    try:
+                        params = json.loads(session_row['params_json'])
+                        duration_hours = int(params.get('hours', 24))
+                    except: pass
+        
         app_pool.close()
         if not user: raise HTTPException(status_code=401, detail="Invalid credentials")
-        response.set_cookie(key="session_token", value=passwd_hash, httponly=True, max_age=3600*24)
-        return {"status": "success", "user": user['username']}
+        
+        max_age = 3600 * duration_hours
+        response.set_cookie(key="session_token", value=passwd_hash, httponly=True, max_age=max_age)
+        return {"status": "success", "user": user['username'], "session_hours": duration_hours}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/auth/logout")
@@ -228,11 +256,33 @@ async def api_close_trade(trade_id: int):
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/settings/load", dependencies=[Depends(check_auth)])
+async def load_settings(profile: str):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SELECT indicator_key, params_json FROM app_sg_indicator_settings WHERE profile_id = %s", (profile,))
+                rows = await cur.fetchall()
+        app_pool.close()
+        settings = {}
+        for r in rows:
+            key = r['indicator_key'].lower()
+            if key == 'supertrend': key = 'st'
+            settings[key] = json.loads(r['params_json'])
+        return {"status": "success", "settings": settings}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/settings/save", dependencies=[Depends(check_auth)])
 async def save_settings(data: dict):
     profile = data.get("profile")
     settings = data.get("settings")
-    mapping = {'rsi': 'RSI', 'ema': 'EMA', 'st': 'SUPERTREND', 'vol': 'VOLUME', 'dma': 'DMA', 'patterns': 'patterns', 'fundamentals': 'FUNDAMENTALS'}
+    
+    if profile == 'global':
+        mapping = {'session': 'session'}
+    else:
+        mapping = {'rsi': 'RSI', 'ema': 'EMA', 'st': 'SUPERTREND', 'vol': 'VOLUME', 'dma': 'DMA', 'patterns': 'patterns', 'fundamentals': 'FUNDAMENTALS', 'localization': 'localization'}
+    
     try:
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
         async with app_pool.acquire() as conn:
@@ -241,7 +291,8 @@ async def save_settings(data: dict):
                     if fe_key in settings:
                         val = settings[fe_key]
                         params = {k: v for k, v in val.items() if k != 'enabled'}
-                        await cur.execute("INSERT INTO app_sg_indicator_settings (profile_id, indicator_key, is_enabled, params_json) VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE is_enabled=VALUES(is_enabled), params_json=VALUES(params_json)", (profile, be_key, val.get('enabled', True), json.dumps(params)))
+                        is_enabled = val.get('enabled', True)
+                        await cur.execute("INSERT INTO app_sg_indicator_settings (profile_id, indicator_key, is_enabled, params_json) VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE is_enabled=VALUES(is_enabled), params_json=VALUES(params_json)", (profile, be_key, is_enabled, json.dumps(params)))
         app_pool.close()
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
@@ -311,11 +362,35 @@ async def get_signals(mode: str = "swing", timeframe: str = None, token: str = D
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/status", dependencies=[Depends(check_auth)])
-async def api_status(mode: Optional[str] = None):
+async def api_status(mode: str = "swing"):
+    app_pool = None
     try:
-        with open("status.json", "r") as f: status = json.load(f)
-    except: status = {"swing": {}, "intraday": {}}
-    return status
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                # 1. Job Run Times from System Status Table
+                await cur.execute("SELECT last_fetch_run, last_calc_run FROM app_sg_system_status WHERE mode = %s", (mode,))
+                job_times = await cur.fetchone()
+                
+                # 2. Latest Market Data Timestamp (Actual OHLC age)
+                tf_key = '1d' if mode == 'swing' else '5m'
+                await cur.execute("SELECT MAX(timestamp) as latest_ohlc FROM app_sg_ohlcv_prices WHERE timeframe = %s", (tf_key,))
+                ohlc_row = await cur.fetchone()
+                latest_ohlc = ohlc_row['latest_ohlc'] if ohlc_row and ohlc_row['latest_ohlc'] else None
+                
+        return {
+            "status": "success",
+            "last_fetch": job_times['last_fetch_run'].strftime("%d-%b-%Y %I:%M:%S %p") if job_times and job_times['last_fetch_run'] else "Never",
+            "last_calc": job_times['last_calc_run'].strftime("%d-%b-%Y %I:%M:%S %p") if job_times and job_times['last_calc_run'] else "Never",
+            "ohlc_time": latest_ohlc.strftime("%d-%b-%Y %I:%M:%S %p") if latest_ohlc else "Never",
+            "market_status": "Live" 
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    finally:
+        if app_pool:
+            app_pool.close()
+            await app_pool.wait_closed()
 
 @app.get("/api/sector/sentiment", dependencies=[Depends(check_auth)])
 async def api_sector_sentiment(mode: str = "swing", timeframe: str = None):
@@ -376,11 +451,128 @@ async def api_chart_details(isin: str, timeframe: str, profile: str = "swing", b
         app_pool.close()
         return {"status": "success", "data": data}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/calculate", dependencies=[Depends(check_auth)])
+async def api_calculate(mode: str, fundamentals: bool = False):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
+        
+        # Determine timeframes based on mode
+        tfs = ['1d', '1w', '1mo'] if mode == 'swing' else ['5m', '15m', '30m', '60m']
+        
+        shared_cache = {}
+        for tf in tfs:
+            await process_profile(app_pool, datamart_pool, mode, tf, shared_cache=shared_cache, use_fundamentals=fundamentals)
+            
+        # Update system status
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("UPDATE app_sg_system_status SET last_calc_run = NOW() WHERE mode = %s", (mode,))
+                await conn.commit()
+                
+        app_pool.close()
+        datamart_pool.close()
+        return {"status": "success"}
+    except Exception as e:
+        if 'app_pool' in locals(): app_pool.close()
+        if 'datamart_pool' in locals(): datamart_pool.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/stop-fetch", dependencies=[Depends(check_auth)])
+async def stop_fetch(mode: str):
+    fetching_active[mode] = False
+    return {"status": "success"}
 
 @app.get("/api/stream/fetch-data", dependencies=[Depends(check_auth)])
-def stream_fetch(mode: str = "swing"):
-    # (Simplified streaming logic for brevity in this task, but maintaining endpoint)
-    return StreamingResponse(iter(["data: Auth Verified. Starting Fetch...\n\n"]), media_type="text/event-stream")
+async def stream_fetch(mode: str = "swing"):
+    async def event_generator():
+        fetching_active[mode] = True
+        yield "data: 🚀 Starting Market Data Fetch ({})\n\n".format(mode.upper())
+        
+        try:
+            app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+            datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
+            
+            async with datamart_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    target_dim = 1 if mode == 'intraday' else 2
+                    await cur.execute("""
+                        SELECT c.bs_ISIN as isin, c.bs_SYMBOL as symbol 
+                        FROM vw_e_bs_companies_all c
+                        JOIN vw_e_bs_companies_favourite_indices f ON c.bs_SYMBOL = f.bs_symbol
+                        WHERE BINARY c.bs_Status = 'Active' AND f.dim_favourites = %s
+                    """, (target_dim,))
+                    companies = await cur.fetchall()
+            
+            if not companies:
+                yield "data: ⚠️ No favourite companies found for this mode.\n\n"
+                yield "data: [DONE]\n\n"
+                app_pool.close(); datamart_pool.close()
+                return
+
+            total = len(companies)
+            yield "data: 📊 Found {} stocks to process.\n\n".format(total)
+
+            headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+            async with httpx.AsyncClient(headers=headers) as client:
+                for i, comp in enumerate(companies, 1):
+                    if not fetching_active.get(mode, True):
+                        yield "data: 🛑 Fetch interrupted by user.\n\n"
+                        break
+                    
+                    isin = comp['isin']
+                    symbol = comp['symbol']
+                    
+                    yield "data: Processing {}/{} - {}...\n\n".format(i, total, symbol)
+                    
+                    # Fetch Logic (simplified version of fetch_history.py)
+                    try:
+                        if mode == "swing":
+                            url = f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01"
+                            tf_key = '1d'
+                        else:
+                            url = f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5/"
+                            tf_key = '5m'
+                            
+                        res = await client.get(url, timeout=10.0)
+                        if res.status_code == 200:
+                            data = res.json()
+                            if data.get("status") == "success":
+                                candles = data["data"]["candles"]
+                                async with app_pool.acquire() as conn:
+                                    async with conn.cursor() as cur:
+                                        rows = []
+                                        for c in candles:
+                                            ts = c[0].split('+')[0].replace('T', ' ')
+                                            rows.append((isin, tf_key, ts, c[1], c[2], c[3], c[4], c[5]))
+                                        if rows:
+                                            await cur.executemany("""
+                                                INSERT INTO app_sg_ohlcv_prices (isin, timeframe, timestamp, open, high, low, close, volume)
+                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                                ON DUPLICATE KEY UPDATE open=VALUES(open), high=VALUES(high), low=VALUES(low), close=VALUES(close), volume=VALUES(volume)
+                                            """, rows)
+                                yield "data: ✅ {} - {} candles updated.\n\n".format(symbol, len(candles))
+                    except Exception as e:
+                        yield "data: ❌ Error fetching {}: {}\n\n".format(symbol, str(e))
+                    
+                    await asyncio.sleep(0.1) # Small delay for UI smoothness
+
+            # Update system status on success
+            async with app_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("UPDATE app_sg_system_status SET last_fetch_run = NOW() WHERE mode = %s", (mode,))
+                    await conn.commit()
+
+            yield "data: [DONE]\n\n"
+            app_pool.close(); datamart_pool.close()
+            
+        except Exception as e:
+            yield "data: 💥 Global Error: {}\n\n".format(str(e))
+            if 'app_pool' in locals(): app_pool.close()
+            if 'datamart_pool' in locals(): datamart_pool.close()
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/db/stats", dependencies=[Depends(check_auth)])
 async def api_db_stats():
@@ -392,8 +584,30 @@ async def api_db_stats():
                 raw = (await cur.fetchone())['raw_rows']
                 await cur.execute("SELECT COUNT(*) as calc_rows FROM app_sg_calculated_signals")
                 calc = (await cur.fetchone())['calc_rows']
+                
+                # Fetch coverage matrix
+                await cur.execute("""
+                    SELECT 
+                        timeframe, 
+                        MIN(timestamp) as min_date, 
+                        MAX(timestamp) as max_date, 
+                        COUNT(DISTINCT DATE(timestamp)) as days, 
+                        COUNT(*) as count 
+                    FROM app_sg_ohlcv_prices 
+                    GROUP BY timeframe
+                """)
+                coverage_rows = await cur.fetchall()
+                coverage = {}
+                for r in coverage_rows:
+                    coverage[r['timeframe']] = {
+                        "min_date": r['min_date'].strftime('%Y-%m-%d') if r['min_date'] else '-',
+                        "max_date": r['max_date'].strftime('%Y-%m-%d') if r['max_date'] else '-',
+                        "days": r['days'],
+                        "count": r['count']
+                    }
+                    
         app_pool.close()
-        return {"status": "success", "data": {"raw_rows": raw, "calc_rows": calc, "coverage": {}}}
+        return {"status": "success", "data": {"raw_rows": raw, "calc_rows": calc, "coverage": coverage}}
     except Exception as e:
         if 'app_pool' in locals(): app_pool.close()
         raise HTTPException(status_code=500, detail=str(e))
