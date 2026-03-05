@@ -640,7 +640,7 @@
                 </div>
 
                 <div id="strategy-editor-container"
-                    style="display: grid; grid-template-columns: 1fr 340px; gap: 24px; align-items: start; transition: all 0.3s ease;">
+                    style="display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; transition: all 0.3s ease;">
 
                     <!-- Left Column: Editor & Explainer -->
                     <div style="display: flex; flex-direction: column; gap: 24px;">
@@ -675,24 +675,57 @@
                                 <div class="control-field" style="margin: 0;">
                                     <label style="font-size: 11px; color: var(--primary);">Base Timeframe</label>
                                     <select id="strat-timeframe" class="select-input" style="height: 48px;">
-                                        <!-- Populated dynamically based on Mode -->
+                                        <option value="1d">Daily</option>
+                                        <option value="1w">Weekly</option>
+                                        <option value="1mo">Monthly</option>
+                                        <option value="60m">1 Hour</option>
+                                        <option value="15m">15 Min</option>
+                                        <option value="5m">5 Min</option>
                                     </select>
                                 </div>
                             </div>
 
+                            <!-- Global Builder Mode Toggle -->
+                            <div style="display: flex; justify-content: center; margin-bottom: 32px;">
+                                <div class="builder-mode-toggle">
+                                    <div id="btn-global-query" class="mode-toggle-btn active"
+                                        onclick="setGlobalEditorMode('query')">
+                                        <i class="fas fa-code" style="margin-right: 6px;"></i> Query DSL (Coder)
+                                    </div>
+                                    <div id="btn-global-visual" class="mode-toggle-btn"
+                                        onclick="setGlobalEditorMode('visual')">
+                                        <i class="fas fa-layer-group" style="margin-right: 6px;"></i> Visual Builder
+                                        (Form)
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Logic Blocks: Segmented into Entry, Exit, Risk & Growth -->
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                            <div
+                                style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin-bottom: 24px;">
                                 <!-- Column 1: Entry & Target -->
-                                <div style="display: flex; flex-direction: column; gap: 24px;">
+                                <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
                                     <div style="position: relative;">
                                         <label
                                             style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--success); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
                                             <i class="fas fa-sign-in-alt"></i> 1. Entry Condition
                                         </label>
-                                        <textarea id="strat-entry-query" class="select-input strategy-textarea"
-                                            style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(16, 185, 129, 0.2);"
-                                            placeholder="e.g. RSI < 35 AND EMA_F > EMA_S"
-                                            oninput="updateStrategyExplainer()"></textarea>
+
+                                        <div id="container-entry-query">
+                                            <textarea id="strat-entry-query" class="select-input strategy-textarea"
+                                                style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(16, 185, 129, 0.2);"
+                                                placeholder="e.g. RSI < 35 AND EMA_F > EMA_S"
+                                                oninput="updateStrategyExplainer()"></textarea>
+                                        </div>
+
+                                        <div id="container-entry-visual" class="hidden">
+                                            <div id="entry-visual-rules">
+                                                <!-- Dynamic Rule Rows -->
+                                            </div>
+                                            <button class="add-rule-btn" onclick="addVisualRule('entry')">
+                                                <i class="fas fa-plus"></i> Add Condition
+                                            </button>
+                                        </div>
                                     </div>
                                     <div style="position: relative;">
                                         <label
@@ -707,16 +740,28 @@
                                 </div>
 
                                 <!-- Column 2: Exit & Stop Loss -->
-                                <div style="display: flex; flex-direction: column; gap: 24px;">
+                                <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
                                     <div style="position: relative;">
                                         <label
                                             style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--primary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
                                             <i class="fas fa-sign-out-alt"></i> 3. Exit Condition
                                         </label>
-                                        <textarea id="strat-exit-query" class="select-input strategy-textarea"
-                                            style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(14, 165, 233, 0.2);"
-                                            placeholder="e.g. SuperTrend == 'SELL'"
-                                            oninput="updateStrategyExplainer()"></textarea>
+
+                                        <div id="container-exit-query">
+                                            <textarea id="strat-exit-query" class="select-input strategy-textarea"
+                                                style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(14, 165, 233, 0.2);"
+                                                placeholder="e.g. SuperTrend == 'SELL'"
+                                                oninput="updateStrategyExplainer()"></textarea>
+                                        </div>
+
+                                        <div id="container-exit-visual" class="hidden">
+                                            <div id="exit-visual-rules">
+                                                <!-- Dynamic Rule Rows -->
+                                            </div>
+                                            <button class="add-rule-btn" onclick="addVisualRule('exit')">
+                                                <i class="fas fa-plus"></i> Add Condition
+                                            </button>
+                                        </div>
                                     </div>
                                     <div style="position: relative;">
                                         <label
@@ -845,138 +890,148 @@
                                     style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
                                     <div
                                         style="font-size: 13px; font-weight: 700; color: var(--success); margin-bottom: 4px;">
-                                        Trend Reversal Dip</div>
-                                    <div style="font-size: 11px; color: var(--text-dim);">EMA_F > EMA_S AND RSI <
-                                            35...</div>
+                                        Institutional Dip Buyer</div>
+                                    <div style="font-size: 11px; color: var(--text-dim);">[Daily].RSI < 40 AND
+                                            Pattern=='Bullish' ...</div>
                                     </div>
                                     <div class="sample-chip" onclick="loadSampleQuery('momentum_breakout')"
                                         style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
                                         <div
                                             style="font-size: 13px; font-weight: 700; color: var(--warning); margin-bottom: 4px;">
-                                            Momentum Breakout</div>
-                                        <div style="font-size: 11px; color: var(--text-dim);">Price > [1h].EMA_F AND VOL
-                                            == 'BULL_S'...</div>
+                                            Hyper Momentum Scan</div>
+                                        <div style="font-size: 11px; color: var(--text-dim);">Price > [Daily].prev_high
+                                            AND Vol Spike...</div>
                                     </div>
-                                    <div class="sample-chip" onclick="loadSampleQuery('bearish_reversal')"
-                                        style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
-                                        <div
-                                            style="font-size: 13px; font-weight: 700; color: var(--danger); margin-bottom: 4px;">
-                                            Bearish Rejection</div>
-                                        <div style="font-size: 11px; color: var(--text-dim);">RSI > 70 AND Side =
-                                            SELL...</div>
-                                    </div>
-                                    <div class="sample-chip" onclick="loadSampleQuery('fundamental_growth')"
+                                    <div class="sample-chip" onclick="loadSampleQuery('tf_convergence')"
                                         style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
                                         <div
                                             style="font-size: 13px; font-weight: 700; color: var(--primary); margin-bottom: 4px;">
-                                            Structural Growth</div>
-                                        <div style="font-size: 11px; color: var(--text-dim);">ROE > 18 AND PE <
-                                                35...</div>
+                                            M-TF Trend Convergence</div>
+                                        <div style="font-size: 11px; color: var(--text-dim);">[Daily].ST == 'BUY' AND
+                                            [1h].ST == 'BUY'...</div>
+                                    </div>
+                                    <div class="sample-chip" onclick="loadSampleQuery('bearish_rejection')"
+                                        style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
+                                        <div
+                                            style="font-size: 13px; font-weight: 700; color: var(--danger); margin-bottom: 4px;">
+                                            Bearish Mean Reversion</div>
+                                        <div style="font-size: 11px; color: var(--text-dim);">[Daily].RSI > 75 AND
+                                            Pattern == 'Bearish'...</div>
+                                    </div>
+                                    <div class="sample-chip" onclick="loadSampleQuery('fundamental_breakout')"
+                                        style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
+                                        <div
+                                            style="font-size: 13px; font-weight: 700; color: #a855f7; margin-bottom: 4px;">
+                                            Growth Value Breakout</div>
+                                        <div style="font-size: 11px; color: var(--text-dim);">ROE > 18 AND PE < 35 AND
+                                                [Daily].ST...</div>
+                                        </div>
+
+                                        <p
+                                            style="font-size: 11px; color: var(--text-dim); margin-top: 16px; font-style: italic;">
+                                            Hover to see full logic, click to load.</p>
+                                    </div>
+
+                                    <!-- Saved Strategy Profiles -->
+                                    <div class="bg-card"
+                                        style="padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column; min-height: 300px;">
+                                        <h3
+                                            style="font-size: 15px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                                            <i class="fas fa-history"></i> Saved Profiles
+                                        </h3>
+                                        <div id="strat-saved-list"
+                                            style="display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
+                                            <!-- List populated by JS -->
+                                            <div
+                                                style="font-size: 12px; color: var(--text-dim); text-align: center; padding: 40px;">
+                                                No saved strategies.</div>
                                         </div>
                                     </div>
 
-                                    <p
-                                        style="font-size: 11px; color: var(--text-dim); margin-top: 16px; font-style: italic;">
-                                        Hover to see full logic, click to load.</p>
                                 </div>
 
-                                <!-- Saved Strategy Profiles -->
+                            </div>
+
+                            <div id="strat-results-area"
+                                style="margin-top: 40px; border-top: 1px solid var(--border-color); padding-top: 40px;">
+                                <div
+                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                                    <div>
+                                        <h2
+                                            style="font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 15px;">
+                                            <i class="fas fa-fire" style="color: var(--amber);"></i> Live Scanner Output
+                                            <span id="strat-match-count" class="badge"
+                                                style="display:none; background: var(--success); border-radius: 14px;font-weight: 500; font-size: 14px; padding: 4px 12px;">0
+                                                Matches</span>
+                                        </h2>
+                                    </div>
+                                    <div style="display: flex; gap: 12px; align-items: center;">
+                                        <button class="btn btn-dim"
+                                            style="height: 38px; color: var(--success); border-color: rgba(16, 185, 129, 0.2);"
+                                            onclick="exportStrategyToExcel()">
+                                            <i class="fas fa-file-excel"></i> Export Excel
+                                        </button>
+                                        <div style="position: relative;">
+                                            <i class="fas fa-search"
+                                                style="position: absolute; left: 12px; top: 13px; font-size: 12px; opacity: 0.4;"></i>
+                                            <input type="text" id="strat-results-search" class="select-input"
+                                                placeholder="Search symbol..."
+                                                style="width: 200px; height: 38px; font-size: 12px; border-radius: 8px; padding-left: 32px;"
+                                                oninput="filterStrategyResults()">
+                                        </div>
+                                        <button class="btn btn-dim"
+                                            style="height: 38px; padding: 0 12px; font-size: 11px;"
+                                            onclick="runStrategyScan()">
+                                            <i class="fas fa-sync-alt"></i> Refresh
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div class="bg-card"
-                                    style="padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); flex: 1; display: flex; flex-direction: column; min-height: 300px;">
-                                    <h3
-                                        style="font-size: 15px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-                                        <i class="fas fa-history"></i> Saved Profiles
-                                    </h3>
-                                    <div id="strat-saved-list"
-                                        style="display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
-                                        <!-- List populated by JS -->
-                                        <div
-                                            style="font-size: 12px; color: var(--text-dim); text-align: center; padding: 40px;">
-                                            No saved strategies.</div>
-                                    </div>
+                                    style="padding: 0; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
+                                    <table class="signal-table" style="width: 100%; border-collapse: collapse;"
+                                        id="strat-results-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
+                                                    onclick="sortStrategyResults('symbol')">Instrument <i
+                                                        class="fas fa-sort"></i></th>
+                                                <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                    onclick="sortStrategyResults('ltp')">LTP <i class="fas fa-sort"></i>
+                                                </th>
+                                                <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
+                                                    onclick="sortStrategyResults('i_group')">Industry <i
+                                                        class="fas fa-sort"></i></th>
+                                                <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                    onclick="sortStrategyResults('rsi')">RSI <i class="fas fa-sort"></i>
+                                                </th>
+                                                <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                    onclick="sortStrategyResults('pe')">PE <i class="fas fa-sort"></i>
+                                                </th>
+                                                <th style="text-align: left; padding: 15px 20px;">Formation</th>
+                                                <th style="text-align: center; padding: 15px 10px;">Side</th>
+                                                <th style="text-align: right; padding: 15px 10px;">Target</th>
+                                                <th style="text-align: right; padding: 15px 10px;">Tgt %</th>
+                                                <th style="text-align: right; padding: 15px 10px;">SL</th>
+                                                <th style="text-align: right; padding: 15px 10px;">SL %</th>
+                                                <th style="text-align: center; padding: 15px 20px;">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="strat-results-grid">
+                                            <!-- Table rows injected here -->
+                                            <tr>
+                                                <td colspan="12"
+                                                    style="padding: 60px; text-align: center; opacity: 0.3;">
+                                                    <i class="fas fa-radar fa-3x"
+                                                        style="margin-bottom: 15px; display: block;"></i>
+                                                    Waiting for scan...
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
-
-                            </div>
-
-                        </div>
-
-                        <div id="strat-results-area"
-                            style="margin-top: 40px; border-top: 1px solid var(--border-color); padding-top: 40px;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                                <div>
-                                    <h2
-                                        style="font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 15px;">
-                                        <i class="fas fa-fire" style="color: var(--amber);"></i> Live Scanner Output
-                                        <span id="strat-match-count" class="badge"
-                                            style="display:none; background: var(--success); border-radius: 14px;font-weight: 500; font-size: 14px; padding: 4px 12px;">0
-                                            Matches</span>
-                                    </h2>
-                                </div>
-                                <div style="display: flex; gap: 12px; align-items: center;">
-                                    <button class="btn btn-dim"
-                                        style="height: 38px; color: var(--success); border-color: rgba(16, 185, 129, 0.2);"
-                                        onclick="exportStrategyToExcel()">
-                                        <i class="fas fa-file-excel"></i> Export Excel
-                                    </button>
-                                    <div style="position: relative;">
-                                        <i class="fas fa-search"
-                                            style="position: absolute; left: 12px; top: 13px; font-size: 12px; opacity: 0.4;"></i>
-                                        <input type="text" id="strat-results-search" class="select-input"
-                                            placeholder="Search symbol..."
-                                            style="width: 200px; height: 38px; font-size: 12px; border-radius: 8px; padding-left: 32px;"
-                                            oninput="filterStrategyResults()">
-                                    </div>
-                                    <button class="btn btn-dim" style="height: 38px; padding: 0 12px; font-size: 11px;"
-                                        onclick="runStrategyScan()">
-                                        <i class="fas fa-sync-alt"></i> Refresh
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div class="bg-card"
-                                style="padding: 0; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
-                                <table class="signal-table" style="width: 100%; border-collapse: collapse;"
-                                    id="strat-results-table">
-                                    <thead>
-                                        <tr>
-                                            <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
-                                                onclick="sortStrategyResults('symbol')">Instrument <i
-                                                    class="fas fa-sort"></i></th>
-                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
-                                                onclick="sortStrategyResults('ltp')">LTP <i class="fas fa-sort"></i>
-                                            </th>
-                                            <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
-                                                onclick="sortStrategyResults('i_group')">Industry <i
-                                                    class="fas fa-sort"></i></th>
-                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
-                                                onclick="sortStrategyResults('rsi')">RSI <i class="fas fa-sort"></i>
-                                            </th>
-                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
-                                                onclick="sortStrategyResults('pe')">PE <i class="fas fa-sort"></i></th>
-                                            <th style="text-align: left; padding: 15px 20px;">Formation</th>
-                                            <th style="text-align: center; padding: 15px 10px;">Side</th>
-                                            <th style="text-align: right; padding: 15px 10px;">Target</th>
-                                            <th style="text-align: right; padding: 15px 10px;">Tgt %</th>
-                                            <th style="text-align: right; padding: 15px 10px;">SL</th>
-                                            <th style="text-align: right; padding: 15px 10px;">SL %</th>
-                                            <th style="text-align: center; padding: 15px 20px;">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="strat-results-grid">
-                                        <!-- Table rows injected here -->
-                                        <tr>
-                                            <td colspan="12" style="padding: 60px; text-align: center; opacity: 0.3;">
-                                                <i class="fas fa-radar fa-3x"
-                                                    style="margin-bottom: 15px; display: block;"></i>
-                                                Waiting for scan...
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
                             </div>
                         </div>
-                    </div>
         </main>
 
         <main class="main-content hidden" id="db-manager-view">

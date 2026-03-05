@@ -1358,3 +1358,79 @@ input:checked+.slider:before {
 .rule-op {
     font-weight: 600;
 }
+
+/* Visual Builder Rows */
+.visual-rule-row {
+    display: grid;
+    grid-template-columns: 45px 55px 95px 65px 1fr 32px;
+    gap: 6px;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 8px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s;
+}
+
+.visual-rule-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(var(--primary-rgb), 0.3);
+}
+
+.visual-rule-row select,
+.visual-rule-row input {
+    height: 32px !important;
+    font-size: 11px !important;
+    padding: 0 6px !important;
+}
+
+.visual-rule-row .rule-logic {
+    font-weight: 800;
+    color: var(--amber);
+}
+
+.builder-mode-toggle {
+    display: flex;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 24px;
+    width: fit-content;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.mode-toggle-btn {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.mode-toggle-btn.active {
+    background: var(--primary);
+    color: white;
+}
+
+.add-rule-btn {
+    background: transparent;
+    border: 1px dashed var(--border-color);
+    color: var(--text-dim);
+    width: 100%;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.add-rule-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(var(--primary-rgb), 0.05);
+}

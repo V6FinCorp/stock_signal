@@ -43,12 +43,14 @@ const MODES = {
 
 const TF_MAP = {
     "Daily": "1d",
-    "Weekly": "1w", // Will fall back gracefully if not populated in DB
+    "Weekly": "1w",
     "Monthly": "1mo",
-    "5m": "5m",
-    "15m": "15m",
+    "1h": "60m",
+    "60m": "60m",
     "30m": "30m",
-    "60m": "60m"
+    "15m": "15m",
+    "5m": "5m",
+    "1m": "1m"
 };
 
 const CONFIGS = {
@@ -2788,17 +2790,15 @@ const STRAT_ALIASES = {
     "OPM": "opm",
     "NPM": "npm",
     "Prev_High": "prev_high",
-    "Prev_Low": "prev_low"
+    "Prev_Low": "prev_low",
+    "Pattern": "Pattern"
 };
 
 const STRAT_KEYWORDS = [
     // Core Indicators & Tokens
-    "ST", "ST_V", "STV", "SuperTrend", "SuperTrendValue",
-    "RSI", "LTP", "CMP", "VOL", "VOL_R",
-    "EMA_F", "EMA_S", "EMA_C", "EMA_V",
-    "PE", "PB", "ROE", "EPS", "OPM", "NPM",
-    "Prev_High", "Prev_Low", "High", "Low",
-    "Market_Cap", "BULL_S", "BEAR_S",
+    "ST", "ST_V", "RSI", "LTP", "CMP", "VOL", "VOL_R",
+    "EMA_F", "EMA_S", "PE", "PB", "ROE", "EPS", "OPM", "NPM",
+    "Prev_High", "Prev_Low", "High", "Low", "Pattern", "Bullish", "Bearish",
 
     // Timeframes
     "[5m]", "[15m]", "[30m]", "[1h]", "[Daily]", "[Weekly]", "[Monthly]",
@@ -2810,8 +2810,8 @@ const STRAT_KEYWORDS = [
 const STRAT_INDICATOR_TOKENS = [
     "RSI", "ST_V", "ST", "STV", "SuperTrend", "SuperTrendValue",
     "LTP", "CMP", "High", "Low", "Prev_High", "Prev_Low",
-    "EMA_F", "EMA_S", "EMA_V", "EMA_C", "VOL_R", "VOL",
-    "PE", "PB", "ROE", "OPM", "NPM", "EPS", "Market_Cap"
+    "EMA_F", "EMA_S", "EMA_V", "EMA_C", "VOL_R", "VOL", "Pattern",
+    "Bullish", "Bearish", "PE", "PB", "ROE", "OPM", "NPM", "EPS", "Market_Cap"
 ];
 
 function initStrategyLab() {
@@ -2852,77 +2852,90 @@ function filterStrategyResults() {
     renderScanResults(filtered, true); // true = skip global update
 }
 
-function setupStrategyAutoSuggest() {
-    const textareas = document.querySelectorAll('.strategy-textarea');
+const handleStrategyInput = (e) => {
+    const textarea = e.target;
     const suggestList = document.getElementById('strat-suggestions');
-    if (textareas.length === 0 || !suggestList) return;
+    if (!suggestList) return;
 
-    const handleInput = (e) => {
-        const textarea = e.target;
-        const value = textarea.value;
-        const cursor = textarea.selectionStart;
-        const before = value.substring(0, cursor);
+    const value = textarea.value;
+    const cursor = textarea.selectionStart;
+    const before = value.substring(0, cursor);
 
-        // Logic to determine context: standalone word OR after a dot
-        let lastWord = "";
-        let isAfterDot = false;
+    let lastWord = "";
+    let isAfterDot = false;
 
-        const lastDotIdx = before.lastIndexOf('.');
-        const delimiters = [' ', '\n', '(', '[', ']', '+', '-', '*', '/', '>', '<', '='];
-        let lastDelimIdx = -1;
-        delimiters.forEach(d => {
-            const idx = before.lastIndexOf(d);
-            if (idx > lastDelimIdx) lastDelimIdx = idx;
-        });
+    const lastDotIdx = before.lastIndexOf('.');
+    const delimiters = [' ', '\n', '(', '[', ']', '+', '-', '*', '/', '>', '<', '='];
+    let lastDelimIdx = -1;
+    delimiters.forEach(d => {
+        const idx = before.lastIndexOf(d);
+        if (idx > lastDelimIdx) lastDelimIdx = idx;
+    });
 
-        if (lastDotIdx > lastDelimIdx) {
-            isAfterDot = true;
-            lastWord = before.substring(lastDotIdx + 1);
-        } else if (before.endsWith('[')) {
-            lastWord = '[';
-        } else {
-            // Split by same delimiters to find the word fragment
-            const words = before.split(/[\s\n\(\)\[\]\+\-\*\/\>\<\=]+/);
-            lastWord = words[words.length - 1];
+    if (lastDotIdx > lastDelimIdx) {
+        isAfterDot = true;
+        lastWord = before.substring(lastDotIdx + 1);
+    } else if (before.endsWith('[')) {
+        lastWord = '[';
+    } else {
+        const words = before.split(/[\s\n\(\)\[\]\+\-\*\/\>\<\=]+/);
+        lastWord = words[words.length - 1];
+    }
+
+    if (lastWord.length < 1 && !isAfterDot) {
+        suggestList.style.display = 'none';
+        return;
+    }
+
+    const searchList = isAfterDot ? STRAT_INDICATOR_TOKENS : STRAT_KEYWORDS;
+    const matches = searchList.filter(k => k.toLowerCase().startsWith(lastWord.toLowerCase())).slice(0, 10);
+
+    if (matches.length > 0) {
+        suggestList.innerHTML = matches.map((m, idx) => `
+            <div class="suggest-item" 
+                style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: var(--text-main); font-family: 'Fira Code', monospace; display: flex; align-items: center; gap: 10px;" 
+                onclick="applyStratSuggestion('${m}', '${textarea.id || ''}', this)"
+                onmouseover="this.style.background='rgba(var(--primary-rgb), 0.2)'"
+                onmouseout="this.style.background='transparent'">
+                <span style="color: var(--primary); font-size: 14px;">◈</span>
+                <span style="flex: 1;">${m}</span>
+                <span style="font-size: 9px; opacity: 0.4; text-transform: uppercase;">${isAfterDot ? 'Token' : 'Keyword'}</span>
+            </div>
+        `).join('');
+
+        const rect = textarea.getBoundingClientRect();
+        suggestList.style.position = 'fixed';
+        suggestList.style.top = `${rect.bottom + 5}px`;
+        suggestList.style.left = `${rect.left}px`;
+        suggestList.style.width = `${Math.max(rect.width, 200)}px`;
+        suggestList.style.display = 'block';
+        suggestList.style.zIndex = '100000';
+
+        // Store current active element for applyStratSuggestion fallback
+        suggestList.dataset.targetElement = textarea.id || '';
+        if (!textarea.id) {
+            window._lastStratActive = textarea;
         }
+    } else {
+        suggestList.style.display = 'none';
+    }
+};
 
-        if (lastWord.length < 1 && !isAfterDot) {
-            suggestList.style.display = 'none';
-            return;
+function setupStrategyAutoSuggest() {
+    const suggestList = document.getElementById('strat-suggestions');
+    if (!suggestList) return;
+
+    // Use event delegation for dynamic inputs
+    document.addEventListener('input', (e) => {
+        if (e.target.classList.contains('strategy-textarea')) {
+            handleStrategyInput(e);
         }
+    });
 
-        // Search in Appropriate List
-        const searchList = isAfterDot ? STRAT_INDICATOR_TOKENS : STRAT_KEYWORDS;
-        const matches = searchList.filter(k => k.toLowerCase().startsWith(lastWord.toLowerCase())).slice(0, 10);
-
-        if (matches.length > 0) {
-            suggestList.innerHTML = matches.map((m, idx) => `
-                <div class="suggest-item" 
-                    style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; color: var(--text-main); font-family: 'Fira Code', monospace; display: flex; align-items: center; gap: 10px;" 
-                    onclick="applyStratSuggestion('${m}', '${textarea.id}')"
-                    onmouseover="this.style.background='rgba(var(--primary-rgb), 0.2)'"
-                    onmouseout="this.style.background='transparent'">
-                    <span style="color: var(--primary); font-size: 14px;">◈</span>
-                    <span style="flex: 1;">${m}</span>
-                    <span style="font-size: 9px; opacity: 0.4; text-transform: uppercase;">${isAfterDot ? 'Token' : 'Keyword'}</span>
-                </div>
-            `).join('');
-
-            const rect = textarea.getBoundingClientRect();
-            suggestList.style.position = 'fixed';
-            suggestList.style.top = `${rect.bottom + 5}px`;
-            suggestList.style.left = `${rect.left}px`;
-            suggestList.style.width = `${rect.width}px`;
-            suggestList.style.display = 'block';
-            suggestList.style.zIndex = '100000';
-        } else {
-            suggestList.style.display = 'none';
+    document.addEventListener('focusin', (e) => {
+        if (e.target.classList.contains('strategy-textarea')) {
+            handleStrategyInput(e);
         }
-    };
-
-    textareas.forEach(ta => {
-        ta.addEventListener('input', handleInput);
-        ta.addEventListener('focus', handleInput);
     });
 
     document.addEventListener('mousedown', (e) => {
@@ -2931,9 +2944,8 @@ function setupStrategyAutoSuggest() {
         }
     });
 
-    // Handle Tab/Enter key for selection
-    textareas.forEach(ta => {
-        ta.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', (e) => {
+        if (e.target.classList.contains('strategy-textarea')) {
             if ((e.key === 'Tab' || e.key === 'Enter') && suggestList.style.display === 'block') {
                 const first = suggestList.querySelector('.suggest-item');
                 if (first) {
@@ -2941,14 +2953,16 @@ function setupStrategyAutoSuggest() {
                     first.click();
                 }
             }
-        });
+        }
     });
 }
 
-function applyStratSuggestion(word, targetId = null) {
+function applyStratSuggestion(word, targetId = null, btn = null) {
     let textarea;
-    if (targetId) {
+    if (targetId && targetId !== '') {
         textarea = document.getElementById(targetId);
+    } else if (window._lastStratActive) {
+        textarea = window._lastStratActive;
     } else {
         textarea = document.activeElement;
     }
@@ -3002,39 +3016,48 @@ function loadSampleQuery(type) {
     const samples = {
         'bullish_dip': {
             name: "Institutional Dip Buyer",
-            side: "BUY", tf: "15m", universe: "swing",
-            entry: "(EMA_F > EMA_S AND RSI < 35)",
-            target: "1.2% OR Price > [1h].High",
-            sl: "[1h].ST_V - 0.2%",
-            exit: "SuperTrend == 'SELL'",
-            accum: "Add 50% on RSI breakout > 50"
+            side: "BUY", tf: "Daily", universe: "swing",
+            entry: "[Daily].RSI < 40 AND [Daily].Pattern == 'Bullish'",
+            target: "2.5% OR Price > [Daily].prev_high",
+            sl: "[Daily].ST_V - 0.5%",
+            exit: "[Daily].ST == 'SELL'",
+            accum: "Add 50% if [1h].RSI > 50"
         },
         'momentum_breakout': {
             name: "Hyper Momentum Scan",
-            side: "BUY", tf: "5m", universe: "intraday",
-            entry: "(Price > [1h].EMA_F AND VOL == 'BULL_S')",
-            target: "2.5% OR Price > Prev_High",
-            sl: "EMA_F - 0.5%",
-            exit: "RSI > 80",
-            accum: "Pyramid 25% if Vol > 3x"
+            side: "BUY", tf: "15m", universe: "swing",
+            entry: "Price > [Daily].prev_high AND [1h].VOL == 'BULL_S' AND [15m].EMA_F > [15m].EMA_S",
+            target: "1.5% OR Price > [1h].prev_high",
+            sl: "[15m].EMA_S",
+            exit: "[15m].RSI > 80",
+            accum: "Pyramid 25% if [5m].VOL == 'BULL_S'"
         },
-        'bearish_reversal': {
-            name: "Bearish Rejection",
-            side: "SELL", tf: "15m", universe: "swing",
-            entry: "(RSI > 70 AND SuperTrend == 'SELL') AND (Timeframe = 1h AND SuperTrend == 'SELL')",
-            target: "1.5% OR Price < [1h].Low",
-            sl: "[1h].ST_V + 0.2%",
-            exit: "RSI < 30",
+        'tf_convergence': {
+            name: "M-TF Trend Convergence",
+            side: "BUY", tf: "1h", universe: "swing",
+            entry: "[Daily].ST == 'BUY' AND [1h].ST == 'BUY' AND [15m].ST == 'BUY'",
+            target: "3.5% OR [Daily].prev_high",
+            sl: "[1h].ST_V - 0.3%",
+            exit: "[15m].ST == 'SELL'",
+            accum: "Add 100% if Price > [Daily].EMA_F"
+        },
+        'bearish_rejection': {
+            name: "Bearish Mean Reversion",
+            side: "SELL", tf: "Daily", universe: "swing",
+            entry: "[Daily].RSI > 75 AND [Daily].Pattern == 'Bearish' AND [1h].ST == 'SELL'",
+            target: "2.0% OR Price < [1h].prev_low",
+            sl: "[Daily].High",
+            exit: "[1h].RSI < 30",
             accum: ""
         },
-        'fundamental_growth': {
-            name: "Structural Growth (Daily)",
-            side: "BUY", tf: "1d", universe: "swing",
-            entry: "(ROE > 18 AND PE < 35) AND (VOL_R > 1.5 AND SuperTrend == 'BUY')",
-            target: "5.0% OR Price > [1w].High",
-            sl: "2.5% OR Price < [1w].Low",
-            exit: "NPM < 10",
-            accum: ""
+        'fundamental_breakout': {
+            name: "Growth Value Breakout",
+            side: "BUY", tf: "Daily", universe: "swing",
+            entry: "ROE > 18 AND PE < 35 AND [Daily].ST == 'BUY' AND [Daily].VOL_R > 1.5",
+            target: "10.0% OR 25%_Trailing",
+            sl: "[Daily].ST_V - 1%",
+            exit: "[Daily].ST == 'SELL'",
+            accum: "Accumulate 25% every 5% dip"
         }
     };
 
@@ -3055,18 +3078,21 @@ function loadSampleQuery(type) {
         setVal('strat-accum-query', s.accum);
         setVal('strat-side', s.side || "BUY");
 
-        // Timeframe might need a moment to be valid if switching modes is involved, 
-        // but here we just try to set it if it exists in the current mode's list.
         const tfEl = document.getElementById('strat-timeframe');
         if (tfEl) {
-            // Check if the sample's TF is valid for current mode
             const options = Array.from(tfEl.options).map(o => o.value);
             if (options.includes(s.tf)) {
                 tfEl.value = s.tf;
             } else {
-                // Default to first available if sample TF doesn't match mode
                 tfEl.selectedIndex = 0;
             }
+        }
+
+        // Synchronize to Visual Builder if it's the current active mode
+        if (currentEditorMode === 'visual') {
+            ['entry', 'exit', 'target', 'sl', 'accum'].forEach(section => {
+                syncQueryToVisual(section);
+            });
         }
 
         updateStrategyExplainer();
@@ -3519,7 +3545,8 @@ async function runStrategyScan() {
 
     try {
         // 2. Parse Timeframes from the translated query AND the Target/SL boxes
-        const tfRegex = /\[(.*?)\]/g;
+        // Space-tolerant regex for [TF] or {TF}
+        const tfRegex = /[\[\{]\s*(.*?)\s*[\]\}]/g;
         let match;
         const usedTfs = [];
 
@@ -3547,7 +3574,10 @@ async function runStrategyScan() {
         // 3. Fetch Data for all required timeframes
         const tfDataMap = {};
         await Promise.all([...new Set(usedTfs)].map(async (tf) => {
-            const apiTf = TF_MAP[tf] || tf;
+            // Case-insensitive lookup in TF_MAP
+            const normalizedTf = Object.keys(TF_MAP).find(k => k.toLowerCase() === tf.toLowerCase());
+            const apiTf = normalizedTf ? TF_MAP[normalizedTf] : tf;
+
             // Respect the universe selection (intraday vs swing)
             const res = await fetch(`/api/signals?mode=${universeMode}&timeframe=${apiTf}`);
             const json = await res.json();
@@ -3576,7 +3606,8 @@ async function runStrategyScan() {
             'industry': 'industry',
             'market_cap': 'market_cap',
             'prev_high': 'prev_high',
-            'prev_low': 'prev_low'
+            'prev_low': 'prev_low',
+            'Pattern': 'candlestick_pattern'
         };
 
         let processedQuery = query
@@ -3593,8 +3624,9 @@ async function runStrategyScan() {
             return `(${token} * ${factor})`;
         });
 
-        // 5. Token Resolution
-        const tokenRegex = /\[(.*?)\]\.([A-Z_a-z0-9]+)/g;
+        // 5. Token Resolution: Handle spaces and brackets/braces
+        // Matches [TF].VAR or {TF}.VAR or [TF] . VAR etc
+        const tokenRegex = /[\[\{]\s*(.*?)\s*[\]\}]\s*\.\s*([A-Z_a-z0-9]+)/g;
         const tokens = [];
         let tMatch;
         while ((tMatch = tokenRegex.exec(query)) !== null) {
@@ -3619,8 +3651,13 @@ async function runStrategyScan() {
                 if (!s) { skip = true; return; }
 
                 let val = s[token.attr];
-                if (token.attr === 'volume_signal') { // Corrected from 'vol_signal'
+                if (token.attr === 'volume_signal') {
                     val = val === 'BULL_SPIKE' ? "'BULL_S'" : (val === 'BEAR_SPIKE' ? "'BEAR_S'" : "'NONE'");
+                } else if (token.attr === 'candlestick_pattern') {
+                    // Simplified sentiment matching
+                    if (val && val.includes('Bullish')) val = "'Bullish'";
+                    else if (val && val.includes('Bearish')) val = "'Bearish'";
+                    else val = "'None'";
                 } else if (typeof val === 'string') {
                     val = `'${val}'`;
                 } else {
@@ -3974,5 +4011,247 @@ async function commitToTrade(isin, target, sl) {
     } catch (e) {
         console.error(e);
         showToast("Failed to commit trade logic.", "error");
+    }
+}
+
+// --- Visual Strategy Builder Functions ---
+
+let strategyEditorMode = 'query';
+
+function setGlobalEditorMode(mode) {
+    strategyEditorMode = mode;
+    const sections = ['entry', 'exit', 'target', 'sl', 'accum'];
+    const queryBtn = document.getElementById('btn-global-query');
+    const visualBtn = document.getElementById('btn-global-visual');
+
+    if (mode === 'query') {
+        queryBtn.classList.add('active');
+        visualBtn.classList.remove('active');
+        sections.forEach(s => {
+            const containerQ = document.getElementById(`container-${s}-query`);
+            const containerV = document.getElementById(`container-${s}-visual`);
+            if (containerQ && containerV) {
+                // Sync Visual to Query before switching to Query mode
+                syncVisualToQuery(s);
+                containerQ.classList.remove('hidden');
+                containerV.classList.add('hidden');
+            }
+        });
+    } else {
+        visualBtn.classList.add('active');
+        queryBtn.classList.remove('active');
+        sections.forEach(s => {
+            const containerQ = document.getElementById(`container-${s}-query`);
+            const containerV = document.getElementById(`container-${s}-visual`);
+            if (containerQ && containerV) {
+                // Sync Query to Visual before switching to Visual mode
+                syncQueryToVisual(s);
+                containerQ.classList.add('hidden');
+                containerV.classList.remove('hidden');
+            }
+        });
+    }
+}
+
+function addVisualRule(section, data = null) {
+    const rulesContainer = document.getElementById(`${section}-visual-rules`);
+    if (!rulesContainer) return;
+
+    const rowCount = rulesContainer.querySelectorAll('.visual-rule-row').length;
+    const row = document.createElement('div');
+    row.className = 'visual-rule-row';
+
+    // OR condition support: Add AND/OR dropdown for rows after the first
+    const logicHtml = rowCount === 0 ?
+        `<div class="rule-logic" style="color:var(--text-dim); font-size: 10px; text-align: center;">IF</div>` :
+        `<select class="select-input rule-logic-op" style="color:var(--amber); font-weight:800; background:rgba(217,119,6,0.1);">
+            <option value="AND">AND</option>
+            <option value="OR">OR</option>
+         </select>`;
+
+    row.innerHTML = `
+        ${logicHtml}
+        <select class="select-input rule-tf">
+            <option value="[Daily]">[Daily]</option>
+            <option value="[Weekly]">[Weekly]</option>
+            <option value="[Monthly]">[Monthly]</option>
+            <option value="[1h]">[1h]</option>
+            <option value="[15m]">[15m]</option>
+            <option value="[5m]">[5m]</option>
+        </select>
+        <select class="select-input rule-ind">
+            <option value="RSI">RSI</option>
+            <option value="LTP">Price (LTP)</option>
+            <option value="EMA_F">Fast EMA</option>
+            <option value="EMA_S">Slow EMA</option>
+            <option value="ST_V">SuperTrend</option>
+            <option value="ATR">ATR</option>
+            <option value="Volume">Volume</option>
+            <option value="Pattern">Pattern</option>
+        </select>
+        <select class="select-input rule-op">
+            <option value="<"><</option>
+            <option value=">">></option>
+            <option value="==">==</option>
+            <option value="!=">!=</option>
+            <option value=">=">>=</option>
+            <option value="<="><=</option>
+        </select>
+        <input type="text" class="select-input rule-val strategy-textarea" placeholder="Value or [TF].Indicator" style="width: auto;">
+        <button class="hud-btn" style="color: var(--danger);" onclick="this.parentElement.remove(); syncVisualToQuery('${section}')">
+            <i class="fas fa-trash"></i>
+        </button>
+    `;
+
+    if (data) {
+        if (rowCount > 0 && data.logic) {
+            const logicOpElement = row.querySelector('.rule-logic-op');
+            if (logicOpElement) logicOpElement.value = data.logic;
+        }
+        const tfElement = row.querySelector('.rule-tf');
+        if (tfElement && data.tf) tfElement.value = data.tf;
+        const indElement = row.querySelector('.rule-ind');
+        if (indElement && data.ind) indElement.value = data.ind;
+        const opElement = row.querySelector('.rule-op');
+        if (opElement && data.op) opElement.value = data.op;
+        const valElement = row.querySelector('.rule-val');
+        if (valElement && data.val) valElement.value = data.val;
+
+        if (data.ind === 'Pattern') {
+            togglePatternValueField(row, data.val);
+        }
+    }
+
+    rulesContainer.appendChild(row);
+
+    // Specific listener for Pattern indicator to toggle value field type
+    row.querySelector('.rule-ind').addEventListener('change', () => {
+        togglePatternValueField(row);
+        syncVisualToQuery(section);
+    });
+
+    row.querySelectorAll('select, input').forEach(el => {
+        // Skip Pattern value select if it's already handled, but actually global change listener is fine.
+        el.addEventListener('change', () => syncVisualToQuery(section));
+        if (el.tagName === 'INPUT') {
+            el.addEventListener('input', () => syncVisualToQuery(section));
+        }
+    });
+
+    // Initial sync - using setTimeout to ensure DOM is ready if called during init
+    setTimeout(() => syncVisualToQuery(section), 0);
+}
+
+function togglePatternValueField(row, defaultVal = 'Bullish') {
+    const ind = row.querySelector('.rule-ind').value;
+    const valContainer = row.querySelector('.rule-val').parentElement;
+    const oldVal = row.querySelector('.rule-val');
+
+    if (ind === 'Pattern') {
+        const select = document.createElement('select');
+        select.className = 'select-input rule-val';
+        select.style.width = 'auto';
+        select.innerHTML = `
+            <option value="Bullish">Bullish</option>
+            <option value="Bearish">Bearish</option>
+        `;
+        select.value = (defaultVal === 'Bullish' || defaultVal === 'Bearish') ? defaultVal : 'Bullish';
+        select.addEventListener('change', () => {
+            const section = row.closest('[id$="-visual-rules"]').id.split('-')[0];
+            syncVisualToQuery(section);
+        });
+        valContainer.replaceChild(select, oldVal);
+
+        // Pattern logic only makes sense with "==" or "!="
+        const opSelect = row.querySelector('.rule-op');
+        if (opSelect.value !== '==' && opSelect.value !== '!=') {
+            opSelect.value = '==';
+        }
+    } else if (oldVal.tagName === 'SELECT') {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'select-input rule-val strategy-textarea';
+        input.placeholder = 'Value or [TF].Indicator';
+        input.style.width = 'auto';
+        input.addEventListener('input', () => {
+            const section = row.closest('[id$="-visual-rules"]').id.split('-')[0];
+            syncVisualToQuery(section);
+        });
+        valContainer.replaceChild(input, oldVal);
+    }
+}
+
+function syncVisualToQuery(section) {
+    const rulesContainer = document.getElementById(`${section}-visual-rules`);
+    const textarea = document.getElementById(`strat-${section}-query`);
+    if (!rulesContainer || !textarea) return;
+
+    const rows = rulesContainer.querySelectorAll('.visual-rule-row');
+    let queryParts = [];
+
+    rows.forEach((row, idx) => {
+        const logicElement = row.querySelector('.rule-logic-op');
+        const logic = idx === 0 ? "" : (logicElement ? logicElement.value : "");
+        const tf = row.querySelector('.rule-tf').value;
+        const ind = row.querySelector('.rule-ind').value;
+        const op = row.querySelector('.rule-op').value;
+        const val = row.querySelector('.rule-val').value;
+
+        if (ind && op && val) {
+            let part = `${tf}.${ind} ${op} ${val}`;
+            if (logic) {
+                queryParts.push(` ${logic} ${part}`);
+            } else {
+                queryParts.push(part);
+            }
+        }
+    });
+
+    textarea.value = queryParts.join('');
+    updateStrategyExplainer();
+}
+
+function syncQueryToVisual(section) {
+    const rulesContainer = document.getElementById(`${section}-visual-rules`);
+    const textarea = document.getElementById(`strat-${section}-query`);
+    if (!rulesContainer || !textarea) return;
+
+    const query = textarea.value.trim();
+    rulesContainer.innerHTML = '';
+
+    if (!query) return;
+
+    // Best-effort parser for [TF].IND OP VAL (AND|OR) ...
+    // Split by AND or OR (case insensitive)
+    const parts = query.split(/\s+(AND|OR)\s+/i);
+
+    let currentLogic = null;
+
+    for (let i = 0; i < parts.length; i++) {
+        let p = parts[i].trim();
+        if (p.toUpperCase() === 'AND' || p.toUpperCase() === 'OR') {
+            currentLogic = p.toUpperCase();
+            continue;
+        }
+
+        // Flexible Parse: ([TF].)?TOKEN OP VALUE
+        const match = p.match(/(\[[^\]]+\]\.)?([^\s]+)\s+([<>=!]+)\s+(.+)/);
+        if (match) {
+            let tf = match[1] ? match[1].slice(0, -1) : "[Daily]";
+            const data = {
+                logic: currentLogic,
+                tf: tf,
+                ind: match[2],
+                op: match[3],
+                val: match[4]
+            };
+            addVisualRule(section, data);
+            currentLogic = null; // Reset for the next rule
+        }
+    }
+
+    // If no rules were parsed but text exists, add one empty rule
+    if (rulesContainer.innerHTML === '' && query !== '') {
+        addVisualRule(section);
     }
 }
