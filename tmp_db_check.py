@@ -7,7 +7,7 @@ async def check_ohlcv():
         pool = await aiomysql.create_pool(**Config.get_app_db_config())
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("DESCRIBE app_sg_ohlcv_prices")
+                await cur.execute("DESCRIBE app_sg_calculated_signals")
                 schema = await cur.fetchall()
                 for field in schema:
                     print(field)

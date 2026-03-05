@@ -354,9 +354,21 @@ async def get_signals(mode: str = "swing", timeframe: str = None, token: str = D
                 if timeframe and timeframe != "all": q += " AND timeframe = %s"; p.append(timeframe)
                 await app_cur.execute(q + " ORDER BY confluence_rank DESC LIMIT 1000", tuple(p))
                 for row in await app_cur.fetchall():
-                    signals.append({k: (float(v) if isinstance(v, (float, int)) and k not in ['id', 'isin', 'symbol'] else v) for k, v in row.items()})
-                    signals[-1]['symbol'] = symbols_map.get(row['isin'], row['isin'])
-                    signals[-1]['mtf_data'] = mtf_map.get(row['isin'], {})
+                    processed_row = {}
+                    for k, v in row.items():
+                        if isinstance(v, (float, int)) and k not in ['id', 'isin', 'symbol']:
+                            processed_row[k] = float(v)
+                        elif k in ['last_5_candles', 'dma_data'] and isinstance(v, str):
+                            try:
+                                processed_row[k] = json.loads(v)
+                            except:
+                                processed_row[k] = v
+                        else:
+                            processed_row[k] = v
+                    
+                    processed_row['symbol'] = symbols_map.get(row['isin'], row['isin'])
+                    processed_row['mtf_data'] = mtf_map.get(row['isin'], {})
+                    signals.append(processed_row)
         app_pool.close(); datamart_pool.close()
         return {"status": "success", "data": signals}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))

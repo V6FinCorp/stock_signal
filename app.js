@@ -85,7 +85,7 @@ let activeStatFilter = 'all';
 let currentSortColumn = 'rsi'; // Default sort by RSI
 let currentSortDirection = 'desc'; // Default desc
 let activeSectorFilter = 'all';
-let isSectorBarCollapsed = false;
+let isSectorBarCollapsed = true;
 let activeTab = 'dashboard';
 let appZoom = 1.0;
 let screenerMasterData = []; // Cache for local screener filtering
@@ -628,7 +628,11 @@ function renderSignals() {
             let sparklineHtml = `<td class="formation-col"><div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; overflow: hidden;">`;
             let patternNameHtml = `<td class="pattern-name-col">`;
 
-            const l5_data = stock.last_5_candles;
+            let l5_data = stock.last_5_candles;
+            if (typeof l5_data === 'string' && l5_data.trim()) {
+                try { l5_data = JSON.parse(l5_data); } catch (e) { console.error("Failed to parse candle data", e); }
+            }
+
             let svgHtml = '';
             let rawDataJson = '';
 
@@ -727,8 +731,12 @@ function renderSignals() {
         }
 
         if (conf.dma.enabled) {
+            let dma_data = stock.dma_data;
+            if (typeof dma_data === 'string' && dma_data.trim()) {
+                try { dma_data = JSON.parse(dma_data); } catch (e) { }
+            }
             conf.dma.periods.forEach(p => {
-                const dmaVal = stock.dma_data ? stock.dma_data[`SMA_${p}`] : null;
+                const dmaVal = dma_data ? dma_data[`SMA_${p}`] : null;
                 if (dmaVal !== null && dmaVal !== undefined) {
                     rowHtml += `<td><div class="${stock.ltp > dmaVal ? 'text-success' : 'text-danger'}" style="font-size: 14px; font-weight: 600;">${dmaVal.toFixed(1)}</div></td>`;
                 } else {
@@ -3829,7 +3837,10 @@ function renderScanResults(matches, isFilter = false) {
 
         // Sparkline logic (Formation)
         let sparklineHtml = '-';
-        const l5_data = s.last_5_candles;
+        let l5_data = s.last_5_candles;
+        if (typeof l5_data === 'string' && l5_data.trim()) {
+            try { l5_data = JSON.parse(l5_data); } catch (e) { }
+        }
         if (Array.isArray(l5_data) && l5_data.length > 0) {
             const rawDataJson = encodeURIComponent(JSON.stringify(l5_data));
             let minLow = Infinity;
