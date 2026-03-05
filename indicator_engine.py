@@ -427,15 +427,23 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
 
                 # --- Candlestick Patterns ---
                 pattern_str = None
+                pattern_score = 0
                 patterns_opts = settings.get('patterns', {})
                 if patterns_opts.get('enabled'):
                     bullish_patterns = []
                     bearish_patterns = []
                     neutral_patterns = []
                     
-                    bullish_cols = ['CDL_ENGULFING', 'CDL_HAMMER', 'CDL_MORNINGSTAR', 'CDL_PIERCING', 'CDL_MORNINGDOJISTAR', 'CDL_3WHITESOLDIERS', 'CDL_DRAGONFLYDOJI']
-                    bearish_cols = ['CDL_ENGULFING', 'CDL_SHOOTINGSTAR', 'CDL_EVENINGSTAR', 'CDL_DARKCLOUDCOVER', 'CDL_EVENINGDOJISTAR', 'CDL_HANGINGMAN', 'CDL_3BLACKCROWS', 'CDL_GRAVESTONEDOJI']
+                    bullish_cols = ['CDL_ENGULFING', 'CDL_HAMMER', 'CDL_MORNINGSTAR', 'CDL_PIERCING', 'CDL_MORNINGDOJISTAR', 'CDL_3WHITESOLDIERS', 'CDL_DRAGONFLYDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
+                    bearish_cols = ['CDL_ENGULFING', 'CDL_SHOOTINGSTAR', 'CDL_EVENINGSTAR', 'CDL_DARKCLOUDCOVER', 'CDL_EVENINGDOJISTAR', 'CDL_HANGINGMAN', 'CDL_3BLACKCROWS', 'CDL_GRAVESTONEDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
                     neutral_cols = ['CDL_DOJI_10_0.1', 'CDL_SPINNINGTOP', 'CDL_HIGHWAVE', 'CDL_RICKSHAWMAN', 'CDL_LONGLEGGEDDOJI', 'CDL_INSIDE', 'CDL_BELTHOLD']
+                    
+                    # Pattern intensity scoring
+                    PATTERN_WEIGHTS = {
+                        'CDL_MORNINGSTAR': 3, 'CDL_EVENINGSTAR': 3, 'CDL_3WHITESOLDIERS': 3, 'CDL_3BLACKCROWS': 3, 'CDL_MORNINGDOJISTAR': 3, 'CDL_EVENINGDOJISTAR': 3, 'CDL_3INSIDE': 3, 'CDL_3OUTSIDE': 3,
+                        'CDL_ENGULFING': 2, 'CDL_PIERCING': 2, 'CDL_DARKCLOUDCOVER': 2,
+                        'CDL_HAMMER': 1, 'CDL_INVERTEDHAMMER': 1, 'CDL_SHOOTINGSTAR': 1, 'CDL_DRAGONFLYDOJI': 1, 'CDL_GRAVESTONEDOJI': 1, 'CDL_DOJI': 1
+                    }
                     
                     for key, val in latest_data.items():
                         if not isinstance(key, str) or not key.startswith("CDL_") or pd.isna(val) or val == 0:
@@ -444,6 +452,9 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         # Only accept strong pattern signals (usually 100 or -100)
                         if abs(val) < 10: 
                             continue
+
+                        # Update score
+                        pattern_score = max(pattern_score, PATTERN_WEIGHTS.get(key, 1))
 
                         pattern_name = key.replace("CDL_", "").split("_")[0].title()
                         
@@ -604,7 +615,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     vol_signal, vol_ratio,
                     ema_fast, # Using ema_fast as legacy ema_value
                     st_dir, st_value, json.dumps(dma_data), rank,
-                    sl, target, trade_strategy, pattern_str, last_5_candles,
+                    sl, target, trade_strategy, pattern_str, pattern_score, last_5_candles,
                     sector, industry, pe, pb, roe, eps, opm, npm,
                     i_group, i_subgroup
                 ))
@@ -616,10 +627,10 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     (isin, profile_id, timeframe, timestamp, ltp, rsi, rsi_day_high, rsi_day_low, 
                      ema_signal, ema_fast, ema_slow, volume_signal, volume_ratio, ema_value, 
                      supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, 
-                     trade_strategy, candlestick_pattern, last_5_candles,
+                     trade_strategy, candlestick_pattern, pattern_score, last_5_candles,
                      sector, industry, pe, pb, roe, eps, opm, npm,
                      i_group, i_subgroup)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         timestamp=VALUES(timestamp), ltp=VALUES(ltp), rsi=VALUES(rsi), 
                         rsi_day_high=VALUES(rsi_day_high), rsi_day_low=VALUES(rsi_day_low),
@@ -630,6 +641,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         dma_data=VALUES(dma_data), confluence_rank=VALUES(confluence_rank),
                         sl=VALUES(sl), target=VALUES(target), trade_strategy=VALUES(trade_strategy),
                         candlestick_pattern=VALUES(candlestick_pattern),
+                        pattern_score=VALUES(pattern_score),
                         last_5_candles=VALUES(last_5_candles),
                         sector=VALUES(sector), industry=VALUES(industry), pe=VALUES(pe), 
                         pb=VALUES(pb), roe=VALUES(roe), eps=VALUES(eps), opm=VALUES(opm), npm=VALUES(npm),
@@ -718,25 +730,73 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                 df.reset_index(inplace=True)
 
             # Calculate Indicators for the enrichment
-            # --- EMA ---
-            if settings['RSI']['enabled']:
-                rsi_len = settings['RSI']['period']
-                df[f'RSI_{rsi_len}'] = ta.rsi(df['close'], length=rsi_len)
-
-            if settings['EMA']['enabled']:
-                fast_len = settings['EMA']['fast_period']
-                slow_len = settings['EMA']['slow_period']
-                df[f'EMA_{fast_len}'] = ta.ema(df['close'], length=fast_len)
-                df[f'EMA_{slow_len}'] = ta.ema(df['close'], length=slow_len)
+            # We use the same calculation engine as the main signal processor for consistency
+            latest_meta = calculate_indicators(df, settings)
             
-            # --- Supertrend ---
-            if settings.get('SUPERTREND', {}).get('enabled'):
-                st_len = settings['SUPERTREND']['period']
-                st_mult = settings['SUPERTREND']['mult']
-                st_df = ta.supertrend(df['high'], df['low'], df['close'], length=st_len, multiplier=st_mult)
-                if st_df is not None:
-                    df['ST_value'] = st_df.iloc[:, 0]
-                    df['ST_dir'] = st_df.iloc[:, 1]
+            # --- Extract meta if any ---
+            pattern_str = None
+            pattern_score = 0
+            p_opts = settings.get('patterns', {})
+            if p_opts.get('enabled') and latest_meta is not None:
+                bullish_patterns = []
+                bearish_patterns = []
+                neutral_patterns = []
+                
+                # Weighting system (Mirrors process_profile)
+                PATTERN_WEIGHTS = {
+                    'CDL_MORNINGSTAR': 3, 'CDL_EVENINGSTAR': 3, 'CDL_3WHITESOLDIERS': 3, 'CDL_3BLACKCROWS': 3, 'CDL_MORNINGDOJISTAR': 3, 'CDL_EVENINGDOJISTAR': 3, 'CDL_3INSIDE': 3, 'CDL_3OUTSIDE': 3,
+                    'CDL_ENGULFING': 2, 'CDL_PIERCING': 2, 'CDL_DARKCLOUDCOVER': 2,
+                    'CDL_HAMMER': 1, 'CDL_INVERTEDHAMMER': 1, 'CDL_SHOOTINGSTAR': 1, 'CDL_DRAGONFLYDOJI': 1, 'CDL_GRAVESTONEDOJI': 1, 'CDL_DOJI': 1
+                }
+
+                # Define strong patterns
+                bull_cols = ['CDL_ENGULFING', 'CDL_HAMMER', 'CDL_MORNINGSTAR', 'CDL_PIERCING', 'CDL_MORNINGDOJISTAR', 'CDL_3WHITESOLDIERS', 'CDL_DRAGONFLYDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
+                bear_cols = ['CDL_ENGULFING', 'CDL_SHOOTINGSTAR', 'CDL_EVENINGSTAR', 'CDL_DARKCLOUDCOVER', 'CDL_EVENINGDOJISTAR', 'CDL_HANGINGMAN', 'CDL_3BLACKCROWS', 'CDL_GRAVESTONEDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
+                neut_cols = ['CDL_DOJI_10_0.1', 'CDL_SPINNINGTOP', 'CDL_HIGHWAVE', 'CDL_RICKSHAWMAN', 'CDL_LONGLEGGEDDOJI', 'CDL_INSIDE', 'CDL_BELTHOLD']
+                
+                for k, v in latest_meta.items():
+                    if not isinstance(k, str) or not k.startswith("CDL_") or pd.isna(v) or v == 0: continue
+                    if abs(v) < 10: continue
+                    
+                    pattern_score = max(pattern_score, PATTERN_WEIGHTS.get(k, 1))
+                    
+                    p_name = k.replace("CDL_", "").split("_")[0].title()
+                    if v > 0:
+                        if k in neut_cols: neutral_patterns.append(p_name)
+                        elif k in bear_cols and k not in bull_cols: bearish_patterns.append(p_name)
+                        else: bullish_patterns.append(p_name)
+                    elif v < 0:
+                        if k in neut_cols: neutral_patterns.append(p_name)
+                        elif k in bull_cols and k not in bear_cols: bullish_patterns.append(p_name)
+                        else: bearish_patterns.append(p_name)
+                
+                active_p = []
+                if p_opts.get('bullish') and bullish_patterns: active_p.append("Bullish " + "/".join(bullish_patterns))
+                if p_opts.get('bearish') and bearish_patterns: active_p.append("Bearish " + "/".join(bearish_patterns))
+                if p_opts.get('neutral') and neutral_patterns: active_p.append("Neutral " + "/".join(neutral_patterns))
+                if active_p: pattern_str = " | ".join(active_p)
+
+            # --- Confluence Rank Extract ---
+            # (Wait, we need to preserve signal table rank if available, but for on-the-fly we can estimate)
+            st_dir = 'Neutral'
+            if 'ST_dir' in latest_meta:
+                st_dir = 'BUY' if latest_meta['ST_dir'] == 1 else ('SELL' if latest_meta['ST_dir'] == -1 else 'Neutral')
+
+            # --- Simple Rank Estimation ---
+            calc_rank = 0
+            if 'ema_signal' in latest_meta:
+                 if latest_meta['ema_signal'] == 'BUY': calc_rank += 1
+                 elif latest_meta['ema_signal'] == 'SELL': calc_rank -= 1
+            if st_dir == 'BUY': calc_rank += 1
+            elif st_dir == 'SELL': calc_rank -= 1
+            if 'vol_signal' in latest_meta:
+                if latest_meta['vol_signal'] == 'BULL_SPIKE': calc_rank += 1
+                elif latest_meta['vol_signal'] == 'BEAR_SPIKE': calc_rank -= 1
+            # RSI 
+            rsi_key = f"RSI_{settings['RSI']['period']}"
+            if rsi_key in latest_meta and latest_meta[rsi_key] is not None:
+                if latest_meta[rsi_key] > 50: calc_rank += 1
+                elif latest_meta[rsi_key] < 50: calc_rank -= 1
             
             # --- DMA ---
             if settings['DMA']['enabled']:
@@ -782,9 +842,30 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                             "volume": float(v)
                         })
 
+            # --- Finalize Metadata (Database record takes precedence) ---
+            signal_meta = {
+                "pattern": pattern_str,
+                "pattern_score": pattern_score,
+                "st_dir": st_dir,
+                "rank": calc_rank
+            }
+            await cur.execute(
+                "SELECT candlestick_pattern, pattern_score, supertrend_dir, confluence_rank FROM app_sg_calculated_signals WHERE isin = %s AND timeframe = %s AND profile_id = %s",
+                (isin, timeframe, profile_id)
+            )
+            sig_row = await cur.fetchone()
+            if sig_row:
+                signal_meta = {
+                    "pattern": sig_row['candlestick_pattern'] or pattern_str,
+                    "pattern_score": sig_row['pattern_score'] if sig_row['pattern_score'] is not None else pattern_score,
+                    "st_dir": sig_row['supertrend_dir'] or st_dir,
+                    "rank": sig_row['confluence_rank'] if sig_row['confluence_rank'] is not None else calc_rank
+                }
+
             return {
                 "candles": df.to_dict(orient='records'),
-                "vpvr": vpvr_data
+                "vpvr": vpvr_data,
+                "meta": signal_meta
             }
 
 async def main():

@@ -704,13 +704,23 @@ function renderSignals() {
 
             // Textual pattern logic
             const pattern = stock.candlestick_pattern;
+            const score = stock.pattern_score || 0;
             let textHtml = '';
             if (pattern) {
                 let textColor = "var(--text-dim)";
                 if (pattern.includes("Bullish")) textColor = "var(--success)";
                 else if (pattern.includes("Bearish")) textColor = "var(--danger)";
 
-                textHtml = `<div class="pattern-text" style="color: ${textColor};" title="${pattern}">${pattern}</div>`;
+                let scoreHtml = '';
+                if (score > 0) {
+                    scoreHtml = `<div style="display: flex; gap: 3px; margin-top: 4px;" title="Strength Score: ${score}/3">`;
+                    for (let i = 0; i < 3; i++) {
+                        scoreHtml += `<div style="width: 4px; height: 4px; border-radius: 50%; background: ${i < score ? textColor : 'rgba(255,255,255,0.1)'};"></div>`;
+                    }
+                    scoreHtml += `</div>`;
+                }
+
+                textHtml = `<div class="pattern-text" style="color: ${textColor};" title="${pattern}">${pattern}${scoreHtml}</div>`;
             }
 
             // Populate Sparkline Column
@@ -1969,7 +1979,9 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
                             <i class="fas fa-th-large"></i> Split View
                         </div>
                     </div>
-                    ${patternName ? `<div style="margin-top: 6px; font-size: 13px; color: var(--text-dim);"><span style="color:var(--amber)">Condition:</span> ${patternName}</div>` : ''}
+                    <div id="modal-condition-row" style="margin-top: 6px; font-size: 13px; color: var(--text-dim); display: ${patternName ? 'block' : 'none'};">
+                        <span style="color:var(--amber)">Condition:</span> <span id="modal-condition-text">${patternName || ""}</span>
+                    </div>
                     <div style="display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap;" id="modal-tf-buttons">
                         ${allTfs.map(tf => {
         const isActive = modalTfState.activeTfs.includes(tf);
@@ -2088,6 +2100,36 @@ async function refreshModalGrid() {
         }
 
         if (chartData) {
+            // Update UI with metadata from this TF
+            if (chartData.meta) {
+                const meta = chartData.meta;
+                const patternText = meta.pattern || "No pattern detected";
+
+                // 1. Update main header if single view
+                if (!modalTfState.isSplit) {
+                    const condText = document.getElementById('modal-condition-text');
+                    const condRow = document.getElementById('modal-condition-row');
+                    if (condText) {
+                        condText.innerText = patternText;
+                        condRow.style.display = 'block';
+                    }
+                }
+
+                // 2. Update slot header (Sub-header)
+                if (slotLegend) {
+                    let stHtml = '';
+                    if (meta.st_dir) {
+                        const color = meta.st_dir === 'BUY' ? 'var(--success)' : 'var(--danger)';
+                        stHtml = `<span style="color:${color}; font-weight:700;">${meta.st_dir}</span>`;
+                    }
+                    slotLegend.innerHTML = `
+                        ${meta.pattern ? `<span style="color:var(--amber); border: 1px solid rgba(245,158,11,0.2); background: rgba(245,158,11,0.05); padding: 1px 6px; border-radius: 4px;">${meta.pattern}</span>` : ''}
+                        ${stHtml}
+                        <span style="opacity: 0.6;">(Rank: ${meta.rank || 0})</span>
+                    `;
+                }
+            }
+
             const renderer = renderEnrichedChart(chartData, modalTfState.symbol, chartControls, tf, {
                 container: slotChart,
                 legend: slotLegend,
@@ -2791,14 +2833,15 @@ const STRAT_ALIASES = {
     "NPM": "npm",
     "Prev_High": "prev_high",
     "Prev_Low": "prev_low",
-    "Pattern": "Pattern"
+    "Pattern": "candlestick_pattern",
+    "Pattern_Score": "pattern_score"
 };
 
 const STRAT_KEYWORDS = [
     // Core Indicators & Tokens
     "ST", "ST_V", "RSI", "LTP", "CMP", "VOL", "VOL_R",
     "EMA_F", "EMA_S", "PE", "PB", "ROE", "EPS", "OPM", "NPM",
-    "Prev_High", "Prev_Low", "High", "Low", "Pattern", "Bullish", "Bearish",
+    "Prev_High", "Prev_Low", "High", "Low", "Pattern", "Pattern_Score", "Bullish", "Bearish",
 
     // Timeframes
     "[5m]", "[15m]", "[30m]", "[1h]", "[Daily]", "[Weekly]", "[Monthly]",
@@ -2811,7 +2854,7 @@ const STRAT_INDICATOR_TOKENS = [
     "RSI", "ST_V", "ST", "STV", "SuperTrend", "SuperTrendValue",
     "LTP", "CMP", "High", "Low", "Prev_High", "Prev_Low",
     "EMA_F", "EMA_S", "EMA_V", "EMA_C", "VOL_R", "VOL", "Pattern",
-    "Bullish", "Bearish", "PE", "PB", "ROE", "OPM", "NPM", "EPS", "Market_Cap"
+    "Bullish", "Bearish", "PE", "PB", "ROE", "OPM", "NPM", "EPS", "Market_Cap", "Pattern_Score"
 ];
 
 function initStrategyLab() {
@@ -3607,7 +3650,8 @@ async function runStrategyScan() {
             'market_cap': 'market_cap',
             'prev_high': 'prev_high',
             'prev_low': 'prev_low',
-            'Pattern': 'candlestick_pattern'
+            'Pattern': 'candlestick_pattern',
+            'Pattern_Score': 'pattern_score'
         };
 
         let processedQuery = query
@@ -4088,6 +4132,7 @@ function addVisualRule(section, data = null) {
             <option value="ATR">ATR</option>
             <option value="Volume">Volume</option>
             <option value="Pattern">Pattern</option>
+            <option value="Pattern_Score">Pattern Score</option>
         </select>
         <select class="select-input rule-op">
             <option value="<"><</option>
