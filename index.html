@@ -951,92 +951,89 @@
                                                 style="font-size: 12px; color: var(--text-dim); text-align: center; padding: 40px;">
                                                 No saved strategies.</div>
                                         </div>
-                                    </div>
-
+                                    </div> <!-- End of bg-card (Saved Profiles) -->
+                                </div> <!-- End of Right Column Sidebar -->
+                            </div>
+                        </div><!-- End of strategy-editor-container -->
+                        <div id="strat-results-area"
+                            style="margin-top: 40px; border-top: 1px solid var(--border-color); padding-top: 40px; clear: both; width: 100%;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                                <div>
+                                    <h2
+                                        style="font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 15px;">
+                                        <i class="fas fa-fire" style="color: var(--amber);"></i> Live Scanner
+                                        Output
+                                        <span id="strat-match-count" class="badge"
+                                            style="display:none; background: var(--success); border-radius: 14px;font-weight: 500; font-size: 14px; padding: 4px 12px;">0
+                                            Matches</span>
+                                    </h2>
                                 </div>
-
+                                <div style="display: flex; gap: 12px; align-items: center;">
+                                    <button class="btn btn-dim"
+                                        style="height: 38px; color: var(--success); border-color: rgba(16, 185, 129, 0.2);"
+                                        onclick="exportStrategyToExcel()">
+                                        <i class="fas fa-file-excel"></i> Export Excel
+                                    </button>
+                                    <div style="position: relative;">
+                                        <i class="fas fa-search"
+                                            style="position: absolute; left: 12px; top: 13px; font-size: 12px; opacity: 0.4;"></i>
+                                        <input type="text" id="strat-results-search" class="select-input"
+                                            placeholder="Search symbol..."
+                                            style="width: 200px; height: 38px; font-size: 12px; border-radius: 8px; padding-left: 32px;"
+                                            oninput="filterStrategyResults()">
+                                    </div>
+                                    <button class="btn btn-dim" style="height: 38px; padding: 0 12px; font-size: 11px;"
+                                        onclick="runStrategyScan()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
                             </div>
 
-                            <div id="strat-results-area"
-                                style="margin-top: 40px; border-top: 1px solid var(--border-color); padding-top: 40px;">
-                                <div
-                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                                    <div>
-                                        <h2
-                                            style="font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 15px;">
-                                            <i class="fas fa-fire" style="color: var(--amber);"></i> Live Scanner Output
-                                            <span id="strat-match-count" class="badge"
-                                                style="display:none; background: var(--success); border-radius: 14px;font-weight: 500; font-size: 14px; padding: 4px 12px;">0
-                                                Matches</span>
-                                        </h2>
-                                    </div>
-                                    <div style="display: flex; gap: 12px; align-items: center;">
-                                        <button class="btn btn-dim"
-                                            style="height: 38px; color: var(--success); border-color: rgba(16, 185, 129, 0.2);"
-                                            onclick="exportStrategyToExcel()">
-                                            <i class="fas fa-file-excel"></i> Export Excel
-                                        </button>
-                                        <div style="position: relative;">
-                                            <i class="fas fa-search"
-                                                style="position: absolute; left: 12px; top: 13px; font-size: 12px; opacity: 0.4;"></i>
-                                            <input type="text" id="strat-results-search" class="select-input"
-                                                placeholder="Search symbol..."
-                                                style="width: 200px; height: 38px; font-size: 12px; border-radius: 8px; padding-left: 32px;"
-                                                oninput="filterStrategyResults()">
-                                        </div>
-                                        <button class="btn btn-dim"
-                                            style="height: 38px; padding: 0 12px; font-size: 11px;"
-                                            onclick="runStrategyScan()">
-                                            <i class="fas fa-sync-alt"></i> Refresh
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div class="bg-card"
-                                    style="padding: 0; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
-                                    <table class="signal-table" style="width: 100%; border-collapse: collapse;"
-                                        id="strat-results-table">
-                                        <thead>
-                                            <tr>
-                                                <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
-                                                    onclick="sortStrategyResults('symbol')">Instrument <i
-                                                        class="fas fa-sort"></i></th>
-                                                <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
-                                                    onclick="sortStrategyResults('ltp')">LTP <i class="fas fa-sort"></i>
-                                                </th>
-                                                <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
-                                                    onclick="sortStrategyResults('i_group')">Industry <i
-                                                        class="fas fa-sort"></i></th>
-                                                <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
-                                                    onclick="sortStrategyResults('rsi')">RSI <i class="fas fa-sort"></i>
-                                                </th>
-                                                <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
-                                                    onclick="sortStrategyResults('pe')">PE <i class="fas fa-sort"></i>
-                                                </th>
-                                                <th style="text-align: left; padding: 15px 20px;">Formation</th>
-                                                <th style="text-align: center; padding: 15px 10px;">Side</th>
-                                                <th style="text-align: right; padding: 15px 10px;">Target</th>
-                                                <th style="text-align: right; padding: 15px 10px;">Tgt %</th>
-                                                <th style="text-align: right; padding: 15px 10px;">SL</th>
-                                                <th style="text-align: right; padding: 15px 10px;">SL %</th>
-                                                <th style="text-align: center; padding: 15px 20px;">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="strat-results-grid">
-                                            <!-- Table rows injected here -->
-                                            <tr>
-                                                <td colspan="12"
-                                                    style="padding: 60px; text-align: center; opacity: 0.3;">
-                                                    <i class="fas fa-radar fa-3x"
-                                                        style="margin-bottom: 15px; display: block;"></i>
-                                                    Waiting for scan...
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
+                            <div class="bg-card"
+                                style="padding: 0; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
+                                <table class="signal-table" style="width: 100%; border-collapse: collapse;"
+                                    id="strat-results-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('symbol')">Instrument <i
+                                                    class="fas fa-sort"></i></th>
+                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('ltp')">LTP <i class="fas fa-sort"></i>
+                                            </th>
+                                            <th style="text-align: left; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('i_group')">Industry <i
+                                                    class="fas fa-sort"></i></th>
+                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('rsi')">RSI <i class="fas fa-sort"></i>
+                                            </th>
+                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('pe')">PE <i class="fas fa-sort"></i>
+                                            </th>
+                                            <th style="text-align: left; padding: 15px 20px;">Formation</th>
+                                            <th style="text-align: center; padding: 15px 10px;">Side</th>
+                                            <th style="text-align: right; padding: 15px 10px;">Target</th>
+                                            <th style="text-align: right; padding: 15px 10px;">Tgt %</th>
+                                            <th style="text-align: right; padding: 15px 10px;">SL</th>
+                                            <th style="text-align: right; padding: 15px 10px;">SL %</th>
+                                            <th style="text-align: center; padding: 15px 20px;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="strat-results-grid">
+                                        <!-- Table rows injected here -->
+                                        <tr>
+                                            <td colspan="12" style="padding: 60px; text-align: center; opacity: 0.3;">
+                                                <i class="fas fa-radar fa-3x"
+                                                    style="margin-bottom: 15px; display: block;"></i>
+                                                Waiting for scan...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
+                    </div>
         </main>
 
         <main class="main-content hidden" id="db-manager-view">
