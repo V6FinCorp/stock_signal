@@ -491,10 +491,11 @@ async def api_calculate(mode: str, fundamentals: bool = False):
         for tf in tfs:
             await process_profile(app_pool, datamart_pool, mode, tf, shared_cache=shared_cache, use_fundamentals=fundamentals)
             
-        # Update system status
+        # Update system status with IST time
         async with app_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("UPDATE app_sg_system_status SET last_calc_run = NOW() WHERE mode = %s", (mode,))
+                ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+                await cur.execute("UPDATE app_sg_system_status SET last_calc_run = %s WHERE mode = %s", (ist_now, mode))
                 await conn.commit()
                 
         app_pool.close()
@@ -558,7 +559,10 @@ async def stream_fetch(mode: str = "swing"):
                             url = f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01"
                             tf_key = '1d'
                         else:
-                            url = f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5/"
+                            # Use deep historical for intraday to support higher timeframes (15m, 30m, 60m)
+                            to_date = datetime.now().strftime('%Y-%m-%d')
+                            from_date = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d')
+                            url = f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/minutes/5/{to_date}/{from_date}"
                             tf_key = '5m'
                             
                         res = await client.get(url, timeout=10.0)
@@ -584,10 +588,11 @@ async def stream_fetch(mode: str = "swing"):
                     
                     await asyncio.sleep(0.1) # Small delay for UI smoothness
 
-            # Update system status on success
+            # Update system status on success with IST time
             async with app_pool.acquire() as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute("UPDATE app_sg_system_status SET last_fetch_run = NOW() WHERE mode = %s", (mode,))
+                    ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+                    await cur.execute("UPDATE app_sg_system_status SET last_fetch_run = %s WHERE mode = %s", (ist_now, mode))
                     await conn.commit()
 
             yield "data: [DONE]\n\n"

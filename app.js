@@ -312,22 +312,7 @@ function applyZoom() {
     if (textEl) textEl.innerText = `${Math.round(appZoom * 100)}%`;
 }
 
-async function fetchSystemStatus() {
-    try {
-        const response = await fetch(`/api/status?mode=${currentMode}&_=${Date.now()}`);
-        const status = await response.json();
 
-        let fetchTime = status[currentMode]?.last_fetch || 'Never';
-        let calcTime = status[currentMode]?.last_calc || 'Never';
-        let ohlcTime = status[currentMode]?.latest_ohlc || 'Never';
-
-        document.getElementById('last-fetch-time').innerText = fetchTime;
-        document.getElementById('last-calc-time').innerText = calcTime;
-        document.getElementById('latest-ohlc-time').innerText = ohlcTime;
-    } catch (e) {
-        console.error("Failed to fetch system status:", e);
-    }
-}
 
 function updateTableHeader() {
     const thead = document.querySelector('#main-signal-table thead tr');
