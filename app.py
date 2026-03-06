@@ -340,7 +340,7 @@ async def get_signals(mode: str = "swing", timeframe: str = None, token: str = D
         signals = []
         async with datamart_pool.acquire() as dm_conn:
             async with dm_conn.cursor() as dm_cur:
-                await dm_cur.execute("SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_all")
+                await dm_cur.execute("SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_all WHERE BINARY bs_Status = 'Active'")
                 symbols_map = {row[0]: row[1] for row in await dm_cur.fetchall()}
         async with app_pool.acquire() as app_conn:
             async with app_conn.cursor(aiomysql.DictCursor) as app_cur:

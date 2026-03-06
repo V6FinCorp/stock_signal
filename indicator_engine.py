@@ -217,7 +217,12 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
         async with datamart_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT bs_symbol FROM vw_e_bs_companies_favourite_indices WHERE dim_favourites = %s",
+                    """
+                    SELECT c.bs_symbol 
+                    FROM vw_e_bs_companies_favourite_indices c
+                    JOIN vw_e_bs_companies_all a ON c.bs_symbol = a.bs_SYMBOL
+                    WHERE c.dim_favourites = %s AND BINARY a.bs_Status = 'Active'
+                    """,
                     (target_dim,)
                 )
                 rows = await cur.fetchall()
