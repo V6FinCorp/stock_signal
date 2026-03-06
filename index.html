@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="/static/styles.css" onerror="this.href='styles.css'">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" type="image/x-icon" href="https://v6fincorp.com/favicon.ico">
+    <!-- Mermaid.js deferred to avoid blocking initial load -->
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 
 <body class="dark-theme">
@@ -55,6 +57,9 @@
                 <a href="#" class="nav-item" id="nav-settings" onclick="switchTab('settings')"><i
                         class="fas fa-cog"></i>
                     <span>Settings</span></a>
+                <a href="#" class="nav-item" id="nav-support" onclick="switchTab('support')"><i
+                        class="fas fa-question-circle"></i>
+                    <span>Support & Flow</span></a>
             </nav>
 
             <div class="sidebar-zoom"
@@ -1503,6 +1508,19 @@
                         <!-- History Rows -->
                     </tbody>
                 </table>
+            </div>
+        </main>
+
+        <!-- SUPPORT & FLOW VIEW -->
+        <main class="main-content hidden" id="support-view">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1>Support & System Flow</h1>
+                    <p class="text-dim">Comprehensive guide to StockSignal Pro architecture and features</p>
+                </div>
+            </header>
+            <div id="support-content" class="support-container">
+                <!-- Content injected via JS -->
             </div>
         </main>
     </div>

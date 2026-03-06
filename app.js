@@ -92,6 +92,7 @@ let activeTab = 'dashboard';
 let appZoom = 1.0;
 let screenerMasterData = []; // Cache for local screener filtering
 
+let currentEditorMode = 'query';
 let HUD_STATES = {
     swing: { active: false, expanded: false },
     intraday: { active: false, expanded: false }
@@ -1078,6 +1079,8 @@ function switchTab(tabId) {
         initStrategyLab();
     } else if (tabId === 'history') {
         loadSignalHistory();
+    } else if (tabId === 'support') {
+        renderSupportGuide();
     }
 }
 
@@ -2163,6 +2166,8 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
     let maxH = -Infinity;
     let maxV = 0;
 
+    const emaKeysForScale = opts.ema ? Object.keys(candles[0] || {}).filter(k => k.startsWith('EMA_')) : [];
+
     candles.forEach(c => {
         if (c.l < minL) minL = c.l;
         if (c.h > maxH) maxH = c.h;
@@ -2170,14 +2175,15 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
 
         // Include indicator values in scale
         if (opts.ema) {
-            Object.keys(c).forEach(key => {
-                if (key.startsWith('EMA_') && c[key]) {
-                    if (c[key] < minL) minL = c[key];
-                    if (c[key] > maxH) maxH = c[key];
+            emaKeysForScale.forEach(key => {
+                const val = c[key];
+                if (val !== null && val !== undefined) {
+                    if (val < minL) minL = val;
+                    if (val > maxH) maxH = val;
                 }
             });
         }
-        if (opts.st && c.ST_value) {
+        if (opts.st && c.ST_value !== null && c.ST_value !== undefined) {
             if (c.ST_value < minL) minL = c.ST_value;
             if (c.ST_value > maxH) maxH = c.ST_value;
         }
@@ -2258,7 +2264,7 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
             let points = "";
             candles.forEach((c, i) => {
                 const val = c[key];
-                if (val) {
+                if (val !== null && val !== undefined) {
                     const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
                     const y = padTop + usableHeight - ((val - minL) / priceRange) * usableHeight;
                     points += `${x},${y} `;
@@ -2280,7 +2286,7 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
                 const currF = c[fastKey];
                 const currS = c[slowKey];
 
-                if (prevF && prevS && currF && currS) {
+                if (prevF !== null && prevS !== null && currF !== null && currS !== null) {
                     const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
                     const y = padTop + usableHeight - ((currF - minL) / priceRange) * usableHeight;
 
@@ -2301,7 +2307,7 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
         for (let i = 1; i < candles.length; i++) {
             const p = candles[i - 1];
             const c = candles[i];
-            if (p.ST_value && c.ST_value) {
+            if (p.ST_value !== null && p.ST_value !== undefined && c.ST_value !== null && c.ST_value !== undefined) {
                 const x1 = ((i - 1) * (barWidth + gap)) + (barWidth / 2) + 5;
                 const y1 = padTop + usableHeight - ((p.ST_value - minL) / priceRange) * usableHeight;
                 const x2 = (i * (barWidth + gap)) + (barWidth / 2) + 5;
@@ -2320,7 +2326,7 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
         const dmaKeys = Object.keys(candles[0] || {}).filter(k => k.startsWith('DMA_'));
         dmaKeys.forEach((key) => {
             const val = candles[0][key];
-            if (val && val >= minL && val <= maxH) {
+            if (val !== null && val !== undefined && val >= minL && val <= maxH) {
                 const y = padTop + usableHeight - ((val - minL) / priceRange) * usableHeight;
                 svg += `<line x1="0" y1="${y}" x2="${chartAreaWidth}" y2="${y}" stroke="rgba(168, 85, 247, 0.4)" stroke-width="1" stroke-dasharray="8 4" />`;
                 svg += `<text x="5" y="${y - 4}" fill="rgba(168, 85, 247, 0.8)" font-size="9">${key}</text>`;
@@ -2381,7 +2387,7 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
         let rsiPoints = "";
         candles.forEach((c, i) => {
             const val = c[rsiKey];
-            if (val) {
+            if (val !== null && val !== undefined) {
                 const x = (i * (barWidth + gap)) + (barWidth / 2) + 5;
                 const y = rsiTop + rsiUsable - ((val / 100) * rsiUsable);
                 rsiPoints += `${x},${y} `;
@@ -4298,5 +4304,214 @@ function syncQueryToVisual(section) {
     // If no rules were parsed but text exists, add one empty rule
     if (rulesContainer.innerHTML === '' && query !== '') {
         addVisualRule(section);
+    }
+}
+
+function setGlobalEditorMode(mode) {
+    currentEditorMode = mode;
+    document.querySelectorAll('.mode-toggle-btn').forEach(btn => btn.classList.remove('active'));
+    if (mode === 'query') {
+        document.getElementById('btn-global-query').classList.add('active');
+        document.querySelectorAll('[id$="-query"]').forEach(el => el.classList.remove('hidden'));
+        document.querySelectorAll('[id$="-visual"]').forEach(el => el.classList.add('hidden'));
+    } else {
+        document.getElementById('btn-global-visual').classList.add('active');
+        document.querySelectorAll('[id$="-query"]').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('[id$="-visual"]').forEach(el => el.classList.remove('hidden'));
+
+        // Sync Visual from Query
+        ['entry', 'exit', 'target', 'sl', 'accum'].forEach(section => {
+            syncQueryToVisual(section);
+        });
+    }
+}
+
+// --- Support & Flow rendering ---
+function renderSupportGuide() {
+    const container = document.getElementById('support-content');
+    if (!container) return;
+
+    // Cache content to avoid heavy reconstruction on every tab switch
+    if (container.innerHTML.trim().length > 100) {
+        return; // Already rendered
+    }
+
+    container.innerHTML = `
+        <div class="support-grid">
+            <div class="support-sidebar">
+                <ul class="support-nav">
+                    <li onclick="scrollToSupport('intro')"><i class="fas fa-info-circle"></i> Introduction</li>
+                    <li onclick="scrollToSupport('architecture')"><i class="fas fa-sitemap"></i> System Architecture</li>
+                    <li onclick="scrollToSupport('ui-flow')"><i class="fas fa-route"></i> UI & Navigation</li>
+                    <li onclick="scrollToSupport('data-flow')"><i class="fas fa-database"></i> Data Pipeline</li>
+                    <li onclick="scrollToSupport('backtest-logic')"><i class="fas fa-vial"></i> Backtest Logic</li>
+                </ul>
+            </div>
+            <div class="support-body">
+                <section id="support-intro" class="support-section">
+                    <div class="support-card-hero">
+                        <h2><i class="fas fa-info-circle"></i> Introduction</h2>
+                        <p>StockSignal Pro is an advanced algorithmic trading platform designed for the Indian equity market. It combines real-time technical analysis with deep fundamental data to provide high-conviction trading signals.</p>
+                        <div class="support-cards">
+                            <div class="s-card">
+                                <i class="fas fa-bolt"></i>
+                                <h4>Real-time Calculation</h4>
+                                <p>Vectorized indicator processing using Pandas-TA.</p>
+                            </div>
+                            <div class="s-card">
+                                <i class="fas fa-project-diagram"></i>
+                                <h4>Confluence Score</h4>
+                                <p>Proprietary ranking system (-5 to +5) for signal strength.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <hr class="support-sep">
+
+                <section id="support-architecture" class="support-section">
+                    <h2><i class="fas fa-sitemap"></i> System Architecture</h2>
+                    <p>High-level overview of the StockSignal Pro ecosystem.</p>
+                    <pre class="mermaid">
+graph TD
+    User(("User"))
+    subgraph Frontend ["Frontend (Browser)"]
+        UI["Vanilla HTML/CSS"]
+        JS["ES6 app.js"]
+        SVG["Custom SVG Charting"]
+    end
+    
+    subgraph Backend ["Backend (FastAPI)"]
+        API["app.py API Layer"]
+        IE["indicator_engine.py"]
+        SE["scenario_engine.py"]
+    end
+    
+    subgraph Data ["Data Layer"]
+        AppDB[("App MySQL")]
+        DMDB[("Datamart MySQL")]
+    end
+    
+    Upstox["Upstox API"]
+    
+    User <--> UI
+    UI <--> JS
+    JS <--> API
+    API <--> AppDB
+    API <--> DMDB
+    API --> IE
+    API --> SE
+    IE <--> AppDB
+    IE <--> DMDB
+    SE <--> AppDB
+    
+    API -- "SSE" --> JS
+    Upstox -- "Candle Data" --> API
+                    </pre>
+                </section>
+
+                <hr class="support-sep">
+
+                <section id="support-ui-flow" class="support-section">
+                    <h2><i class="fas fa-route"></i> UI & Navigation Flow</h2>
+                    <p>User journey and state transitions through the application.</p>
+                    <pre class="mermaid">
+stateDiagram-v2
+    [*] --> Login
+    Login --> Dashboard: Successful Auth
+    
+    state Dashboard {
+        [*] --> SwingMode
+        SwingMode --> IntradayMode: Toggle
+        IntradayMode --> SwingMode: Toggle
+    }
+    
+    Dashboard --> StrategyLab: Navigate
+    Dashboard --> ProScreener: Navigate
+    Dashboard --> Settings: Navigate
+    
+    StrategyLab --> Backtest: Run Logic
+    ProScreener --> TradeModal: Click Stock
+                    </pre>
+                </section>
+
+                <hr class="support-sep">
+
+                <section id="support-data-flow" class="support-section">
+                    <h2><i class="fas fa-database"></i> Data Pipeline Flow</h2>
+                    <p>The journey from raw candle data to actionable signals.</p>
+                    <pre class="mermaid">
+flowchart TD
+    Start([Trigger Calculate]) --> Fetch{"Fetch Data?"}
+    Fetch -- "Yes" --> UpstoxAPI["Request Upstox Candles"]
+    UpstoxAPI --> Synthesis["Synthesize 1d from 5m if needed"]
+    Synthesis --> StoreRaw["Store in app_sg_ohlcv_prices"]
+    Fetch -- "No" --> LoadRaw["Load Latest OHLCV"]
+    StoreRaw --> LoadRaw
+    LoadRaw --> Indicators["Calculate Technicals: RSI, EMA, ST, Vol"]
+    Indicators --> Patterns["Analyze Candlestick Patterns"]
+    Patterns --> Weights["Assign Pattern Strength 1-3"]
+    Weights --> Confluence["Calculate Confluence Rank -5 to +5"]
+    Confluence --> TradePlan["Generate SL/Target Levels"]
+    TradePlan --> Upsert["Upsert to app_sg_calculated_signals"]
+                    </pre>
+                </section>
+
+                <hr class="support-sep">
+
+                <section id="support-backtest-logic" class="support-section">
+                    <h2><i class="fas fa-vial"></i> Core Backtest Logic</h2>
+                    <p>Simulation states for the Advanced Scenario Backtester.</p>
+                    <pre class="mermaid">
+flowchart TD
+    Setup([Initialize Backtest]) --> Load["Load Historical OHLCV"]
+    Load --> Shift["Shift Multi-Timeframe Indicators"]
+    Shift --> Loop["Iterate Chronological Candles"]
+    Loop --> CheckPos{Position Open?}
+    CheckPos -- "No" --> EntryLogic{RSI & Logic Met?}
+    EntryLogic -- "Yes" --> Open["Open Tranche 1"]
+    CheckPos -- "Yes" --> SL{Stop Loss Hit?}
+    SL -- "Yes" --> CloseAll["Exit Position"]
+    SL -- "No" --> Scale{Pullback Met?}
+    Scale -- "Yes" --> Tranche["Open Tranche 2/3"]
+    Scale -- "No" --> Target1{T1 Price or ST Break?}
+    Target1 -- "Yes" --> Partial["Close T1 Weight"]
+    Target1 -- "No" --> Target2{T2 Price or Major ST Break?}
+    Target2 -- "Yes" --> CloseAll
+    CloseAll --> Loop
+                    </pre>
+                </section>
+            </div>
+        </div>
+    `;
+
+    // Re-initialize Mermaid for the new content
+    setTimeout(async () => {
+        if (window.mermaid) {
+            try {
+                if (!window._mermaid_initialized) {
+                    window.mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+                    window._mermaid_initialized = true;
+                }
+                document.querySelectorAll('#support-view .mermaid').forEach(el => {
+                    let code = el.textContent || "";
+                    code = code.split('\n').map(l => l.trim()).filter(l => l.length > 0).join('\n');
+                    el.textContent = code;
+                    el.removeAttribute('data-processed');
+                });
+                await window.mermaid.run({
+                    nodes: document.querySelectorAll('#support-view .mermaid')
+                });
+            } catch (err) {
+                console.error("Mermaid Render Error:", err);
+            }
+        }
+    }, 250);
+}
+
+function scrollToSupport(id) {
+    const el = document.getElementById('support-' + id);
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
     }
 }

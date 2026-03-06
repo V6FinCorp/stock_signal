@@ -36,6 +36,52 @@ DEFAULT_CONFIGS = {
     }
 }
 
+async def synthesize_live_candle(cur, isin, rows):
+    """Synthesizes Today's Daily Candle from 5m data if 1d data is stale."""
+    if not rows:
+        return rows
+    
+    # Rows are ordered by timestamp DESC, so rows[0] is the latest
+    latest_1d_ts = rows[0]['timestamp']
+    
+    # 1. Find the absolute latest date present in 5m data for this stock
+    await cur.execute(
+        "SELECT MAX(timestamp) as max_5m FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '5m'",
+        (isin,)
+    )
+    res_5m = await cur.fetchone()
+    if res_5m and res_5m['max_5m']:
+        latest_5m_ts = res_5m['max_5m']
+        
+        # 2. If 5m data is NEWER than our 1d data (even on same day), synthesize that day
+        if latest_5m_ts > latest_1d_ts:
+            # If they are on the same day, remove the 1d candle first to avoid duplicates
+            if latest_5m_ts.date() == latest_1d_ts.date():
+                rows.pop(0)
+            
+            latest_5m_date = latest_5m_ts.strftime("%Y-%m-%d")
+            await cur.execute(
+                """
+                SELECT timestamp, open, high, low, close, volume 
+                FROM app_sg_ohlcv_prices 
+                WHERE isin = %s AND timeframe = '5m' AND DATE(timestamp) = %s
+                ORDER BY timestamp ASC
+                """,
+                (isin, latest_5m_date)
+            )
+            intra_rows = await cur.fetchall()
+            if intra_rows:
+                live_candle = {
+                    'timestamp': datetime.strptime(latest_5m_date + " 00:00:00", "%Y-%m-%d %H:%M:%S"),
+                    'open': float(intra_rows[0]['open']),
+                    'high': max(float(r['high']) for r in intra_rows),
+                    'low': min(float(r['low']) for r in intra_rows),
+                    'close': float(intra_rows[-1]['close']),
+                    'volume': sum(int(r['volume']) for r in intra_rows)
+                }
+                rows.insert(0, live_candle)
+    return rows
+
 async def get_profile_settings(pool, profile_id):
     """Retrieve indicator settings for a profile, or use defaults."""
     settings = DEFAULT_CONFIGS[profile_id].copy()
@@ -60,7 +106,7 @@ async def get_profile_settings(pool, profile_id):
                             pass
     return settings
 
-def calculate_indicators(df, settings):
+def calculate_indicators(df, settings, return_df=False):
     """Calculate technical indicators using pandas-ta."""
     # Ensure dataframe is sorted by timestamp
     df = df.sort_values(by='timestamp').copy()
@@ -79,8 +125,12 @@ def calculate_indicators(df, settings):
             latest_date = df['timestamp'].max().date()
             day_mask = df['timestamp'].dt.date == latest_date
             rsi_today = df.loc[day_mask, f'RSI_{rsi_len}']
-            df['RSI_day_high'] = rsi_today.max()
-            df['RSI_day_low'] = rsi_today.min()
+            if not rsi_today.dropna().empty:
+                df['RSI_day_high'] = rsi_today.max()
+                df['RSI_day_low'] = rsi_today.min()
+            else:
+                df['RSI_day_high'] = None
+                df['RSI_day_low'] = None
         
     # EMA (Fast/Slow Crossover)
     if settings['EMA']['enabled']:
@@ -142,6 +192,8 @@ def calculate_indicators(df, settings):
         except Exception:
             pass
             
+    if return_df:
+        return df, df.iloc[-1]
     return df.iloc[-1] # Return the latest row
 
 async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cache=None, use_fundamentals=None):
@@ -261,47 +313,8 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 rows = await cur.fetchall()
                 
                 # --- Synthesis Logic for "Live Daily" Candle ---
-                if timeframe == '1d' and rows:
-                    latest_1d_ts = rows[0]['timestamp']
-                    
-                    # 1. Find the absolute latest date present in 5m data for this stock
-                    await cur.execute(
-                        "SELECT MAX(timestamp) as max_5m FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '5m'",
-                        (isin,)
-                    )
-                    res_5m = await cur.fetchone()
-                    if res_5m and res_5m['max_5m']:
-                        latest_5m_ts = res_5m['max_5m']
-                        latest_1d_ts = rows[0]['timestamp']
-
-                        # 2. If 5m data is NEWER than our 1d data (even on same day), synthesize that day
-                        if latest_5m_ts > latest_1d_ts:
-                            # If they are on the same day, remove the 1d candle first to avoid duplicates
-                            if latest_5m_ts.date() == latest_1d_ts.date():
-                                rows.pop(0)
-                            
-                            latest_5m_date = latest_5m_ts.strftime("%Y-%m-%d")
-                            await cur.execute(
-                                """
-                                SELECT timestamp, open, high, low, close, volume 
-                                FROM app_sg_ohlcv_prices 
-                                WHERE isin = %s AND timeframe = '5m' AND DATE(timestamp) = %s
-                                ORDER BY timestamp ASC
-                                """,
-                                (isin, latest_5m_date)
-                            )
-                            intra_rows = await cur.fetchall()
-                            if intra_rows:
-                                live_candle = {
-                                    'timestamp': datetime.strptime(latest_5m_date + " 00:00:00", "%Y-%m-%d %H:%M:%S"),
-                                    'open': float(intra_rows[0]['open']),
-                                    'high': max(float(r['high']) for r in intra_rows),
-                                    'low': min(float(r['low']) for r in intra_rows),
-                                    'close': float(intra_rows[-1]['close']),
-                                    'volume': sum(int(r['volume']) for r in intra_rows)
-                                }
-                                rows.insert(0, live_candle)
-                                logging.info(f"Synthesized live 1d candle for {isin} for date {latest_5m_date}")
+                if timeframe == '1d':
+                    rows = await synthesize_live_candle(cur, isin, rows)
 
                 if len(rows) < 1: # Minimum rows to generate a signal record
                     continue
@@ -706,7 +719,13 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
             df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
             
             # Resampling Logic (Matches process_profile)
-            if timeframe != base_timeframe:
+            if timeframe == '1d':
+                rows = await synthesize_live_candle(cur, isin, rows)
+                df = pd.DataFrame(rows)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df = df.sort_values('timestamp').reset_index(drop=True)
+                df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+            elif timeframe != base_timeframe:
                 df.set_index('timestamp', inplace=True)
                 resample_rule = {
                     '1w': 'W-FRI',
@@ -731,7 +750,7 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
 
             # Calculate Indicators for the enrichment
             # We use the same calculation engine as the main signal processor for consistency
-            latest_meta = calculate_indicators(df, settings)
+            df, latest_meta = calculate_indicators(df, settings, return_df=True)
             
             # --- Extract meta if any ---
             pattern_str = None

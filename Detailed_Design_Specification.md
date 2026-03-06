@@ -4,21 +4,28 @@
 
 ## 1. System Architecture & Tech Stack
 The application is a decoupled, async-first web platform.
-*   **Backend Array:** Python 3.10+, `FastAPI` (routing), `uvicorn` (server), `aiomysql` (async database pooling), `pandas` & `pandas-ta` (vectorized indicator math), `httpx` (async API fetching).
-*   **Frontend Array:** Pure Vanilla HTML5, CSS3 built on CSS Variables, and Vanilla ES6 JavaScript. No JS frameworks (React/Vue/Angular) or CSS frameworks (Tailwind/Bootstrap) are used.
-*   **Data Persistence:** MySQL 8.0+. The system assumes two logically separated schemas:
-    *   `Datamart DB` (Read-only source of active stock symbols/ISINs).
-    *   `App DB` (Read/Write store for OHLCV data, calculated signals, and settings).
+*   **Backend Array:** Python 3.10+, `FastAPI` (Core API), `uvicorn` (ASGI Server), `aiomysql` (Async DB pooling), `pandas` & `pandas-ta` (Vectorized Math), `httpx` (Async API fetching), `hashlib` (Security).
+*   **Frontend Array:** Pure Vanilla HTML5, CSS3 (Custom Properties), and Vanilla ES6 JavaScript. ZERO external frameworks (No React, No Tailwind).
+*   **Data Persistence:** MySQL 8.0+.
+    *   `Datamart DB`: Source for symbols (`vw_e_bs_companies_all`) and favourites (`vw_e_bs_companies_favourite_indices`).
+    *   `App DB`: Store for prices, signals, history, trades, and user auth.
 
 ---
 
 ## 2. Database Schema (App DB)
-The application relies strictly on the following table definitions to function.
+The application relies strictly on the following table definitions.
 
-### A. Profiles & Settings
+### A. Authentication & Profiles
 ```sql
+CREATE TABLE app_sg_users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE app_sg_profiles (
-    profile_id VARCHAR(20) PRIMARY KEY, -- 'swing' or 'intraday'
+    profile_id VARCHAR(20) PRIMARY KEY, -- 'swing', 'intraday', 'global'
     watchlist_method ENUM('TOP_VOLUME', 'MANUAL') DEFAULT 'MANUAL',
     top_n INT DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -30,131 +37,87 @@ CREATE TABLE app_sg_indicator_settings (
     indicator_key VARCHAR(50) NOT NULL,
     is_enabled BOOLEAN DEFAULT TRUE,
     params_json JSON, 
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (profile_id) REFERENCES app_sg_profiles(profile_id) ON DELETE CASCADE,
-    UNIQUE KEY unique_profile_indicator (profile_id, indicator_key)
+    UNIQUE KEY (profile_id, indicator_key)
 );
 ```
 
-### B. Core Data Tables
+### B. Core Data & Signals
 ```sql
 CREATE TABLE app_sg_ohlcv_prices (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
     isin VARCHAR(20),
-    timeframe VARCHAR(10) NOT NULL, -- e.g., '1d', '5m', '15m'
-    timestamp DATETIME NOT NULL,
-    open DECIMAL(10, 4),
-    high DECIMAL(10, 4),
-    low DECIMAL(10, 4),
-    close DECIMAL(10, 4),
-    volume BIGINT,
-    UNIQUE KEY unique_candle (isin, timeframe, timestamp),
-    INDEX idx_isin_timeframe (isin, timeframe)
+    timeframe VARCHAR(10),
+    timestamp DATETIME,
+    open DECIMAL(10, 4), high DECIMAL(10, 4), low DECIMAL(10, 4), close DECIMAL(10, 4), volume BIGINT,
+    UNIQUE KEY (isin, timeframe, timestamp)
 );
 
 CREATE TABLE app_sg_calculated_signals (
-    isin VARCHAR(20),
+    isin VARCHAR(20) PRIMARY KEY,
     profile_id VARCHAR(20),
-    timeframe VARCHAR(10) NOT NULL,
-    timestamp DATETIME NOT NULL,
-    ltp DECIMAL(10, 4),
-    rsi DECIMAL(10, 4),
-    rsi_day_high DECIMAL(10, 4),
-    rsi_day_low DECIMAL(10, 4),
-    ema_signal ENUM('BUY', 'SELL', 'NEUTRAL'),
-    ema_fast DECIMAL(10, 4),
-    ema_slow DECIMAL(10, 4),
-    ema_value DECIMAL(10, 4),
-    volume_signal VARCHAR(20),
-    volume_ratio DECIMAL(10, 4),
-    supertrend_dir ENUM('BUY', 'SELL'),
-    supertrend_value DECIMAL(10, 4),
-    dma_data JSON, 
-    confluence_rank INT DEFAULT 0,
-    sl DECIMAL(10, 4),
-    target DECIMAL(10, 4),
-    trade_strategy VARCHAR(50),
-    candlestick_pattern VARCHAR(100),
-    last_5_candles JSON,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (isin, profile_id, timeframe),
-    FOREIGN KEY (profile_id) REFERENCES app_sg_profiles(profile_id) ON DELETE CASCADE,
-    INDEX idx_isin (isin)
+    timeframe VARCHAR(10),
+    timestamp DATETIME,
+    ltp DECIMAL(10, 4), rsi DECIMAL(10, 4), rsi_day_high DECIMAL(10, 4), rsi_day_low DECIMAL(10, 4),
+    ema_signal ENUM('BUY', 'SELL'), ema_fast DECIMAL(10, 4), ema_slow DECIMAL(10, 4),
+    volume_signal VARCHAR(20), volume_ratio DECIMAL(10, 4), 
+    supertrend_dir ENUM('BUY', 'SELL'), supertrend_value DECIMAL(10, 4),
+    dma_data JSON, confluence_rank INT,
+    sl DECIMAL(10, 4), target DECIMAL(10, 4), trade_strategy VARCHAR(50),
+    candlestick_pattern VARCHAR(100), pattern_score INT, last_5_candles JSON,
+    sector VARCHAR(100), industry VARCHAR(100), pe DECIMAL(10, 2), roe DECIMAL(10, 2),
+    i_group VARCHAR(100), i_subgroup VARCHAR(100)
+);
+```
+
+### C. Active Trades & Strategy Lab
+```sql
+CREATE TABLE app_sg_active_trades (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    isin VARCHAR(20), symbol VARCHAR(50), profile_id VARCHAR(20), timeframe VARCHAR(10),
+    entry_price DECIMAL(10, 4), target_1 DECIMAL(10, 4), stop_loss DECIMAL(10, 4),
+    qty INT, side ENUM('BUY', 'SELL'), status ENUM('OPEN', 'CLOSED'), notes TEXT
+);
+
+CREATE TABLE app_sg_confluence_strategies (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100), query_text TEXT
+);
+
+CREATE TABLE app_sg_system_status (
+    mode VARCHAR(20) PRIMARY KEY,
+    last_fetch_run TIMESTAMP, last_calc_run TIMESTAMP
 );
 ```
 
 ---
 
-## 3. Data Ingestion Pipeline ([fetch_history.py](file:///e:/Official/WebApp/vs_ws_py/stock_signal/fetch_history.py))
-This standalone script runs the ETL process using Upstox APIs (which function without auth for historical data).
-*   **Endpoints:**
-    *   Daily: `https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{to_date}/{from_date}`
-    *   Intraday: `https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5/`
-*   **Delta Fetching:** The script queries the App DB to find the `MAX(timestamp)` for each `isin`/`timeframe`. It only fetches data from the Upstox API ranging from that `MAX(timestamp)` to `now`, avoiding redundant API calls.
-*   **Concurrency:** Utilizes `asyncio.Semaphore(5)` to limit simultaneous HTTP requests to 5, preventing `429 Too Many Requests` bans.
-*   **Garbage Collection:** Automatically deletes Daily (`1d`) data older than 1095 days (3 years) and Intraday (`5m`) data older than 35 days to maintain database health.
+## 3. Data Ingestion Pipeline
+*   **Upstox Integration:** Uses public candles API.
+*   **Synthesis:** If 1d data is stale, the engine synthesizes a "Live Daily" candle using the latest 5m intraday data.
+*   **Streaming (SSE):** `app.py` uses Server-Sent Events to stream terminal logs of the fetch process to the UI.
 
 ---
 
-## 4. Indicator Engine ([indicator_engine.py](file:///e:/Official/WebApp/vs_ws_py/stock_signal/indicator_engine.py))
-This is the core mathematical brain. It uses `pandas` and `pandas-ta`.
-*   **Timeframe Synthesis:** The engine relies purely on `1d` base data for Swing profiles, and `5m` base data for Intraday profiles. To calculate `15m`, `30m`, `60m`, or `1w`, `1mo` signals, it actively uses pandas [resample()](file:///e:/Official/WebApp/vs_ws_py/stock_signal/scenario_engine.py#29-39) on the base data rather than fetching new timeframes from the API.
-*   **Indicator Configurations:**
-    *   **RSI:** Period 14.
-    *   **EMA:** Fast=9, Slow=20 (Swing) or 21 (Intraday). A "BUY" signal occurs if Fast > Slow.
-    *   **SuperTrend:** Period 10, Multiplier 3.0 (Swing) or 2.5 (Intraday). 
-    *   **Volume:** Compares current volume to a 20-period SMA of volume. Signal 'HIGH' if > 2x (Swing) or 1.5x (Intraday).
-    *   **Candlestick Patterns:** Analyzes all `CDL_` columns from `pandas-ta`. 
-        *   *Logic Guard:* Patterns are only registered if `abs(value) >= 10`.
-        *   *Categorization:* `CDL_INSIDE`, `CDL_BELTHOLD`, `CDL_DOJI` variants are forcefully mapped to "Neutral".
-*   **Confluence Ranking:** A composite integer score ranging from -5 to +5.
-    *   `+1 / -1` point for Supertrend direction (BUY/SELL).
-    *   `+1 / -1` point for EMA crossover (BUY/SELL).
-    *   `+1 / -1` point for RSI momentum (Above/Below 50).
-    *   `+1 / -1` point for Price vs SMA 20 (Above/Below).
-    *   `+1 / -1` point for Volume breakout (BULL_SPIKE/BEAR_SPIKE).
-    *   *Result:* Positive scores indicate Bullish confluence, Negative scores indicate Bearish confluence. Scores of ±3 or higher are considered "High Conviction".
+## 4. Indicator Engine Logic
+*   **RSI Integration:** Tracks intraday boundaries (RSI Day High/Low).
+*   **Pattern Scoring:** Candlestick patterns are weighted (3 = Multi-candle, 2 = Strong Body, 1 = Single).
+*   **VPVR (Volume Profile):** Calculates volume distribution across 24 price bins.
+*   **Confluence Score:** Composite integer (-5 to +5) based on EMA Cross, Supertrend, RSI Momentum (>50), SMA 20, and Volume Spikes.
+*   **Anchored DMA:** All SMA periods (20, 50, 200) are strictly anchored to the Daily timeframe.
 
 ---
 
-## 5. API Layer ([app.py](file:///e:/Official/WebApp/vs_ws_py/stock_signal/app.py))
-A fast, non-blocking API serving the frontend.
-*   `GET /api/signals`: Returns the contents of `app_sg_calculated_signals` for a designated `mode` and `timeframe`. It automatically joins MTF (Multi-Timeframe) Supertrend direction data for all base timeframes inside a JSON object per stock.
-*   `GET /api/chart/details`: Fetches up to `N` base candles (`1d` or `5m`) and recalculates all indicators dynamically on the fly to return rich data points for drawing charts.
-*   `GET /api/stream/fetch-data`: Spawns the [fetch_history.py](file:///e:/Official/WebApp/vs_ws_py/stock_signal/fetch_history.py) script as a subprocess and yields standard output via **Server-Sent Events (SSE)** to allow the UI to display a live terminal.
-*   `POST /api/calculate`: Triggers the indicator engine to recalculate all signals and overwrite the calculated table.
+## 5. Scenario & Backtest Engine
+*   **Tranche-based Scaling:** Supports entering in 3 tranches (e.g., 50%/25%/25%) based on price pullbacks.
+*   **Target Logic:**
+    *   **T1:** TP1 level OR 5m Supertrend reversal.
+    *   **T2:** TP2 level OR Primary timeframe Supertrend reversal.
+*   **Look-ahead Bias Guard:** Logic uses `shift(1)` on primary timeframe indicators to ensure the backtester only "sees" confirmed bars.
 
 ---
 
-## 6. Frontend Application ([index.html](file:///e:/Official/WebApp/vs_ws_py/stock_signal/index.html), [app.js](file:///e:/Official/WebApp/vs_ws_py/stock_signal/app.js), [styles.css](file:///e:/Official/WebApp/vs_ws_py/stock_signal/styles.css))
-### A. CSS & Theme ([styles.css](file:///e:/Official/WebApp/vs_ws_py/stock_signal/styles.css))
-*   **Color Palette:** Strict dark mode theme. Variables include: `--bg-body: #050b14`, `--bg-dark: #0f172a`, `--sidebar-bg: rgba(15, 23, 42, 0.95)`, `--primary: #3b82f6`, `--success: #10b981`, `--danger: #ef4444`.
-*   **Aesthetics:** Heavy use of modern UI paradigms: `backdrop-filter: blur()`, subtle borders (`1px solid rgba(255,255,255,0.08)`), rounded borders (`border-radius: 12px`), and CSS grid layouts.
-
-### B. JavaScript State & Processing ([app.js](file:///e:/Official/WebApp/vs_ws_py/stock_signal/app.js))
-*   **State Machines:** Tracks `currentMode` ('swing' vs 'intraday'), `currentTimeframe`, `isAutoSyncEnabled`, and caches payload data locally in `signalCache` to ensure 0-millisecond tab switching.
-*   **Dynamic DOM Table:** The system forcefully clears and rewrites `<tbody>` contents.
-*   **Visual Elements:**
-    *   *Mini-Sparklines:* Drawn directly in table cells dynamically via `<svg>` tags using the `last_5_candles` JSON data.
-    *   *RSI Bar:* Custom HTML progress-bar-style visualization plotting the current RSI against the day's high/low RSI boundaries.
-*   **Modal SVG Charting ([renderEnrichedChart](file:///e:/Official/WebApp/vs_ws_py/stock_signal/app.js#1544-1789)):** 
-    *   **CRITICAL RESTRICTION:** Absolutely no heavy charting libraries (like Chart.js or Lightweight-Charts) are permitted.
-    *   The Javascript engine dynamically creates raw SVG coordinates based on calculating max/min bounds of price data.
-    *   It manually draws:
-        1.  Candle wicks (`<line>`) and bodies (`<rect>`).
-        2.  Supertrend (`<polyline>` with stroke-dasharray).
-        3.  EMAs (`<polyline>` with distinct colors).
-        4.  Session Day boundaries (brighter white `<line>` markers, restricted only to Intraday views).
-        5.  Dynamic Mouse Crosshairs by binding an [onmousemove](file:///e:/Official/WebApp/vs_ws_py/stock_signal/app.js#1751-1785) listener to the SVG container.
-
----
-
-## 7. Backtest Scenarios ([scenario_engine.py](file:///e:/Official/WebApp/vs_ws_py/stock_signal/scenario_engine.py))
-Allows "what-if" simulations on historical data.
-*   **Logic Flow:**
-    1.  Receives params (Entry rule, Stop Loss %, Take Profit Tranche %, Weights).
-    2.  Fetches base timeframe OHLCV array.
-    3.  Iterates chronologically `iterrows()`.
-    4.  Triggers "Entry" if RSI boundaries are met.
-    5.  Subsequently checks every newly processed candle against the Stop-Loss boundary first (Highest priority), then Take Profit Tranches (T1, T2).
-    6.  Generates a list of dictionaries detailing P&L% per trade ticket.
+## 6. Frontend Features
+*   **Pro Screener:** Advanced filtering of the signal pool based on real-time confluence ranking.
+*   **Strategy Lab:** SQL-like query builder that allows users to filter signals on-the-fly via a dynamic evaluation engine.
+*   **Interactive SVG Charting:** Custom-built SVG renderer for candles, indicators, and crosshairs (0 external dependencies).
+*   **Sector Sentiment:** Real-time bullish/bearish heatmaps calculated from the current signal pool.
