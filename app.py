@@ -48,10 +48,17 @@ async def startup_db_setup():
                         id INT AUTO_INCREMENT PRIMARY KEY,
                         name VARCHAR(100) NOT NULL,
                         query_text TEXT NOT NULL,
+                        mapped_mode VARCHAR(20),
+                        mapped_timeframe VARCHAR(10),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                     )
                 """)
+                # Migration for existing tables
+                try: await cur.execute("ALTER TABLE app_sg_confluence_strategies ADD COLUMN mapped_mode VARCHAR(20)")
+                except: pass
+                try: await cur.execute("ALTER TABLE app_sg_confluence_strategies ADD COLUMN mapped_timeframe VARCHAR(10)")
+                except: pass
                 
                 # Ensure columns in active trades
                 try: await cur.execute("ALTER TABLE app_sg_active_trades ADD COLUMN notes TEXT")
@@ -131,6 +138,8 @@ class StrategySave(BaseModel):
     id: Optional[int] = None
     name: str
     query: str
+    mode: Optional[str] = None
+    timeframe: Optional[str] = None
 
 # --- Auth Endpoints ---
 @app.post("/api/auth/login")
@@ -303,7 +312,7 @@ async def list_strategies():
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
         async with app_pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute("SELECT id, name, query_text as query, updated_at FROM app_sg_confluence_strategies ORDER BY updated_at DESC")
+                await cur.execute("SELECT id, name, query_text as query, mapped_mode as mode, mapped_timeframe as timeframe, updated_at FROM app_sg_confluence_strategies ORDER BY updated_at DESC")
                 rows = await cur.fetchall()
         app_pool.close()
         return {"status": "success", "data": rows}
@@ -315,8 +324,10 @@ async def save_strategy(strat: StrategySave):
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
         async with app_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                if strat.id: await cur.execute("UPDATE app_sg_confluence_strategies SET name = %s, query_text = %s WHERE id = %s", (strat.name, strat.query, strat.id))
-                else: await cur.execute("INSERT INTO app_sg_confluence_strategies (name, query_text) VALUES (%s, %s)", (strat.name, strat.query))
+                if strat.id: 
+                    await cur.execute("UPDATE app_sg_confluence_strategies SET name = %s, query_text = %s, mapped_mode = %s, mapped_timeframe = %s WHERE id = %s", (strat.name, strat.query, strat.mode, strat.timeframe, strat.id))
+                else: 
+                    await cur.execute("INSERT INTO app_sg_confluence_strategies (name, query_text, mapped_mode, mapped_timeframe) VALUES (%s, %s, %s, %s)", (strat.name, strat.query, strat.mode, strat.timeframe))
         app_pool.close()
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))

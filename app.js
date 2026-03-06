@@ -101,6 +101,8 @@ let HUD_STATES = {
 let autoSyncTimerId = null;
 let isAutoSyncEnabled = false;
 let currentUsername = 'admin'; // Fallback
+let activeScreenerBlueprint = null;
+let screenerBlueprints = [];
 
 // --- Authentication & Session ---
 async function verifySession() {
@@ -266,6 +268,7 @@ function setMode(mode) {
         updateStrategyLabOptions();
     }
 
+    updateScreenerTimeframeOptions();
     fetchSystemStatus();
     updateSectorSentiment();
 }
@@ -292,6 +295,27 @@ function updateStrategyLabOptions() {
         } else {
             entryBox.style.border = "1px solid rgba(16, 185, 129, 0.3)"; // Success Green for swing
         }
+    }
+}
+
+function updateScreenerTimeframeOptions() {
+    const select = document.getElementById('screener-filter-tf');
+    if (!select) return;
+
+    const mode = currentMode;
+    const options = mode === 'swing'
+        ? [["1d", "Daily"], ["1w", "Weekly"], ["1mo", "Monthly"]]
+        : [["5m", "5 Minute"], ["15m", "15 Minute"], ["30m", "30 Minute"], ["60m", "1 Hour"]];
+
+    // Preserve "All" option if already selected, or default to All
+    const currentVal = select.value;
+    select.innerHTML = '<option value="all">Timeframe: All</option>' +
+        options.map(([val, label]) => `<option value="${val}">${label}</option>`).join('');
+
+    if (currentVal && Array.from(select.options).some(o => o.value === currentVal)) {
+        select.value = currentVal;
+    } else {
+        select.value = "all";
     }
 }
 
@@ -2560,6 +2584,7 @@ function applyScreenerFilters() {
     const tfFilter = document.getElementById('screener-filter-tf').value;
     const dirFilter = document.getElementById('screener-filter-dir').value;
     const stratFilter = document.getElementById('screener-filter-strat').value;
+    const customFilterId = document.getElementById('screener-filter-custom').value;
 
     const targetMin = parseFloat(document.getElementById('screener-target-min').value);
     const targetMax = parseFloat(document.getElementById('screener-target-max').value);
@@ -2584,7 +2609,13 @@ function applyScreenerFilters() {
         // 4. Strategy filter
         if (stratFilter !== 'all' && s.trade_strategy !== stratFilter) return false;
 
-        // 5. Target/SL % filters
+        // 5. Custom Blueprint Strategy Filter
+        if (customFilterId !== 'none' && activeScreenerBlueprint) {
+            const isMatch = evaluateBlueprintMatch(s, activeScreenerBlueprint);
+            if (!isMatch) return false;
+        }
+
+        // 6. Target/SL % filters
         const score = s.confluence_rank || 0;
         const price = s.ltp || s.close || 0;
         const targetVal = s.target || (score > 0 ? price * 1.05 : price * 0.95); // fallback if not in DB
@@ -3404,7 +3435,12 @@ async function saveCurrentStrategy() {
         entry, target, sl, exit, accum, side, tf, universe, version: "3.0"
     };
 
-    const payload = { name, query: JSON.stringify(structuredData) };
+    const payload = {
+        name,
+        query: JSON.stringify(structuredData),
+        mode: universe,
+        timeframe: tf
+    };
 
     try {
         const res = await fetch('/api/strategies/save', {
@@ -3484,16 +3520,22 @@ async function renderSavedStrategies() {
             return;
         }
 
-        list.innerHTML = saved.map(s => `
-            <div class="saved-strat-item" onclick="loadSavedStrategyLogic('${btoa(s.query)}')" 
-                style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; transition: all 0.2s; margin-bottom: 6px;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                    <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">${s.name}</div>
-                    <div style="font-size: 10px; opacity: 0.5;">Last Mod: ${new Date(s.updated_at).toLocaleDateString()}</div>
+        list.innerHTML = saved.map(s => {
+            const isSwing = s.mode === 'swing';
+            const tfBadge = s.timeframe ? `<span class="badge ${isSwing ? 'bg-blue-trans' : 'bg-amber-trans'}" style="font-size:9px; padding: 2px 6px; margin-left: 8px;">${s.mode.toUpperCase()} (${s.timeframe})</span>` : '';
+            return `
+                <div class="saved-strat-item" onclick="loadSavedStrategyLogic('${btoa(s.query)}')" 
+                    style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; transition: all 0.2s; margin-bottom: 6px;">
+                    <div style="display: flex; flex-direction: column; gap: 2px;">
+                        <div style="font-size: 13px; font-weight: 700; color: var(--text-main); display: flex; align-items: center;">
+                            ${s.name} ${tfBadge}
+                        </div>
+                        <div style="font-size: 10px; opacity: 0.5;">Last Mod: ${new Date(s.updated_at).toLocaleDateString()}</div>
+                    </div>
+                    <button class="btn btn-icon" onclick="event.stopPropagation(); deleteStrategyFromServer(${s.id})" style="color: var(--danger); opacity: 0.5;"><i class="fas fa-trash"></i></button>
                 </div>
-                <button class="btn btn-icon" onclick="event.stopPropagation(); deleteStrategyFromServer(${s.id})" style="color: var(--danger); opacity: 0.5;"><i class="fas fa-trash"></i></button>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     } catch (e) {
         console.error("Failed to load strategies:", e);
     }
@@ -4493,6 +4535,173 @@ flowchart TD
         }
     }, 250);
 }
+
+// --- Pro Screener Strategy Blueprint Integration ---
+
+/**
+ * Populates the Strategy Blueprint dropdown in the Pro Screener
+ */
+async function populateScreenerBlueprints() {
+    const dropdown = document.getElementById('screener-filter-custom');
+    if (!dropdown) return;
+
+    try {
+        const res = await fetch('/api/strategies/list');
+        const json = await res.json();
+        screenerBlueprints = json.data || [];
+
+        const currentVal = dropdown.value;
+        dropdown.innerHTML = '<option value="none">Strategy Blueprint: None</option>';
+
+        screenerBlueprints.forEach(s => {
+            const isSwing = s.mode === 'swing';
+            const suffix = s.timeframe ? ` [${s.mode.toUpperCase()} - ${s.timeframe}]` : '';
+            const option = document.createElement('option');
+            option.value = s.id;
+            option.textContent = s.name + suffix;
+            dropdown.appendChild(option);
+        });
+
+        if (currentVal && screenerBlueprints.some(s => s.id == currentVal)) {
+            dropdown.value = currentVal;
+        }
+    } catch (e) {
+        console.error("Failed to populate screener blueprints:", e);
+    }
+}
+
+/**
+ * Handles selection of a custom strategy in the Pro Screener
+ */
+async function onScreenerCustomStrategyChange() {
+    const id = document.getElementById('screener-filter-custom').value;
+    if (id === 'none') {
+        activeScreenerBlueprint = null;
+        applyScreenerFilters();
+        return;
+    }
+
+    const strat = screenerBlueprints.find(s => s.id == id);
+    if (!strat) return;
+
+    // Strict Mapping: Auto-switch mode and timeframe if defined
+    if (strat.mode && strat.mode !== currentMode) {
+        showToast(`Switching to ${strat.mode.toUpperCase()} for this strategy...`, "info");
+        await setMode(strat.mode);
+    }
+
+    if (strat.timeframe) {
+        // Find matching TF in MODES list
+        const tfList = MODES[currentMode].timeframes;
+        // Search for TF by string or mapped key
+        const targetTF = tfList.find(t => t === strat.timeframe || TF_MAP[t] === strat.timeframe);
+
+        if (targetTF && targetTF !== currentTimeframe) {
+            currentTimeframe = targetTF;
+            // Update UI dropdowns
+            const tfDash = document.getElementById('tf-picker');
+            if (tfDash) tfDash.value = targetTF;
+            const tfScreener = document.getElementById('screener-filter-tf');
+            if (tfScreener) tfScreener.value = TF_MAP[targetTF] || targetTF;
+
+            // Re-fetch data for the new mode/tf context
+            await fetchAndRenderSignals();
+        }
+    }
+
+    // Parse logic
+    try {
+        const data = JSON.parse(strat.query);
+        const translated = translateUserQuery(data.entry, data.side, data.tf);
+        activeScreenerBlueprint = {
+            id: strat.id,
+            name: strat.name,
+            logic: translated.query,
+            side: translated.side,
+            tf: translated.tf,
+            originalData: data
+        };
+
+        applyScreenerFilters();
+        showToast(`Blueprint '${strat.name}' Applied.`, "success");
+    } catch (e) {
+        console.error("Blueprint parse error:", e);
+        showToast("Invalid Strategy Logic.", "error");
+    }
+}
+
+/**
+ * Core Evaluation Engine for Blueprints in Screener
+ * Matches a specific stock signal against complex SQL-like query logic
+ */
+function evaluateBlueprintMatch(stock, blueprint) {
+    if (!blueprint.logic) return true;
+
+    // 1. Prepare Indicator Mapping (Same as Lab)
+    const indMap = {
+        'RSI': 'rsi',
+        'ST': 'supertrend_dir',
+        'ST_V': 'supertrend_value',
+        'LTP': 'ltp',
+        'EMA_C': 'ema_signal',
+        'EMA_F': 'ema_fast',
+        'EMA_S': 'ema_slow',
+        'EMA_V': 'ema_value',
+        'VOL': 'volume_signal',
+        'VOL_R': 'volume_ratio',
+        'Pattern': 'candlestick_pattern',
+        'Pattern_Score': 'pattern_score'
+    };
+
+    // 2. Process query for JS execution
+    let processed = blueprint.logic
+        .replace(/AND /gi, '&& ')
+        .replace(/OR /gi, '|| ')
+        .replace(/NOT /gi, '! ')
+        .replace(/==/g, '===');
+
+    // Handle Percentage Arithmetic: [token] +/- X%
+    const pctRegex = /(\[.*?\]\.[A-Z_0-9]+)\s*([\+\-])\s*(\d+\.?\d*)%/g;
+    processed = processed.replace(pctRegex, (match, token, op, val) => {
+        const factor = op === '+' ? (1 + (parseFloat(val) / 100)) : (1 - (parseFloat(val) / 100));
+        return `(${token} * ${factor})`;
+    });
+
+    // 3. Resolve Tokens (Simplified for Screener)
+    const tokenRegex = /[\\[\\{]\s*(.*?)\s*[\\]\\}]\s*\.\s*([A-Z_a-z0-9]+)/g;
+
+    // Replace tokens with stock values
+    const finalQuery = processed.replace(tokenRegex, (match, tf, attr) => {
+        const key = indMap[attr] || attr;
+        let val = stock[key];
+
+        if (val === undefined || val === null) {
+            if (stock.mtf_data && stock.mtf_data[tf]) {
+                if (key === 'supertrend_dir') return `'${stock.mtf_data[tf]}'`;
+                return 0;
+            }
+            return 0;
+        }
+
+        if (typeof val === 'string') return `'${val}'`;
+        return val;
+    });
+
+    try {
+        return new Function(`return (${finalQuery})`)();
+    } catch (e) {
+        return false;
+    }
+}
+
+// Hook into switchTab to refresh blueprints
+const _screener_origSwitchTab = switchTab;
+switchTab = function (tabId) {
+    if (tabId === 'pro-screener') {
+        populateScreenerBlueprints();
+    }
+    _screener_origSwitchTab(tabId);
+};
 
 function scrollToSupport(id) {
     const el = document.getElementById('support-' + id);
