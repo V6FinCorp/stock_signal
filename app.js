@@ -671,7 +671,7 @@ function renderSignals() {
                 const usableHeight = svgHeight - (pad * 2);
 
                 const patternLabel = stock.candlestick_pattern || '';
-                let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup('${stock.isin}', '${stock.symbol}', this.dataset.pattern, this.dataset.candles)" data-candles="${rawDataJson}" data-pattern="${patternLabel}">`;
+                let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup('${stock.isin}', '${stock.symbol}', ${stock.ltp}, this.dataset.pattern, this.dataset.candles)" data-candles="${rawDataJson}" data-pattern="${patternLabel}">`;
 
                 l5_data.forEach((c, i) => {
                     const isGreen = c.c > c.o;
@@ -1948,16 +1948,18 @@ if (typeof fullChartCache === 'undefined') {
 let modalTfState = {
     isin: null,
     symbol: null,
+    ltp: 0,
     pattern: '',
     activeTfs: [], // Array of strings e.g. ["5m", "15m"]
     isSplit: false
 };
 
-async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJson = '', requestedTf = null) {
+async function showCandlesPopup(isin, symbol, ltp = 0, patternName = '', fallbackCandlesJson = '', requestedTf = null) {
     // Reset or Initialize State if it's a new stock
     if (modalTfState.isin !== isin) {
         modalTfState.isin = isin;
         modalTfState.symbol = symbol;
+        modalTfState.ltp = ltp;
         modalTfState.pattern = patternName;
         // Default to current timeframe or Daily
         const initialTf = requestedTf || currentTimeframe || "Daily";
@@ -1983,24 +1985,14 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
     // Build Modal UI
     modal.innerHTML = `
         <div style="background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; width: 1200px; max-width: 98vw; height: 90vh; box-shadow: 0 20px 60px rgba(0,0,0,0.6); position: relative; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-shrink: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-shrink: 0;">
                 <div>
-                    <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="display: flex; align-items: baseline; gap: 10px;">
                         <h3 style="margin: 0; font-size: 22px; font-weight: 700;">${symbol}</h3>
-                        <div id="modal-split-toggle" onclick="toggleModalSplitMode()" title="Split View (Max 4)" style="cursor: pointer; padding: 6px 10px; border-radius: 8px; background: ${modalTfState.isSplit ? 'var(--primary)' : 'rgba(255,255,255,0.05)'}; border: 1px solid ${modalTfState.isSplit ? 'var(--primary)' : 'var(--border-color)'}; color: ${modalTfState.isSplit ? '#fff' : 'var(--text-dim)'}; transition: all 0.2s;">
-                            <i class="fas fa-th-large"></i> Split View
-                        </div>
+                        <span id="modal-ltp-display" style="font-size: 16px; color: var(--text-dim); font-weight: 600;">LTP: ${(ltp || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div id="modal-condition-row" style="margin-top: 6px; font-size: 13px; color: var(--text-dim); display: ${patternName ? 'block' : 'none'};">
                         <span style="color:var(--amber)">Condition:</span> <span id="modal-condition-text">${patternName || ""}</span>
-                    </div>
-                    <div style="display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap;" id="modal-tf-buttons">
-                        ${allTfs.map(tf => {
-        const isActive = modalTfState.activeTfs.includes(tf);
-        return `<button onclick="handleModalTfClick('${tf}')" 
-                                class="tf-btn ${isActive ? 'active' : ''}"
-                                style="font-size: 11px; padding: 4px 10px; min-width: 50px;">${tf}</button>`;
-    }).join('')}
                     </div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 16px;">
@@ -2010,6 +2002,20 @@ async function showCandlesPopup(isin, symbol, patternName = '', fallbackCandlesJ
                         <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="m-toggle-rsi" checked> RSI</label>
                     </div>
                     <button onclick="document.getElementById('candle-zoom-modal').style.display='none'" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-dim); cursor: pointer; font-size: 20px; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">&times;</button>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0;">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="modal-tf-buttons">
+                    ${allTfs.map(tf => {
+                        const isActive = modalTfState.activeTfs.includes(tf);
+                        return `<button onclick="handleModalTfClick('${tf}')" 
+                                class="tf-btn ${isActive ? 'active' : ''}"
+                                style="font-size: 11px; padding: 4px 10px; min-width: 50px;">${tf}</button>`;
+                    }).join('')}
+                </div>
+                <div id="modal-split-toggle" onclick="toggleModalSplitMode()" title="Split View (Max 4)" style="cursor: pointer; padding: 6px 10px; border-radius: 8px; background: ${modalTfState.isSplit ? 'var(--primary)' : 'rgba(255,255,255,0.05)'}; border: 1px solid ${modalTfState.isSplit ? 'var(--primary)' : 'var(--border-color)'}; color: ${modalTfState.isSplit ? '#fff' : 'var(--text-dim)'}; transition: all 0.2s; font-size: 0.7rem;">
+                    <i class="fas fa-th-large"></i> Split View
                 </div>
             </div>
             
@@ -2035,7 +2041,7 @@ function toggleModalSplitMode() {
         // Reverting to single: keep only first TF
         modalTfState.activeTfs = [modalTfState.activeTfs[0]];
     }
-    showCandlesPopup(modalTfState.isin, modalTfState.symbol, modalTfState.pattern);
+    showCandlesPopup(modalTfState.isin, modalTfState.symbol, modalTfState.ltp, modalTfState.pattern);
 }
 
 /** Handles timeframe button click in modal */
@@ -2052,7 +2058,7 @@ function handleModalTfClick(tf) {
     } else {
         modalTfState.activeTfs = [tf];
     }
-    showCandlesPopup(modalTfState.isin, modalTfState.symbol, modalTfState.pattern);
+    showCandlesPopup(modalTfState.isin, modalTfState.symbol, modalTfState.ltp, modalTfState.pattern);
 }
 
 /** Renders the grid based on activeTfs */
@@ -2125,6 +2131,13 @@ async function refreshModalGrid() {
                         condText.innerText = patternText;
                         condRow.style.display = 'block';
                     }
+
+                    // Update LTP Display from meta if available
+                    if (meta.ltp) {
+                        modalTfState.ltp = meta.ltp;
+                        const ltpEl = document.getElementById('modal-ltp-display');
+                        if (ltpEl) ltpEl.innerText = `LTP: ${meta.ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+                    }
                 }
 
                 // 2. Update slot header (Sub-header)
@@ -2134,10 +2147,12 @@ async function refreshModalGrid() {
                         const color = meta.st_dir === 'BUY' ? 'var(--success)' : 'var(--danger)';
                         stHtml = `<span style="color:${color}; font-weight:700;">${meta.st_dir}</span>`;
                     }
+                    const pScore = meta.pattern_score || 0;
+                    const pScoreColor = pScore > 0 ? 'var(--success)' : (pScore < 0 ? 'var(--danger)' : 'var(--text-dim)');
                     slotLegend.innerHTML = `
                         ${meta.pattern ? `<span style="color:var(--amber); border: 1px solid rgba(245,158,11,0.2); background: rgba(245,158,11,0.05); padding: 1px 6px; border-radius: 4px;">${meta.pattern}</span>` : ''}
                         ${stHtml}
-                        <span style="opacity: 0.6;">(Rank: ${meta.rank || 0})</span>
+                        <span style="opacity: 0.8; font-weight: 600;">(Rank: ${meta.rank || 0} | <span style="color:${pScoreColor};">Score: ${pScore > 0 ? '+' : ''}${pScore}</span>)</span>
                     `;
                 }
             }
@@ -2631,7 +2646,7 @@ function applyScreenerFilters() {
     });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No signals found matching your filters in ${currentMode} mode.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:40px; color:var(--text-dim);">No signals found matching your filters in ${currentMode} mode.</td></tr>`;
         return;
     }
 
@@ -2718,6 +2733,11 @@ function applyScreenerFilters() {
                 <td style="color:var(--amber); font-weight:600; font-size:11px;">${accumulation}</td>
                 <td style="color:var(--success); font-weight:600; font-size:11px;">${targets}</td>
                 <td style="color:var(--danger); font-weight:600; font-size:11px;">${sl}</td>
+                <td style="text-align: center;">
+                    <span class="badge" style="background: rgba(168, 85, 247, 0.1); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 800; padding: 2px 8px;">
+                        ${s.pattern_score || 0}
+                    </span>
+                </td>
                 <td>
                     <button class="btn btn-primary" style="padding:6px 14px; font-size:11px; background:var(--primary); box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);" 
                         onclick="openPaperTrade('${s.isin}', '${s.symbol}', ${price}, '${s.timeframe || (currentMode === 'swing' ? '1d' : '5m')}')">
@@ -2833,6 +2853,7 @@ async function closeTrade(id) {
 const STRAT_ALIASES = {
     "CMP": "LTP",
     "LTP": "LTP",
+    "Close": "LTP",
     "SuperTrend": "ST",
     "ST": "ST",
     "SuperTrendValue": "ST_V",
@@ -2856,7 +2877,9 @@ const STRAT_ALIASES = {
     "Prev_High": "prev_high",
     "Prev_Low": "prev_low",
     "Pattern": "candlestick_pattern",
-    "Pattern_Score": "pattern_score"
+    "Pattern_Score": "pattern_score",
+    "SMA_10": "SMA_10", "SMA_20": "SMA_20", "SMA_50": "SMA_50", "SMA_100": "SMA_100", "SMA_200": "SMA_200",
+    "DMA_10": "SMA_10", "DMA_20": "SMA_20", "DMA_50": "SMA_50", "DMA_100": "SMA_100", "DMA_200": "SMA_200"
 };
 
 const STRAT_KEYWORDS = [
@@ -3727,10 +3750,25 @@ async function runStrategyScan() {
                 const s = tfData.find(item => item.isin === stock.isin);
                 if (!s) { skip = true; return; }
 
-                let val = s[token.attr];
-                if (token.attr === 'volume_signal') {
+                const key = indMap[token.attr] || token.attr;
+                let val = s[key];
+                
+                // --- DMA/SMA Lookup Fix (also handle lowercase fallbacks) ---
+                if (val === undefined || val === null) {
+                    // Try case-insensitive fallback on the object itself first
+                    const lowerKey = Object.keys(s).find(k => k.toLowerCase() === token.attr.toLowerCase());
+                    if (lowerKey) val = s[lowerKey];
+                    
+                    if ((val === undefined || val === null) && s.dma_data) {
+                        const dmaKey = Object.keys(s.dma_data).find(k => k.toLowerCase() === token.attr.toLowerCase());
+                        if (dmaKey) val = s.dma_data[dmaKey];
+                    }
+                }
+                // --- End Fix ---
+
+                if (token.attr === 'volume_signal' || key === 'volume_signal') {
                     val = val === 'BULL_SPIKE' ? "'BULL_S'" : (val === 'BEAR_SPIKE' ? "'BEAR_S'" : "'NONE'");
-                } else if (token.attr === 'candlestick_pattern') {
+                } else if (token.attr === 'candlestick_pattern' || key === 'candlestick_pattern') {
                     // Simplified sentiment matching
                     if (val && val.includes('Bullish')) val = "'Bullish'";
                     else if (val && val.includes('Bearish')) val = "'Bearish'";
@@ -3879,7 +3917,7 @@ function sortStrategyResults(column) {
 function exportStrategyToExcel() {
     if (!lastScanMatches || !lastScanMatches.length) return alert("No scan results to export.");
 
-    const headers = ["Symbol", "ISIN", "LTP", "Industry", "Sub-Group", "RSI", "PE", "Side", "Target", "Tgt %", "Stop Loss", "SL %"];
+    const headers = ["Symbol", "ISIN", "LTP", "Industry", "Sub-Group", "RSI", "PE", "Score", "Side", "Target", "Tgt %", "Stop Loss", "SL %"];
     const rows = lastScanMatches.map(s => {
         const tgtDiff = ((s.levels.target - s.ltp) / s.ltp * 100).toFixed(2);
         const slDiff = ((s.levels.sl - s.ltp) / s.ltp * 100).toFixed(2);
@@ -3891,6 +3929,7 @@ function exportStrategyToExcel() {
             s.i_subgroup || '-',
             s.rsi || '-',
             s.pe || '-',
+            s.pattern_score || 0,
             s.side,
             s.levels.target.toFixed(2),
             tgtDiff + "%",
@@ -3924,7 +3963,7 @@ function renderScanResults(matches, isFilter = false) {
     if (!isFilter) lastScanMatches = matches;
 
     if (!matches.length) {
-        grid.innerHTML = `<tr><td colspan="12" style="padding: 100px; text-align:center; opacity: 0.3;">
+        grid.innerHTML = `<tr><td colspan="13" style="padding: 100px; text-align:center; opacity: 0.3;">
             <i class="fas fa-ghost fa-3x" style="margin-bottom:20px;"></i>
             <p style="font-size:14px;">No matching symbols found in current scan.</p>
         </td></tr>`;
@@ -3948,6 +3987,8 @@ function renderScanResults(matches, isFilter = false) {
 
         const rsi = s.rsi ? s.rsi.toFixed(1) : '-';
         const pe = s.pe ? s.pe.toFixed(2) : '-';
+        const score = s.pattern_score || 0;
+        const scoreColor = score > 0 ? 'var(--success)' : (score < 0 ? 'var(--danger)' : 'var(--text-dim)');
 
         // Sparkline logic (Formation)
         let sparklineHtml = '-';
@@ -3974,7 +4015,7 @@ function renderScanResults(matches, isFilter = false) {
             const usableHeight = svgHeight - (pad * 2);
             const patternLabel = s.candlestick_pattern || '';
 
-            let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup('${s.isin}', '${s.symbol}', this.dataset.pattern, this.dataset.candles)" data-candles="${rawDataJson}" data-pattern="${patternLabel}">`;
+            let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup('${s.isin}', '${s.symbol}', ${s.ltp}, this.dataset.pattern, this.dataset.candles)" data-candles="${rawDataJson}" data-pattern="${patternLabel}">`;
 
             l5_data.forEach((c, i) => {
                 const isGreen = c.c > c.o;
@@ -4016,6 +4057,9 @@ function renderScanResults(matches, isFilter = false) {
                 </td>
                 <td style="padding: 15px 20px; text-align: right; font-weight: 600; color: var(--text-main);">
                     ${pe}
+                </td>
+                <td style="padding: 15px 20px; text-align: right; font-weight: 700; color: ${scoreColor};">
+                    ${score > 0 ? '+' : ''}${score}
                 </td>
                 <td style="padding: 15px 20px; text-align: center;">
                     ${sparklineHtml}
@@ -4668,12 +4712,32 @@ function evaluateBlueprintMatch(stock, blueprint) {
     });
 
     // 3. Resolve Tokens (Simplified for Screener)
-    const tokenRegex = /[\\[\\{]\s*(.*?)\s*[\\]\\}]\s*\.\s*([A-Z_a-z0-9]+)/g;
+    const tokenRegex = /[\[\{]\s*(.*?)\s*[\]\}]\s*\.\s*([A-Z_a-z0-9]+)/g;
 
     // Replace tokens with stock values
     const finalQuery = processed.replace(tokenRegex, (match, tf, attr) => {
         const key = indMap[attr] || attr;
         let val = stock[key];
+
+        // --- Improved Lookup Fix ---
+        if (val === undefined || val === null) {
+            // 1. Try case-insensitive fallback on the stock object
+            const lowerKey = Object.keys(stock).find(k => k.toLowerCase() === attr.toLowerCase());
+            if (lowerKey) {
+                val = stock[lowerKey];
+            } else if (stock.dma_data) {
+                // 2. Try DMA data lookup
+                let dma_obj = stock.dma_data;
+                if (typeof dma_obj === 'string') {
+                    try { dma_obj = JSON.parse(dma_obj); } catch (e) { }
+                }
+                if (typeof dma_obj === 'object' && dma_obj !== null) {
+                    const dmaKey = Object.keys(dma_obj).find(k => k.toLowerCase() === attr.toLowerCase());
+                    if (dmaKey) val = dma_obj[dmaKey];
+                }
+            }
+        }
+        // --- End Fix ---
 
         if (val === undefined || val === null) {
             if (stock.mtf_data && stock.mtf_data[tf]) {

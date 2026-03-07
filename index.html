@@ -379,12 +379,13 @@
                             <th>Accumulation Zone</th>
                             <th>Targets</th>
                             <th>Stop Loss</th>
+                            <th>Score</th>
                             <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="screener-tbody">
                         <tr>
-                            <td colspan="8" style="text-align:center; padding:40px; color:var(--text-dim);">No
+                            <td colspan="9" style="text-align:center; padding:40px; color:var(--text-dim);">No
                                 high-conviction signals found yet. Run signals calculation.</td>
                         </tr>
                     </tbody>
@@ -1019,6 +1020,9 @@
                                             <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
                                                 onclick="sortStrategyResults('pe')">PE <i class="fas fa-sort"></i>
                                             </th>
+                                            <th style="text-align: right; padding: 15px 20px; cursor:pointer;"
+                                                onclick="sortStrategyResults('pattern_score')">Score <i
+                                                    class="fas fa-sort"></i></th>
                                             <th style="text-align: left; padding: 15px 20px;">Formation</th>
                                             <th style="text-align: center; padding: 15px 10px;">Side</th>
                                             <th style="text-align: right; padding: 15px 10px;">Target</th>

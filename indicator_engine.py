@@ -471,8 +471,11 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         if abs(val) < 10: 
                             continue
 
-                        # Update score
-                        pattern_score = max(pattern_score, PATTERN_WEIGHTS.get(key, 1))
+                        # Update score (Signed)
+                        weight = PATTERN_WEIGHTS.get(key, 1)
+                        if val < 0: weight = -weight
+                        if abs(weight) > abs(pattern_score):
+                            pattern_score = weight
 
                         pattern_name = key.replace("CDL_", "").split("_")[0].title()
                         
@@ -782,7 +785,11 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                     if not isinstance(k, str) or not k.startswith("CDL_") or pd.isna(v) or v == 0: continue
                     if abs(v) < 10: continue
                     
-                    pattern_score = max(pattern_score, PATTERN_WEIGHTS.get(k, 1))
+                    # Update score (Signed)
+                    weight = PATTERN_WEIGHTS.get(k, 1)
+                    if v < 0: weight = -weight
+                    if abs(weight) > abs(pattern_score):
+                        pattern_score = weight
                     
                     p_name = k.replace("CDL_", "").split("_")[0].title()
                     if v > 0:
@@ -871,7 +878,8 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                 "pattern": pattern_str,
                 "pattern_score": pattern_score,
                 "st_dir": st_dir,
-                "rank": calc_rank
+                "rank": calc_rank,
+                "ltp": float(df['c'].iloc[-1]) if not df.empty else 0
             }
             await cur.execute(
                 "SELECT candlestick_pattern, pattern_score, supertrend_dir, confluence_rank FROM app_sg_calculated_signals WHERE isin = %s AND timeframe = %s AND profile_id = %s",
@@ -883,7 +891,8 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                     "pattern": sig_row['candlestick_pattern'] or pattern_str,
                     "pattern_score": sig_row['pattern_score'] if sig_row['pattern_score'] is not None else pattern_score,
                     "st_dir": sig_row['supertrend_dir'] or st_dir,
-                    "rank": sig_row['confluence_rank'] if sig_row['confluence_rank'] is not None else calc_rank
+                    "rank": sig_row['confluence_rank'] if sig_row['confluence_rank'] is not None else calc_rank,
+                    "ltp": float(df['c'].iloc[-1]) if not df.empty else 0
                 }
 
             return {
