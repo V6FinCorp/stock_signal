@@ -2579,7 +2579,8 @@ async function renderProScreener() {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i> Loading High-Conviction Alerts...</td></tr>';
 
     try {
-        const response = await fetch(`/api/signals?mode=${currentMode}`);
+        const tf = document.getElementById('screener-filter-tf')?.value || 'all';
+        const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${tf}`);
         const result = await response.json();
         if (result.status !== 'success') throw new Error("API Failure");
 
@@ -2641,8 +2642,18 @@ function applyScreenerFilters() {
         // 6. Target/SL % filters
         const score = s.confluence_rank || 0;
         const price = s.ltp || s.close || 0;
-        const targetVal = s.target || (score > 0 ? price * 1.05 : price * 0.95); // fallback if not in DB
-        const slVal = s.sl || (score > 0 ? price * 0.97 : price * 1.03);
+        
+        let tVal = s.target;
+        let sVal = s.sl;
+
+        if (activeScreenerBlueprint) {
+            const b = activeScreenerBlueprint.originalData;
+            tVal = resolveLevelQuery(b.target || "", 'TP', price, b.side || "BUY", s, screenerTfDataMap);
+            sVal = resolveLevelQuery(b.sl || "", 'SL', price, b.side || "BUY", s, screenerTfDataMap);
+        }
+
+        const targetVal = tVal || (score > 0 ? price * 1.05 : price * 0.95);
+        const slVal = sVal || (score > 0 ? price * 0.97 : price * 1.03);
 
         const rewardPct = Math.abs((targetVal - price) / price) * 100;
         const riskPct = Math.abs((slVal - price) / price) * 100;
@@ -4729,50 +4740,56 @@ async function onScreenerCustomStrategyChange() {
     }
 
     if (strat.timeframe) {
-        // Find matching TF in MODES list
-        const tfList = MODES[currentMode].timeframes;
-        // Search for TF by string or mapped key
-        const targetTF = tfList.find(t => t === strat.timeframe || TF_MAP[t] === strat.timeframe);
-
-        if (targetTF && targetTF !== currentTimeframe) {
-            currentTimeframe = targetTF;
-            // Update UI dropdowns
-            const tfDash = document.getElementById('tf-picker');
-            if (tfDash) tfDash.value = targetTF;
-            const tfScreener = document.getElementById('screener-filter-tf');
-            if (tfScreener) tfScreener.value = TF_MAP[targetTF] || targetTF;
-
-            // Re-fetch data for the new mode/tf context
-            await fetchAndRenderSignals();
+        // ALWAYS update the Screener TF picker to match the blueprint's focus
+        const tfPicker = document.getElementById('screener-filter-tf');
+        if (tfPicker) {
+            const apiTf = TF_MAP[strat.timeframe] || strat.timeframe;
+            tfPicker.value = apiTf;
         }
+
+        // Force a re-fetch of the main signals list for this specific timeframe 
+        // to ensure we have the best data for the evaluation engine
+        await renderProScreener();
+    } else {
+        // If no specific timeframe, ensure we still have clean data
+        await renderProScreener();
     }
 
     // NEW: Fetch all timeframes required by the blueprint to enable full MTF matching in Screener
     try {
         const data = JSON.parse(strat.query);
+        const translated = translateUserQuery(data.entry, data.side, data.tf);
+        
+        // Always include the profile's base timeframe in the fetch list
+        const usedTfs = [translated.primaryTf || data.tf];
+
         const tfRegex = /[\[\{]\s*(.*?)\s*[\]\}]/g;
-        const usedTfs = [];
         let m;
-        // Scan Entry, Target, SL for timeframes
-        [data.entry, data.target, data.sl].forEach(logic => {
+        // Scan the translated logic and other components for extra timeframes
+        [translated.query, data.target, data.sl].forEach(logic => {
             if (!logic) return;
             while ((m = tfRegex.exec(logic)) !== null) {
                 usedTfs.push(m[1]);
             }
         });
 
-        if (usedTfs.length > 0) {
-            showToast(`Fetching MTF data for '${strat.name}'...`, "info");
-            await Promise.all([...new Set(usedTfs)].map(async (tf) => {
+        const uniqueTfs = [...new Set(usedTfs)].filter(val => val);
+        if (uniqueTfs.length > 0) {
+            showToast(`Syncing Market Data for '${strat.name}'...`, "info");
+            await Promise.all(uniqueTfs.map(async (tf) => {
                 const normalizedTf = Object.keys(TF_MAP).find(k => k.toLowerCase() === tf.toLowerCase());
                 const apiTf = normalizedTf ? TF_MAP[normalizedTf] : tf;
 
-                // FIX: Map timeframe to correct profile_id (mode)
+                // Map timeframe to correct profile_id (mode)
                 const fetchMode = ['1d', '1w', '1mo'].includes(apiTf) ? 'swing' : 'intraday';
 
                 const res = await fetch(`/api/signals?mode=${fetchMode}&timeframe=${apiTf}`);
                 const json = await res.json();
-                if (json.status === 'success') screenerTfDataMap[tf] = json.data;
+                if (json.status === 'success') {
+                    screenerTfDataMap[tf] = json.data;
+                    // Also seed with case-insensitive name if needed
+                    if (normalizedTf) screenerTfDataMap[normalizedTf] = json.data;
+                }
             }));
         }
     } catch (e) {
@@ -4810,24 +4827,45 @@ function evaluateBlueprintMatch(stock, blueprint) {
     // 1. Prepare Indicator Mapping (Same as Lab)
     const indMap = {
         'RSI': 'rsi',
+        'rsi': 'rsi',
         'ST': 'supertrend_dir',
+        'st': 'supertrend_dir',
         'ST_V': 'supertrend_value',
+        'st_v': 'supertrend_value',
         'LTP': 'ltp',
+        'ltp': 'ltp',
         'Price': 'ltp',
+        'price': 'ltp',
+        'Close': 'ltp',
+        'close': 'ltp',
         'EMA_C': 'ema_signal',
+        'ema_c': 'ema_signal',
         'EMA_F': 'ema_fast',
+        'ema_f': 'ema_fast',
         'EMA_S': 'ema_slow',
+        'ema_s': 'ema_slow',
         'EMA_V': 'ema_value',
+        'ema_v': 'ema_value',
         'VOL': 'volume_signal',
+        'vol': 'volume_signal',
         'VOL_R': 'volume_ratio',
+        'vol_r': 'volume_ratio',
         'Pattern': 'candlestick_pattern',
+        'pattern': 'candlestick_pattern',
         'Pattern_Score': 'pattern_score',
+        'pattern_score': 'pattern_score',
         'ROE': 'roe',
+        'roe': 'roe',
         'PE': 'pe',
+        'pe': 'pe',
         'HIGH': 'prev_high',
+        'high': 'prev_high',
         'LOW': 'prev_low',
+        'low': 'prev_low',
         'PREV_HIGH': 'prev_high',
-        'PREV_LOW': 'prev_low'
+        'prev_high': 'prev_high',
+        'PREV_LOW': 'prev_low',
+        'prev_low': 'prev_low'
     };
 
     // 2. Process query for JS execution
