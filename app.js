@@ -93,6 +93,7 @@ let appZoom = 1.0;
 let screenerMasterData = []; // Cache for local screener filtering
 
 let currentEditorMode = 'query';
+let currentStrategyId = null; 
 let HUD_STATES = {
     swing: { active: false, expanded: false },
     intraday: { active: false, expanded: false }
@@ -3092,11 +3093,13 @@ function applyStratSuggestion(word, targetId = null, btn = null) {
 }
 
 function clearStrategyLab() {
-    ['strat-name', 'strat-entry-query', 'strat-exit-query', 'strat-target-query', 'strat-sl-query', 'strat-accum-query'].forEach(id => {
+    currentStrategyId = null;
+    ['strat-id-select', 'strat-name', 'strat-entry-query', 'strat-exit-query', 'strat-target-query', 'strat-sl-query', 'strat-accum-query'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.value = (id === 'strat-name') ? "" : "";
         if (el) el.value = "";
     });
+    const updateBtn = document.getElementById('btn-update-strat');
+    if (updateBtn) updateBtn.style.display = 'none';
     updateStrategyExplainer();
 }
 
@@ -3439,7 +3442,20 @@ function translateUserQuery(userQuery, side_override = null, tf_override = null)
     };
 }
 
-async function saveCurrentStrategy() {
+/**
+ * Handle Blueprint Selection from Dropdown
+ */
+function onStratSelectChange() {
+    const sel = document.getElementById('strat-id-select');
+    if (!sel.value) {
+        clearStrategyLab();
+        return;
+    }
+    const [data, id, name] = sel.value.split('|');
+    loadSavedStrategyLogic(data, id, name);
+}
+
+async function saveCurrentStrategy(updateExisting = false) {
     const name = document.getElementById('strat-name').value || "Unnamed Strategy";
     const entry = document.getElementById('strat-entry-query').value;
     const target = document.getElementById('strat-target-query').value;
@@ -3449,16 +3465,18 @@ async function saveCurrentStrategy() {
 
     const side = document.getElementById('strat-side').value;
     const tf = document.getElementById('strat-timeframe').value;
-    const universe = currentMode; // Using global currentMode as universe UI is gone
+    const universe = currentMode; 
 
     if (!entry) return alert("Please enter Entry Criteria.");
 
-    // Store as JSON Blob in query_text
     const structuredData = {
         entry, target, sl, exit, accum, side, tf, universe, version: "3.0"
     };
 
+    const finalId = updateExisting ? currentStrategyId : null;
+
     const payload = {
+        id: finalId, 
         name,
         query: JSON.stringify(structuredData),
         mode: universe,
@@ -3471,24 +3489,45 @@ async function saveCurrentStrategy() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        if (res.ok) {
-            showToast("Strategy Blueprint Saved.", "success");
-            renderSavedStrategies();
+        const json = await res.json();
+        if (json.status === 'success') {
+            showToast(finalId ? `Profile '${name}' Updated.` : "New Strategy Profile Saved.", "success");
+            renderSavedStrategies(); 
+        } else {
+            showToast("Failed to save strategy.", "error");
         }
     } catch (e) {
-        console.error(e);
+        console.error("Save Error:", e);
         showToast("Storage Error.", "error");
     }
 }
 
-function loadSavedStrategyLogic(base64Data) {
+function loadSavedStrategyLogic(base64Data, id = null, name = null) {
     try {
+        currentStrategyId = id;
+        const updateBtn = document.getElementById('btn-update-strat');
+        if (updateBtn) updateBtn.style.display = id ? 'inline-block' : 'none';
+
+        if (name) {
+            const nameEl = document.getElementById('strat-name');
+            if (nameEl) nameEl.value = name;
+        }
+
+        const sel = document.getElementById('strat-id-select');
+        if (sel && id) {
+            for (let opt of sel.options) {
+                if (opt.value.includes(`|${id}|`)) {
+                    sel.value = opt.value;
+                    break;
+                }
+            }
+        }
+
         const raw = atob(base64Data);
         let data;
         try {
             data = JSON.parse(raw);
         } catch (e) {
-            // Legacy support for plain text queries
             const setVal = (id, val) => {
                 const el = document.getElementById(id);
                 if (el) el.value = val || "";
@@ -3500,7 +3539,7 @@ function loadSavedStrategyLogic(base64Data) {
             setVal('strat-accum-query', "");
             setVal('strat-side', "BUY");
             setVal('strat-timeframe', "15m");
-            showToast("Legacy blueprint loaded into Lab.", "info");
+            showToast("Legacy blueprint loaded.", "info");
             updateStrategyExplainer();
             return;
         }
@@ -3521,7 +3560,7 @@ function loadSavedStrategyLogic(base64Data) {
         const tfEl = document.getElementById('strat-timeframe');
         if (tfEl) tfEl.value = data.tf || "15m";
 
-        showToast("Blueprint Expanded.", "success");
+        showToast("Blueprint Loaded.", "success");
         updateStrategyExplainer();
     } catch (e) {
         console.error("Load Error:", e);
@@ -3543,11 +3582,34 @@ async function renderSavedStrategies() {
             return;
         }
 
+        // 1. Update Dropdown in Editor
+        const sel = document.getElementById('strat-id-select');
+        if (sel) {
+            const currentVal = sel.value;
+            sel.innerHTML = '<option value="">+ New Blueprint</option>';
+            saved.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = `${btoa(s.query)}|${s.id}|${s.name}`;
+                opt.innerText = s.name;
+                sel.appendChild(opt);
+            });
+            // Try to restore selection if we were just updating
+            if (currentStrategyId) {
+                for (let opt of sel.options) {
+                    if (opt.value.includes(`|${currentStrategyId}|`)) {
+                        sel.value = opt.value;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Update Sidebar List
         list.innerHTML = saved.map(s => {
             const isSwing = s.mode === 'swing';
             const tfBadge = s.timeframe ? `<span class="badge ${isSwing ? 'bg-blue-trans' : 'bg-amber-trans'}" style="font-size:9px; padding: 2px 6px; margin-left: 8px;">${s.mode.toUpperCase()} (${s.timeframe})</span>` : '';
             return `
-                <div class="saved-strat-item" onclick="loadSavedStrategyLogic('${btoa(s.query)}')" 
+                <div class="saved-strat-item" onclick="loadSavedStrategyLogic('${btoa(s.query)}', ${s.id}, '${s.name}')" 
                     style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; transition: all 0.2s; margin-bottom: 6px;">
                     <div style="display: flex; flex-direction: column; gap: 2px;">
                         <div style="font-size: 13px; font-weight: 700; color: var(--text-main); display: flex; align-items: center;">

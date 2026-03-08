@@ -669,7 +669,7 @@
                                 <div class="control-field" style="margin: 0;">
                                     <label style="font-size: 11px; color: var(--primary);">Load Saved Blueprint</label>
                                     <select id="strat-id-select" class="select-input" style="height: 48px;"
-                                        onchange="loadSavedStrategyLogic()">
+                                        onchange="onStratSelectChange()">
                                         <option value="">+ New Blueprint</option>
                                     </select>
                                 </div>
@@ -808,9 +808,12 @@
                                 <div style="display: flex; gap: 12px;">
                                     <button class="btn btn-dim" onclick="clearStrategyLab()"
                                         style="padding: 10px 20px;"><i class="fas fa-redo"></i> Reset Form</button>
-                                    <button class="btn btn-dim" onclick="saveCurrentStrategy()"
-                                        style="padding: 10px 20px; border-color: var(--primary); color: var(--primary);"><i
-                                            class="fas fa-save"></i> Save Strategy</button>
+                                    <button class="btn btn-dim" id="btn-update-strat" onclick="saveCurrentStrategy(true)"
+                                        style="display:none; padding: 10px 20px; border-color: var(--success); color: var(--success);"><i
+                                             class="fas fa-edit"></i> Update Profile</button>
+                                     <button class="btn btn-dim" onclick="saveCurrentStrategy(false)"
+                                         style="padding: 10px 20px; border-color: var(--primary); color: var(--primary);"><i
+                                             class="fas fa-plus"></i> Save as New</button>
                                 </div>
                                 <button class="btn btn-primary" id="strategy-run-btn" onclick="runStrategyScan()"
                                     style="padding: 12px 32px; font-weight: 800; font-size: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);">
