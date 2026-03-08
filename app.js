@@ -25,6 +25,27 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+const tableControllers = {
+    dashboard: null,
+    screener: null,
+    lab: null
+};
+
+function showTableSkeleton(tbodyId, columns = 8, rows = 10) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    
+    let html = '';
+    for (let i = 0; i < rows; i++) {
+        let cells = '';
+        for (let j = 0; j < columns; j++) {
+            cells += `<td><div class="skeleton-box" style="width: ${Math.random() * 50 + 40}%"></div></td>`;
+        }
+        html += `<tr class="skeleton-row">${cells}</tr>`;
+    }
+    tbody.innerHTML = html;
+}
+
 // --- Application State ---
 const MODES = {
     swing: {
@@ -195,10 +216,16 @@ async function fetchAndRenderSignals(forceFetch = false) {
     }
 
     const tbody = document.getElementById('signal-tbody');
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-circle-notch fa-spin fa-2x"></i><br><br>Analyzing latest market signals...</td></tr>';
+    showTableSkeleton('signal-tbody', 10);
+
+    // Abort previous request if still pending
+    if (tableControllers.dashboard) tableControllers.dashboard.abort();
+    tableControllers.dashboard = new AbortController();
 
     try {
-        const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${apiTf}`);
+        const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${apiTf}`, {
+            signal: tableControllers.dashboard.signal
+        });
         const result = await response.json();
 
         if (result.status === 'success') {
@@ -2576,11 +2603,16 @@ async function renderProScreener() {
     const sentimentPlaceholder = document.getElementById('screener-sentiment-placeholder');
     if (!tbody || !sentimentPlaceholder) return;
 
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i> Loading High-Conviction Alerts...</td></tr>';
+    showTableSkeleton('screener-tbody', 9);
+
+    if (tableControllers.screener) tableControllers.screener.abort();
+    tableControllers.screener = new AbortController();
 
     try {
         const tf = document.getElementById('screener-filter-tf')?.value || 'all';
-        const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${tf}`);
+        const response = await fetch(`/api/signals?mode=${currentMode}&timeframe=${tf}`, {
+            signal: tableControllers.screener.signal
+        });
         const result = await response.json();
         if (result.status !== 'success') throw new Error("API Failure");
 
@@ -3736,6 +3768,14 @@ async function runStrategyScan() {
 
     const resultsGrid = document.getElementById('strat-results-grid');
     const matchCountBadge = document.getElementById('strat-match-count');
+
+    // Show processing state instantly
+    if (resultsGrid) {
+        resultsGrid.innerHTML = '<tr><td colspan="10"><div class="skeleton-box" style="margin:20px 0;"></div><div class="skeleton-box" style="margin:20px 0;width:80%;"></div><div class="skeleton-box" style="margin:20px 0;width:90%;"></div></td></tr>';
+    }
+
+    if (tableControllers.lab) tableControllers.lab.abort();
+    tableControllers.lab = new AbortController();
 
     try {
         // 2. Parse Timeframes from the translated query AND the Target/SL boxes

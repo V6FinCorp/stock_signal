@@ -15,6 +15,31 @@
     <link rel="icon" type="image/x-icon" href="https://v6fincorp.com/favicon.ico">
     <!-- Mermaid.js deferred to avoid blocking initial load -->
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        @keyframes skeleton-pulse {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .skeleton-box {
+            height: 14px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+            background-size: 200% 100%;
+            animation: skeleton-pulse 1.5s infinite linear;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .skeleton-row td {
+            padding: 16px 12px !important;
+        }
+        .skeleton-circle {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+            background-size: 200% 100%;
+            animation: skeleton-pulse 1.5s infinite linear;
+        }
+    </style>
 </head>
 
 <body class="dark-theme">
