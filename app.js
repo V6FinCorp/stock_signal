@@ -104,6 +104,7 @@ let isAutoSyncEnabled = false;
 let currentUsername = 'admin'; // Fallback
 let activeScreenerBlueprint = null;
 let screenerBlueprints = [];
+let screenerTfDataMap = {}; // Shared cache for MTF data in Screener
 
 // --- Authentication & Session ---
 async function verifySession() {
@@ -1752,8 +1753,7 @@ function setupRSISlider() {
 }
 
 function setupScreenerSliders() {
-    setupDualSlider('screener-target-min', 'screener-target-max', 'screener-target-range', 'screener-target-label', 0, 20, 0.5, '%', applyScreenerFilters);
-    setupDualSlider('screener-sl-min', 'screener-sl-max', 'screener-sl-range', 'screener-sl-label', 0, 10, 0.2, '%', applyScreenerFilters);
+    // No-op: Dual sliders for screener targets/sl replaced by numeric inputs for compactness
 }
 
 // --- Column Toggle Logic ---
@@ -2549,7 +2549,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setMode('swing');
     switchTab('dashboard');
     setupRSISlider(); // Initialize Dual RSI Slider
-    setupScreenerSliders(); // Initialize Screener Sliders
     applyZoom(); // Apply initial zoom level
 });
 
@@ -2584,7 +2583,8 @@ async function renderProScreener() {
         const result = await response.json();
         if (result.status !== 'success') throw new Error("API Failure");
 
-        screenerMasterData = result.data.filter(s => Math.abs(s.confluence_rank || 0) >= 4);
+        // Fetch all data for the screener; applyScreenerFilters will handle the high-conviction pre-filter if no blueprint is active
+        screenerMasterData = result.data || [];
         applyScreenerFilters();
     } catch (e) {
         console.error("Pro Screener Fetch Error:", e);
@@ -2602,30 +2602,37 @@ function applyScreenerFilters() {
     const stratFilter = document.getElementById('screener-filter-strat').value;
     const customFilterId = document.getElementById('screener-filter-custom').value;
 
-    const targetMin = parseFloat(document.getElementById('screener-target-min').value);
-    const targetMax = parseFloat(document.getElementById('screener-target-max').value);
-    const slMin = parseFloat(document.getElementById('screener-sl-min').value);
-    const slMax = parseFloat(document.getElementById('screener-sl-max').value);
+    const targetMin = parseFloat(document.getElementById('screener-target-min')?.value || 0);
+    const targetMax = parseFloat(document.getElementById('screener-target-max')?.value || 100);
+    const slMin = parseFloat(document.getElementById('screener-sl-min')?.value || 0);
+    const slMax = parseFloat(document.getElementById('screener-sl-max')?.value || 100);
 
     let filtered = screenerMasterData.filter(s => {
         // 1. Search filter
         const matchesSearch = s.symbol.toLowerCase().includes(searchTerm) || s.isin.toLowerCase().includes(searchTerm);
         if (!matchesSearch) return false;
 
-        // 2. Timeframe filter
+        // 2. High-Conviction Filter: Default to Absolute Rank 4+ if no custom strategy is active
+        const customFilterId = document.getElementById('screener-filter-custom')?.value || 'none';
+        if (customFilterId === 'none') {
+            const absRank = Math.abs(s.confluence_rank || 0);
+            if (absRank < 4) return false;
+        }
+
+        // 3. Timeframe filter
         if (tfFilter !== 'all' && s.timeframe !== tfFilter) return false;
 
-        // 3. Direction filter
-        if (dirFilter !== 'all') {
+        // 4. Direction filter (Bypass if custom strategy is active)
+        if (customFilterId === 'none' && dirFilter !== 'all') {
             const isBuy = (s.confluence_rank || 0) > 0;
             if (dirFilter === 'buy' && !isBuy) return false;
             if (dirFilter === 'sell' && isBuy) return false;
         }
 
-        // 4. Strategy filter
-        if (stratFilter !== 'all' && s.trade_strategy !== stratFilter) return false;
+        // 5. Strategy filter (Bypass if custom strategy is active)
+        if (customFilterId === 'none' && stratFilter !== 'all' && s.trade_strategy !== stratFilter) return false;
 
-        // 5. Custom Blueprint Strategy Filter
+        // 6. Custom Blueprint Strategy Filter
         if (customFilterId !== 'none' && activeScreenerBlueprint) {
             const isMatch = evaluateBlueprintMatch(s, activeScreenerBlueprint);
             if (!isMatch) return false;
@@ -2687,14 +2694,26 @@ function applyScreenerFilters() {
         const isSwing = ['1d', '1w', '1mo'].includes(tf);
         const tfBadge = `<span class="badge ${isSwing ? 'bg-blue-trans' : 'bg-amber-trans'}" style="font-size:9px; padding: 2px 6px;">${isSwing ? 'SWING' : 'INTRADAY'} (${tf})</span>`;
 
-        // Strategy derived from rank & RSI
-        const strategy = s.trade_strategy || (Math.abs(score) === 5 ? "High Conviction Confluence" : "Trend Support");
-        const stratBg = isBullish ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-        const stratColor = isBullish ? 'var(--success)' : 'var(--danger)';
+        // --- Dynamic Column Calculation (Match User Requirement) ---
+        let strategy = s.trade_strategy || (Math.abs(score) === 5 ? "High Conviction Confluence" : "Trend Support");
+        let targetVal = s.target || (isBullish ? price * 1.05 : price * 0.95);
+        let slVal = s.sl || (isBullish ? price * 0.97 : price * 1.03);
+        let accumVal = price; // Default
+        let displayScore = s.pattern_score || 0;
         const metricsTooltip = getMetricsList(s);
 
-        const targetVal = s.target || (isBullish ? price * 1.05 : price * 0.95);
-        const slVal = s.sl || (isBullish ? price * 0.97 : price * 1.03);
+        if (activeScreenerBlueprint) {
+            strategy = activeScreenerBlueprint.name;
+            const b = activeScreenerBlueprint.originalData;
+            const bSide = b.side || "BUY";
+            
+            targetVal = resolveLevelQuery(b.target || "", 'TP', price, bSide, s, screenerTfDataMap);
+            slVal = resolveLevelQuery(b.sl || "", 'SL', price, bSide, s, screenerTfDataMap);
+            accumVal = resolveLevelQuery(b.accum || "", 'ACCUM', price, bSide, s, screenerTfDataMap);
+            
+            // If the blueprint matched, ensure we show some positive score indicator if not present
+            if (displayScore === 0) displayScore = 5; 
+        }
 
         const risk = Math.abs(price - slVal);
         const reward = Math.abs(targetVal - price);
@@ -2703,9 +2722,9 @@ function applyScreenerFilters() {
         const targetPct = ((reward / price) * 100).toFixed(1);
         const slPct = ((risk / price) * 100).toFixed(1);
 
-        const targets = `T1: ${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
-        const sl = `${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
-        const accumulation = `Zone: ${price.toFixed(2)}`;
+        const targetsDisplay = `T1: ${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
+        const slDisplay = `${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
+        const accumulation = `Zone: ${accumVal.toFixed(2)}`;
 
         html += `
             <tr>
@@ -2724,7 +2743,7 @@ function applyScreenerFilters() {
                     </div>
                 </td>
                 <td>
-                    <span class="badge" title="${metricsTooltip}" style="background:${stratBg}; color:${stratColor}; border:1px solid ${stratColor}44; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; cursor: help;">
+                    <span class="badge" title="${metricsTooltip}" style="background:${isBullish ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; color:${isBullish ? 'var(--success)' : 'var(--danger)'}; border:1px solid ${isBullish ? 'var(--success)' : 'var(--danger)'}44; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; cursor: help;">
                         ${strategy} <i class="fas fa-info-circle" style="font-size: 9px; opacity: 0.7;"></i>
                     </span>
                     <div style="font-size: 10px; color: var(--text-dim); margin-top: 6px;">
@@ -2732,11 +2751,11 @@ function applyScreenerFilters() {
                     </div>
                 </td>
                 <td style="color:var(--amber); font-weight:600; font-size:11px;">${accumulation}</td>
-                <td style="color:var(--success); font-weight:600; font-size:11px;">${targets}</td>
-                <td style="color:var(--danger); font-weight:600; font-size:11px;">${sl}</td>
+                <td style="color:var(--success); font-weight:600; font-size:11px;">${targetsDisplay}</td>
+                <td style="color:var(--danger); font-weight:600; font-size:11px;">${slDisplay}</td>
                 <td style="text-align: center;">
                     <span class="badge" style="background: rgba(168, 85, 247, 0.1); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 800; padding: 2px 8px;">
-                        ${s.pattern_score || 0}
+                        ${displayScore}
                     </span>
                 </td>
                 <td>
@@ -3621,6 +3640,9 @@ async function renderSavedStrategies() {
                 </div>
             `;
         }).join('');
+
+        // Refresh Screener dropdown as well so they stay in sync
+        populateScreenerBlueprints();
     } catch (e) {
         console.error("Failed to load strategies:", e);
     }
@@ -3887,58 +3909,67 @@ function calculateStaticLevels(stock, tfDataMap) {
     const targetQuery = document.getElementById('strat-target-query').value;
     const slQuery = document.getElementById('strat-sl-query').value;
 
-    const resolve = (query, type) => {
-        const q = query.trim();
-        if (!q) {
-            if (type === 'TP') return ltp * (side === 'BUY' ? 1.015 : 0.985);
-            return ltp * (side === 'BUY' ? 0.985 : 1.015);
-        }
-
-        let baseValue = ltp;
-        let isToken = false;
-
-        // 1. Identify Token and Base Price
-        const tokenMatch = q.match(/\[(.*?)\]\.(HIGH|LOW|PREV_HIGH|PREV_LOW|ST_V|ST|SUPERTRENDVALUE|EMA_F|EMA_S)/i);
-        if (tokenMatch) {
-            const tfKey = tokenMatch[1];
-            const indicator = tokenMatch[2].toUpperCase();
-            const tfData = tfDataMap[tfKey] || [];
-            const s = tfData.find(item => item.isin === stock.isin);
-
-            if (s) {
-                isToken = true;
-                if (indicator === 'ST_V' || indicator === 'ST' || indicator === 'SUPERTRENDVALUE') baseValue = s.supertrend_value;
-                else if (indicator === 'EMA_F') baseValue = s.ema_fast;
-                else if (indicator === 'EMA_S') baseValue = s.ema_slow;
-                else if (indicator === 'HIGH' || indicator === 'PREV_HIGH') baseValue = s.prev_high;
-                else if (indicator === 'LOW' || indicator === 'PREV_LOW') baseValue = s.prev_low;
-            }
-        }
-
-        // 2. Handle Arithmetic Adjustment (e.g. - 0.5%)
-        const arithmeticMatch = q.match(/([\+\-])\s*(\d+\.?\d*)\s*%/);
-        if (arithmeticMatch) {
-            const op = arithmeticMatch[1];
-            const pct = parseFloat(arithmeticMatch[2]) / 100;
-            const startVal = baseValue || ltp;
-            return op === '+' ? startVal * (1 + pct) : startVal * (1 - pct);
-        }
-
-        // 3. Standalone Percentage (e.g. 5%)
-        const purePctMatch = q.match(/^(\d+\.?\d*)\s*%$/);
-        if (purePctMatch && !isToken) {
-            const pct = parseFloat(purePctMatch[1]) / 100;
-            if (type === 'TP') return side === 'BUY' ? ltp * (1 + pct) : ltp * (1 - pct);
-            return side === 'BUY' ? ltp * (1 - pct) : ltp * (1 + pct);
-        }
-
-        return baseValue || ltp;
-    };
-
     return {
-        target: resolve(targetQuery, 'TP'),
-        sl: resolve(slQuery, 'SL')
+        target: resolveLevelQuery(targetQuery, 'TP', ltp, side, stock, tfDataMap),
+        sl: resolveLevelQuery(slQuery, 'SL', ltp, side, stock, tfDataMap)
     };
+}
+
+/**
+ * Universal Price Resolver for Strategy Logic
+ * Handles Percentages, Indicators [TF].KEY, and Arithmetic Offset
+ */
+function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
+    const q = (query || "").trim();
+    if (!q) {
+        if (type === 'TP') return ltp * (side === 'BUY' ? 1.015 : 0.985);
+        if (type === 'SL') return ltp * (side === 'BUY' ? 0.985 : 1.015);
+        return ltp;
+    }
+
+    let baseValue = ltp;
+    let isToken = false;
+
+    // 1. Identify Token and Base Price
+    const tokenMatch = q.match(/[\[\{]\s*(.*?)\s*[\]\}]\s*\.\s*(HIGH|LOW|PREV_HIGH|PREV_LOW|ST_V|ST|SUPERTRENDVALUE|EMA_F|EMA_S|EMA_V|RSI|PRICE|LTP)/i);
+    if (tokenMatch) {
+        const tfKey = tokenMatch[1];
+        const indicator = tokenMatch[2].toUpperCase();
+        const tfData = tfDataMap[tfKey] || [];
+        const s = tfData.find(item => item.isin === stock.isin);
+
+        if (s) {
+            isToken = true;
+            if (indicator === 'ST_V' || indicator === 'ST' || indicator === 'SUPERTRENDVALUE') baseValue = s.supertrend_value || s.supertrend_dir;
+            else if (indicator === 'EMA_F') baseValue = s.ema_fast;
+            else if (indicator === 'EMA_S') baseValue = s.ema_slow;
+            else if (indicator === 'EMA_V') baseValue = s.ema_value;
+            else if (indicator === 'RSI') baseValue = s.rsi;
+            else if (indicator === 'HIGH' || indicator === 'PREV_HIGH') baseValue = s.prev_high;
+            else if (indicator === 'LOW' || indicator === 'PREV_LOW') baseValue = s.prev_low;
+            else if (indicator === 'PRICE' || indicator === 'LTP') baseValue = s.ltp || s.close;
+        }
+    }
+
+    // 2. Handle Arithmetic Adjustment (e.g. - 0.5%)
+    const arithmeticMatch = q.match(/([\+\-])\s*(\d+\.?\d*)\s*%/);
+    if (arithmeticMatch) {
+        const op = arithmeticMatch[1];
+        const pct = parseFloat(arithmeticMatch[2]) / 100;
+        const startVal = baseValue || ltp;
+        return op === '+' ? startVal * (1 + pct) : startVal * (1 - pct);
+    }
+
+    // 3. Standalone Percentage (e.g. 5%)
+    const purePctMatch = q.match(/^(\d+\.?\d*)\s*%$/);
+    if (purePctMatch && !isToken) {
+        const pct = parseFloat(purePctMatch[1]) / 100;
+        if (type === 'TP') return side.toUpperCase() === 'BUY' ? ltp * (1 + pct) : ltp * (1 - pct);
+        if (type === 'SL') return side.toUpperCase() === 'BUY' ? ltp * (1 - pct) : ltp * (1 + pct);
+        return ltp;
+    }
+
+    return parseFloat(baseValue) || ltp;
 }
 
 // Strategy Lab Sorting & Export
@@ -4683,6 +4714,7 @@ async function onScreenerCustomStrategyChange() {
     const id = document.getElementById('screener-filter-custom').value;
     if (id === 'none') {
         activeScreenerBlueprint = null;
+        screenerTfDataMap = {}; // Reset MTF cache
         applyScreenerFilters();
         return;
     }
@@ -4713,6 +4745,38 @@ async function onScreenerCustomStrategyChange() {
             // Re-fetch data for the new mode/tf context
             await fetchAndRenderSignals();
         }
+    }
+
+    // NEW: Fetch all timeframes required by the blueprint to enable full MTF matching in Screener
+    try {
+        const data = JSON.parse(strat.query);
+        const tfRegex = /[\[\{]\s*(.*?)\s*[\]\}]/g;
+        const usedTfs = [];
+        let m;
+        // Scan Entry, Target, SL for timeframes
+        [data.entry, data.target, data.sl].forEach(logic => {
+            if (!logic) return;
+            while ((m = tfRegex.exec(logic)) !== null) {
+                usedTfs.push(m[1]);
+            }
+        });
+
+        if (usedTfs.length > 0) {
+            showToast(`Fetching MTF data for '${strat.name}'...`, "info");
+            await Promise.all([...new Set(usedTfs)].map(async (tf) => {
+                const normalizedTf = Object.keys(TF_MAP).find(k => k.toLowerCase() === tf.toLowerCase());
+                const apiTf = normalizedTf ? TF_MAP[normalizedTf] : tf;
+
+                // FIX: Map timeframe to correct profile_id (mode)
+                const fetchMode = ['1d', '1w', '1mo'].includes(apiTf) ? 'swing' : 'intraday';
+
+                const res = await fetch(`/api/signals?mode=${fetchMode}&timeframe=${apiTf}`);
+                const json = await res.json();
+                if (json.status === 'success') screenerTfDataMap[tf] = json.data;
+            }));
+        }
+    } catch (e) {
+        console.warn("MTF fetch failed for blueprint:", e);
     }
 
     // Parse logic
@@ -4749,6 +4813,7 @@ function evaluateBlueprintMatch(stock, blueprint) {
         'ST': 'supertrend_dir',
         'ST_V': 'supertrend_value',
         'LTP': 'ltp',
+        'Price': 'ltp',
         'EMA_C': 'ema_signal',
         'EMA_F': 'ema_fast',
         'EMA_S': 'ema_slow',
@@ -4756,7 +4821,13 @@ function evaluateBlueprintMatch(stock, blueprint) {
         'VOL': 'volume_signal',
         'VOL_R': 'volume_ratio',
         'Pattern': 'candlestick_pattern',
-        'Pattern_Score': 'pattern_score'
+        'Pattern_Score': 'pattern_score',
+        'ROE': 'roe',
+        'PE': 'pe',
+        'HIGH': 'prev_high',
+        'LOW': 'prev_low',
+        'PREV_HIGH': 'prev_high',
+        'PREV_LOW': 'prev_low'
     };
 
     // 2. Process query for JS execution
@@ -4779,35 +4850,69 @@ function evaluateBlueprintMatch(stock, blueprint) {
     // Replace tokens with stock values
     const finalQuery = processed.replace(tokenRegex, (match, tf, attr) => {
         const key = indMap[attr] || attr;
-        let val = stock[key];
 
-        // --- Improved Lookup Fix ---
-        if (val === undefined || val === null) {
-            // 1. Try case-insensitive fallback on the stock object
-            const lowerKey = Object.keys(stock).find(k => k.toLowerCase() === attr.toLowerCase());
-            if (lowerKey) {
-                val = stock[lowerKey];
-            } else if (stock.dma_data) {
-                // 2. Try DMA data lookup
-                let dma_obj = stock.dma_data;
-                if (typeof dma_obj === 'string') {
-                    try { dma_obj = JSON.parse(dma_obj); } catch (e) { }
-                }
-                if (typeof dma_obj === 'object' && dma_obj !== null) {
-                    const dmaKey = Object.keys(dma_obj).find(k => k.toLowerCase() === attr.toLowerCase());
-                    if (dmaKey) val = dma_obj[dmaKey];
-                }
-            }
+        let val = null;
+
+        // 1. Precise MTF Match (from full data fetch)
+        if (screenerTfDataMap[tf]) {
+            const m = screenerTfDataMap[tf].find(s => s.isin === stock.isin);
+            if (m) val = m[key];
         }
-        // --- End Fix ---
 
+        // 2. MTF SuperTrend Fallback (cached in primary stock row)
         if (val === undefined || val === null) {
             if (stock.mtf_data && stock.mtf_data[tf]) {
-                if (key === 'supertrend_dir') return `'${stock.mtf_data[tf]}'`;
-                return 0;
+                if (key === 'supertrend_dir' || attr === 'ST') {
+                    val = stock.mtf_data[tf];
+                }
             }
-            return 0;
         }
+
+        // 3. Current Timeframe Fallback
+        if (val === undefined || val === null) {
+            val = stock[key];
+        }
+
+        // 4. DMA/SMA JSON Lookup (Consistent with Strategy Lab)
+        if (val === undefined || val === null) {
+            let s_obj = null;
+            if (screenerTfDataMap[tf]) {
+                s_obj = screenerTfDataMap[tf].find(s => s.isin === stock.isin);
+            } else {
+                s_obj = stock;
+            }
+
+            if (s_obj && s_obj.dma_data) {
+                let dma = s_obj.dma_data;
+                if (typeof dma === 'string') {
+                    try { dma = JSON.parse(dma); } catch (e) { }
+                }
+                if (typeof dma === 'object' && dma !== null) {
+                    const dmaKey = Object.keys(dma).find(k => k.toLowerCase() === attr.toLowerCase());
+                    if (dmaKey) val = dma[dmaKey];
+                }
+            }
+        }
+
+        if (val === undefined || val === null) {
+            // Case-insensitive fallback for fundamentals/others
+            const lowerKey = Object.keys(stock).find(k => k.toLowerCase() === attr.toLowerCase());
+            if (lowerKey) val = stock[lowerKey];
+        }
+
+        // --- Sentiment & Status Normalization (Match Strategy Lab) ---
+        if (attr === 'ST' || key === 'supertrend_dir' || attr === 'Supertrend') {
+            // Ensure ST is always BUY/SELL
+            val = (val === 'BUY' || val === 1 || val === true) ? "BUY" : "SELL";
+        } else if (attr === 'VOL' || key === 'volume_signal') {
+            val = (val === 'BULL_SPIKE' || val === 'BULL_S') ? "BULL_S" : ((val === 'BEAR_SPIKE' || val === 'BEAR_S') ? "BEAR_S" : "NONE");
+        } else if (attr === 'Pattern' || key === 'candlestick_pattern') {
+            if (typeof val === 'string' && val.includes('Bullish')) val = "Bullish";
+            else if (typeof val === 'string' && val.includes('Bearish')) val = "Bearish";
+            else val = "None";
+        }
+
+        if (val === undefined || val === null) return 0;
 
         if (typeof val === 'string') return `'${val}'`;
         return val;

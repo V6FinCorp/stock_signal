@@ -238,6 +238,7 @@ async def api_open_trade(trade: TradeOpen):
                     INSERT INTO app_sg_active_trades (isin, symbol, profile_id, timeframe, entry_price, target_1, stop_loss, qty, side, status, notes)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'OPEN', %s)
                 """, (trade.isin, trade.symbol, trade.mode, trade.timeframe, trade.entry_price, trade.target, trade.stop_loss, trade.qty, trade.side, trade.query_context))
+                await conn.commit()
         app_pool.close()
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
@@ -261,6 +262,7 @@ async def api_close_trade(trade_id: int):
         async with app_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute("DELETE FROM app_sg_active_trades WHERE id = %s", (trade_id,))
+                await conn.commit()
         app_pool.close()
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
@@ -302,6 +304,7 @@ async def save_settings(data: dict):
                         params = {k: v for k, v in val.items() if k != 'enabled'}
                         is_enabled = val.get('enabled', True)
                         await cur.execute("INSERT INTO app_sg_indicator_settings (profile_id, indicator_key, is_enabled, params_json) VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE is_enabled=VALUES(is_enabled), params_json=VALUES(params_json)", (profile, be_key, is_enabled, json.dumps(params)))
+                await conn.commit()
         app_pool.close()
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
@@ -328,6 +331,7 @@ async def save_strategy(strat: StrategySave):
                     await cur.execute("UPDATE app_sg_confluence_strategies SET name = %s, query_text = %s, mapped_mode = %s, mapped_timeframe = %s WHERE id = %s", (strat.name, strat.query, strat.mode, strat.timeframe, strat.id))
                 else: 
                     await cur.execute("INSERT INTO app_sg_confluence_strategies (name, query_text, mapped_mode, mapped_timeframe) VALUES (%s, %s, %s, %s)", (strat.name, strat.query, strat.mode, strat.timeframe))
+                await conn.commit()
         app_pool.close()
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
@@ -337,7 +341,9 @@ async def delete_strategy_api(strat_id: int):
     try:
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
         async with app_pool.acquire() as conn:
-            async with conn.cursor() as cur: await cur.execute("DELETE FROM app_sg_confluence_strategies WHERE id = %s", (strat_id,))
+            async with conn.cursor() as cur: 
+                await cur.execute("DELETE FROM app_sg_confluence_strategies WHERE id = %s", (strat_id,))
+                await conn.commit()
         app_pool.close()
         return {"status": "success"}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))

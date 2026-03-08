@@ -287,81 +287,88 @@
             </header>
 
             <div class="controls-row"
-                style="margin-bottom: 24px; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--border-color);">
-                <div
-                    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
+                style="margin-bottom: 24px; padding: 12px 16px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--border-color);">
+                <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; width: 100%;">
                     <!-- Row 1: Search & Basic Filters -->
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <div class="search-box" style="margin: 0; flex: 1;">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="screener-search" placeholder="Search Symbol..."
-                                oninput="applyScreenerFilters()">
-                        </div>
-                        <select class="select-input" id="screener-filter-tf" onchange="applyScreenerFilters()"
-                            style="width: 120px;">
-                            <option value="all">Timeframe: All</option>
-                            <option value="5m">5 Minute</option>
-                            <option value="15m">15 Minute</option>
-                            <option value="30m">30 Minute</option>
-                            <option value="60m">1 Hour</option>
-                            <option value="1d">Daily</option>
-                            <option value="1w">Weekly</option>
-                            <option value="1mo">Monthly</option>
-                        </select>
+                    <div class="search-box" style="margin: 0; width: 220px;">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="screener-search" placeholder="Search Symbol..."
+                            oninput="applyScreenerFilters()">
                     </div>
+                    <select class="select-input" id="screener-filter-tf" onchange="applyScreenerFilters()"
+                        style="width: 120px;">
+                        <option value="all">Timeframe: All</option>
+                        <option value="5m">5 Minute</option>
+                        <option value="15m">15 Minute</option>
+                        <option value="30m">30 Minute</option>
+                        <option value="60m">1 Hour</option>
+                        <option value="1d">Daily</option>
+                        <option value="1w">Weekly</option>
+                        <option value="1mo">Monthly</option>
+                    </select>
 
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <select class="select-input" id="screener-filter-dir" onchange="applyScreenerFilters()">
-                            <option value="all">Direction: All</option>
-                            <option value="buy">BUY Only</option>
-                            <option value="sell">SELL Only</option>
-                        </select>
-                        <select class="select-input" id="screener-filter-strat" onchange="applyScreenerFilters()">
-                            <option value="all">Trade Plan: All</option>
-                            <option value="PERFECT_BUY">Perfect Buy</option>
-                            <option value="PERFECT_SELL">Perfect Sell</option>
-                            <option value="DMA_BOUNCE">Support Bounce</option>
-                            <option value="OVEREXTENDED">Overextended</option>
-                        </select>
-                        <select class="select-input" id="screener-filter-custom"
-                            onchange="onScreenerCustomStrategyChange()"
-                            style="border-color: var(--primary); background: rgba(14, 165, 233, 0.1);">
-                            <option value="none">Strategy Blueprint: None</option>
-                            <!-- Populated dynamically -->
-                        </select>
-                    </div>
+                    <select class="select-input" id="screener-filter-dir" onchange="applyScreenerFilters()"
+                        style="width: 110px;">
+                        <option value="all">Direction: All</option>
+                        <option value="buy">BUY Only</option>
+                        <option value="sell">SELL Only</option>
+                    </select>
 
-                    <!-- Row 2: Sliders -->
-                    <div class="rsi-filter-wrapper"
-                        style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
-                        <span
-                            style="font-size: 10px; font-weight: 700; color: var(--success); text-transform: uppercase;">Min
-                            Target %:</span>
-                        <div class="rsi-slider-container">
-                            <div class="rsi-slider-track"></div>
-                            <div class="rsi-slider-range" id="screener-target-range"></div>
-                            <input type="range" id="screener-target-min" min="0" max="20" value="0" step="0.5"
-                                oninput="applyScreenerFilters()">
-                            <input type="range" id="screener-target-max" min="0" max="20" value="20" step="0.5"
-                                oninput="applyScreenerFilters()">
+                    <select class="select-input" id="screener-filter-strat" onchange="applyScreenerFilters()"
+                        style="width: 140px;">
+                        <option value="all">Trade Plan: All</option>
+                        <option value="PERFECT_BUY">Perfect Buy</option>
+                        <option value="PERFECT_SELL">Perfect Sell</option>
+                        <option value="DMA_BOUNCE">Support Bounce</option>
+                        <option value="OVEREXTENDED">Overextended</option>
+                    </select>
+
+                    <select class="select-input" id="screener-filter-custom" onchange="onScreenerCustomStrategyChange()"
+                        style="max-width: 280px; border-color: var(--primary);">
+                        <option value="none">Strategy Blueprint: None</option>
+                    </select>
+
+                    <!-- Compact Dynamic Dynamic Inputs for Target/SL -->
+                    <div
+                        style="display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.03); padding: 4px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); height: 38px;">
+
+                        <!-- Target Range -->
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span
+                                style="font-size: 10px; font-weight: 700; color: var(--success); text-transform: uppercase; white-space: nowrap;">Target</span>
+                            <div
+                                style="display: flex; align-items: center; background: rgba(0,0,0,0.2); border-radius: 4px; border: 1px solid var(--border-color); overflow: hidden;">
+                                <input type="number" id="screener-target-min" value="0.0" step="0.5" min="0" max="100"
+                                    style="width: 50px; height: 26px; background: transparent; border: none; color: var(--text-main); font-weight: 700; text-align: center; font-size: 13px;"
+                                    oninput="applyScreenerFilters()" title="Min Target %">
+                                <span style="opacity: 0.3; color: var(--text-dim); padding: 0 4px;">:</span>
+                                <input type="number" id="screener-target-max" value="100.0" step="0.5" min="0" max="100"
+                                    style="width: 50px; height: 26px; background: transparent; border: none; color: var(--text-main); font-weight: 700; text-align: center; font-size: 13px;"
+                                    oninput="applyScreenerFilters()" title="Max Target %">
+                                <span
+                                    style="margin-right: 6px; font-size: 11px; color: var(--success); font-weight: 700; margin-left: 2px;">%</span>
+                            </div>
                         </div>
-                        <div class="rsi-values" id="screener-target-label" style="color: var(--success);">0% - 20%</div>
-                    </div>
 
-                    <div class="rsi-filter-wrapper"
-                        style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
-                        <span
-                            style="font-size: 10px; font-weight: 700; color: var(--danger); text-transform: uppercase;">Max
-                            SL %:</span>
-                        <div class="rsi-slider-container">
-                            <div class="rsi-slider-track"></div>
-                            <div class="rsi-slider-range" id="screener-sl-range"></div>
-                            <input type="range" id="screener-sl-min" min="0" max="10" value="0" step="0.2"
-                                oninput="applyScreenerFilters()">
-                            <input type="range" id="screener-sl-max" min="0" max="10" value="10" step="0.2"
-                                oninput="applyScreenerFilters()">
+                        <div style="width: 1px; height: 18px; background: var(--border-color); margin: 0 2px;"></div>
+
+                        <!-- SL Range -->
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span
+                                style="font-size: 10px; font-weight: 700; color: var(--danger); text-transform: uppercase; white-space: nowrap;">SL</span>
+                            <div
+                                style="display: flex; align-items: center; background: rgba(0,0,0,0.2); border-radius: 4px; border: 1px solid var(--border-color); overflow: hidden;">
+                                <input type="number" id="screener-sl-min" value="0.0" step="0.2" min="0" max="100"
+                                    style="width: 50px; height: 26px; background: transparent; border: none; color: var(--text-main); font-weight: 700; text-align: center; font-size: 13px;"
+                                    oninput="applyScreenerFilters()" title="Min SL %">
+                                <span style="opacity: 0.3; color: var(--text-dim); padding: 0 4px;">:</span>
+                                <input type="number" id="screener-sl-max" value="10.0" step="0.2" min="0" max="100"
+                                    style="width: 50px; height: 26px; background: transparent; border: none; color: var(--text-main); font-weight: 700; text-align: center; font-size: 13px;"
+                                    oninput="applyScreenerFilters()" title="Max SL %">
+                                <span
+                                    style="margin-right: 6px; font-size: 11px; color: var(--danger); font-weight: 700; margin-left: 2px;">%</span>
+                            </div>
                         </div>
-                        <div class="rsi-values" id="screener-sl-label" style="color: var(--danger);">0% - 10%</div>
                     </div>
                 </div>
             </div>
@@ -808,12 +815,13 @@
                                 <div style="display: flex; gap: 12px;">
                                     <button class="btn btn-dim" onclick="clearStrategyLab()"
                                         style="padding: 10px 20px;"><i class="fas fa-redo"></i> Reset Form</button>
-                                    <button class="btn btn-dim" id="btn-update-strat" onclick="saveCurrentStrategy(true)"
+                                    <button class="btn btn-dim" id="btn-update-strat"
+                                        onclick="saveCurrentStrategy(true)"
                                         style="display:none; padding: 10px 20px; border-color: var(--success); color: var(--success);"><i
-                                             class="fas fa-edit"></i> Update Profile</button>
-                                     <button class="btn btn-dim" onclick="saveCurrentStrategy(false)"
-                                         style="padding: 10px 20px; border-color: var(--primary); color: var(--primary);"><i
-                                             class="fas fa-plus"></i> Save as New</button>
+                                            class="fas fa-edit"></i> Update Profile</button>
+                                    <button class="btn btn-dim" onclick="saveCurrentStrategy(false)"
+                                        style="padding: 10px 20px; border-color: var(--primary); color: var(--primary);"><i
+                                            class="fas fa-plus"></i> Save as New</button>
                                 </div>
                                 <button class="btn btn-primary" id="strategy-run-btn" onclick="runStrategyScan()"
                                     style="padding: 12px 32px; font-weight: 800; font-size: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);">
