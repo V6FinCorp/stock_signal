@@ -4056,38 +4056,42 @@ function calculateStaticLevels(stock, tfDataMap) {
     };
 }
 
-function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime = true) {
+function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime, tf) {
     if (isNaN(targetRSI) || isNaN(currentRSI) || isNaN(currentPrice)) return currentPrice;
     
-    // RSI Formula: 100 - (100 / (1 + RS))
+    // 1. Map Volatility per Timeframe (Percentage of Price)
+    const volMap = {
+        '5m': 0.003, '15m': 0.005, '30m': 0.007, '60m': 0.01,
+        '1d': 0.015, '1w': 0.04, '1mo': 0.08, '1y': 0.15
+    };
+    const tfKey = (tf || '1d').toLowerCase();
+    const volatilityFactor = volMap[tfKey] || volMap['1d'];
+    const estimatedVolatility = currentPrice * volatilityFactor; 
+
+    // 2. Estimate current AvgGain and AvgLoss using current RSI (normalized to volatility)
     // RS = AvgGain / AvgLoss
     // AvgGain = RS * AvgLoss
+    // AvgGain + AvgLoss = estimatedVolatility
+    const K = currentRSI / (100 - currentRSI); // Current RS
+    const T = targetRSI / (100 - targetRSI);   // Target RS
     
-    // We don't have AvgGain/Loss history here, so we approximate it
-    // Assumption: Standard 14-period Wilder's Smoothing
-    const period = 14;
-    
-    // 1. Convert RSI to RS
-    const K = currentRSI / (100 - currentRSI);
-    const T = targetRSI / (100 - targetRSI);
-    
-    // 2. Estimate current AvgGain and AvgLoss by assuming a standard Volatility range
-    // Heuristic: Median daily range ~ 1.2%
-    const estimatedVolatility = currentPrice * 0.012; 
     const avgLoss = estimatedVolatility / (K + 1);
     const avgGain = estimatedVolatility - avgLoss;
 
-    // 3. Solve for NextGain or NextLoss to hit target RSI T
-    // (AvgGain * (N-1) + NextGain) / (AvgLoss * (N-1) + NextLoss) = T
-    // Assuming NextLoss = 0 if target > current, NextGain = 0 if target < current
+    // 3. Solve for G (Gain) or L (Loss) to hit target RSI T
+    // Using Wilder's approximation: AvgNext = (AvgCurr * 13 + Next) / 14
+    // T = (avgGain * 13 + G) / (avgLoss * 13 + L)
+    const period = 14;
+    const n = period - 1;
     let nextMove = 0;
+
     if (targetRSI > currentRSI) {
-        // Solving for NextGain:
-        nextMove = T * (avgLoss * (period - 1)) - (avgGain * (period - 1));
+        // Solving for G (Loss is 0)
+        nextMove = T * (avgLoss * n) - (avgGain * n);
     } else {
-        // Solving for NextLoss:
-        nextMove = ( (avgGain * (period - 1)) / T ) - (avgLoss * (period - 1));
-        nextMove = -nextMove; // It's a price drop
+        // Solving for L (Gain is 0)
+        nextMove = ( (avgGain * n) / T ) - (avgLoss * n);
+        nextMove = -nextMove; // Negative move
     }
 
     return currentPrice + nextMove;
@@ -4101,11 +4105,28 @@ function resolveMultiTarget(query, type, ltp, side, stock, tfDataMap) {
     if (!raw) return [{ label: type === 'TP' ? 'T1' : 'SL', price: resolveLevelQuery("", type, ltp, side, stock, tfDataMap) }];
     
     const parts = raw.split(/\|| OR /i);
-    return parts.map((q, idx) => {
-        const label = parts.length > 1 ? `${type === 'TP' ? 'T' : 'S'}${idx + 1}` : (type === 'TP' ? 'T1' : 'SL');
+    const isBuy = (side || "BUY").toUpperCase() === 'BUY';
+
+    let resolved = parts.map((q, idx) => {
         return {
-            label: label,
+            label: 'TMP',
             price: resolveLevelQuery(q.trim(), type, ltp, side, stock, tfDataMap)
+        };
+    });
+
+    // Sort Roadmaps: T1 should be the closest to LTP, T3 the furthest
+    resolved.sort((a, b) => {
+        const distA = Math.abs(a.price - ltp);
+        const distB = Math.abs(b.price - ltp);
+        return distA - distB;
+    });
+
+    // Re-label after sorting
+    return resolved.map((lvl, idx) => {
+        const prefix = type === 'TP' ? 'T' : (type === 'SL' ? 'SL' : 'A');
+        return {
+            label: parts.length > 1 ? `${prefix}${idx + 1}` : (type === 'TP' ? 'T1' : (type === 'SL' ? 'SL' : 'Zone')),
+            price: lvl.price
         };
     });
 }
@@ -4216,7 +4237,8 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
     if (rsiMatch) {
         const targetRSI = parseFloat(rsiMatch[1] || rsiMatch[2]);
         const currentRSI = stock.rsi || 50;
-        return forecastPriceFromRSI(targetRSI, ltp, currentRSI, side.toUpperCase() === 'BUY');
+        const recordTf = (stock.timeframe || (typeof currentTimeframe !== 'undefined' ? currentTimeframe : '1d'));
+        return forecastPriceFromRSI(targetRSI, ltp, currentRSI, side.toUpperCase() === 'BUY', recordTf);
     }
 
     // Safety: If someone just put "RSI" alone in a price box, it's probably a mistake.
