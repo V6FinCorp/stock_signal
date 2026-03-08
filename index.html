@@ -129,11 +129,11 @@
                         <div
                             style="display: flex; gap: 15px; border-left: 1px solid var(--border-color); padding-left: 20px;">
                             <div><i class="fas fa-history"></i> Fetch: <span id="last-fetch-time"
-                                    style="color:var(--text);font-weight:600;">Never</span></div>
+                                    style="color:var(--text);font-weight:600;"><div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div></span></div>
                             <div><i class="fas fa-bolt"></i> Calc: <span id="last-calc-time"
-                                    style="color:var(--text);font-weight:600;">Never</span></div>
+                                    style="color:var(--text);font-weight:600;"><div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div></span></div>
                             <div><i class="fas fa-clock"></i> OHLC: <span id="latest-ohlc-time"
-                                    style="color:var(--text);font-weight:600;">Never</span></div>
+                                    style="color:var(--text);font-weight:600;"><div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div></span></div>
                         </div>
                     </div>
                 </div>
@@ -167,28 +167,28 @@
                     <div class="stat-icon bg-blue-trans"><i class="fas fa-list-ul"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Total Watchlist</span>
-                        <span class="stat-value" id="stat-total">5,000</span>
+                        <span class="stat-value" id="stat-total"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-bullish" onclick="setStatFilter('bullish')">
                     <div class="stat-icon bg-success-trans"><i class="fas fa-arrow-up"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Bullish Signals</span>
-                        <span class="stat-value" id="stat-bullish">1,240</span>
+                        <span class="stat-value" id="stat-bullish"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-bearish" onclick="setStatFilter('bearish')">
                     <div class="stat-icon bg-danger-trans"><i class="fas fa-arrow-down"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Bearish Signals</span>
-                        <span class="stat-value" id="stat-bearish">892</span>
+                        <span class="stat-value" id="stat-bearish"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-confluence" onclick="setStatFilter('confluence')">
                     <div class="stat-icon bg-amber-trans"><i class="fas fa-bolt"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Top Confluence</span>
-                        <span class="stat-value" id="stat-confluence">42</span>
+                        <span class="stat-value" id="stat-confluence"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
                     </div>
                 </div>
             </section>
@@ -350,7 +350,7 @@
 
                     <select class="select-input" id="screener-filter-custom" onchange="onScreenerCustomStrategyChange()"
                         style="max-width: 280px; border-color: var(--primary);">
-                        <option value="none">Strategy Blueprint: None</option>
+                        <option value="none">Default Confluence Ranking</option>
                     </select>
 
                     <!-- Compact Dynamic Dynamic Inputs for Target/SL -->

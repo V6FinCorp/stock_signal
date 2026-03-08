@@ -31,14 +31,29 @@ const tableControllers = {
     lab: null
 };
 
-function showTableSkeleton(tbodyId, columns = 8, rows = 10) {
+function showTableSkeleton(tbodyId, columns = 0, rows = 10) {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) return;
+    
+    // Auto-detect columns from thead if available for better alignment
+    let colToRender = columns;
+    if (colToRender === 0) {
+        const table = tbody.closest('table');
+        if (table) {
+            const thead = table.querySelector('thead');
+            const headRow = thead ? thead.querySelector('tr') : null;
+            if (headRow) {
+                // Count visible or all TH elements
+                colToRender = headRow.querySelectorAll('th').length;
+            }
+        }
+    }
+    if (colToRender === 0) colToRender = 8; // Fallback
     
     let html = '';
     for (let i = 0; i < rows; i++) {
         let cells = '';
-        for (let j = 0; j < columns; j++) {
+        for (let j = 0; j < colToRender; j++) {
             cells += `<td><div class="skeleton-box" style="width: ${Math.random() * 50 + 40}%"></div></td>`;
         }
         html += `<tr class="skeleton-row">${cells}</tr>`;
@@ -208,15 +223,28 @@ async function fetchAndRenderSignals(forceFetch = false) {
     const apiTf = TF_MAP[currentTimeframe] || '1d';
     const cacheKey = `${currentMode}_${apiTf}`;
 
-    // Return instant cached data if we already requested this tab
+    // Return instant cached data from memory/local storage if available
     if (!forceFetch && signalCache[cacheKey]) {
         liveSignals = signalCache[cacheKey];
         renderSignals();
-        return;
+        // Even if we have cache, if it's the first load, we might want to refresh anyway
+        // but not block the UI. So we continue but don't show skeleton.
+    } else {
+        const tbody = document.getElementById('signal-tbody');
+        showTableSkeleton('signal-tbody'); 
     }
 
-    const tbody = document.getElementById('signal-tbody');
-    showTableSkeleton('signal-tbody', 10);
+    // Clear stats and header times during load to prevent stale data
+    const statIds = ['stat-total', 'stat-bullish', 'stat-bearish', 'stat-confluence'];
+    statIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="skeleton-box" style="width:40px;height:16px;"></div>';
+    });
+    const timeIds = ['last-fetch-time', 'last-calc-time', 'latest-ohlc-time'];
+    timeIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div>';
+    });
 
     // Abort previous request if still pending
     if (tableControllers.dashboard) tableControllers.dashboard.abort();
@@ -231,11 +259,13 @@ async function fetchAndRenderSignals(forceFetch = false) {
         if (result.status === 'success') {
             liveSignals = result.data;
             signalCache[cacheKey] = liveSignals; // Save to memory cache
+            saveConfigsToLocalStorage(); // Persist to local storage
         } else {
             console.error(result.message);
             liveSignals = [];
         }
     } catch (e) {
+        if (e.name === 'AbortError') return; // Ignore expected abonts
         console.error("Fetch failed. Is your server running?", e);
         liveSignals = [];
     }
@@ -253,7 +283,7 @@ function setStatFilter(filterType) {
     renderSignals();
 }
 
-function setMode(mode) {
+function setMode(mode, skipFetch = false) {
     console.log(`Setting Mode: ${mode}`);
     const oldMode = currentMode;
     currentMode = mode;
@@ -288,7 +318,7 @@ function setMode(mode) {
     if (activeTab === 'dashboard') {
         renderTimeframes();
         updateTableHeader();
-        fetchAndRenderSignals(true); // Force fetch on mode switch
+        if (!skipFetch) fetchAndRenderSignals(true); 
     } else if (activeTab === 'pro-screener') {
         renderProScreener();
     } else if (activeTab === 'settings') {
@@ -1527,6 +1557,16 @@ async function refreshSignals() {
 }
 
 async function fetchSystemStatus() {
+    // Show short skeletons while fetching status to avoid 'Never' flicker
+    const timeIds = ['last-fetch-time', 'last-calc-time', 'latest-ohlc-time'];
+    timeIds.forEach(id => {
+        const el = document.getElementById(id);
+        // Only show if not already showing a real value (prevent flickering during auto-sync)
+        if (el && (el.innerText === 'Never' || el.children.length === 0)) {
+            el.innerHTML = '<div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div>';
+        }
+    });
+
     try {
         const res = await fetch(`/api/status?mode=${currentMode}`);
         const result = await res.json();
@@ -2567,31 +2607,51 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
 }
 
 // --- App Initialization ---
-document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Brief verify check
-    await verifySession();
-
-    console.log("App Initialized. Defaulting to Swing Dashboard.");
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("App Initializing...");
+    
+    // 1. Load everything from LocalStorage FIRST (Fastest)
     loadConfigsFromLocalStorage();
-    setMode('swing');
+    
+    // 2. Immediate UI Setup (No waiting for API)
+    setupRSISlider(); 
+    applyZoom(); 
     switchTab('dashboard');
-    setupRSISlider(); // Initialize Dual RSI Slider
-    applyZoom(); // Apply initial zoom level
+    setMode(currentMode, true); // skipFetch=true to use ONLY cache for now
+    
+    // 3. Background Verification & ONE Fresh Data Fetch
+    verifySession().then(() => {
+        console.log("Session verified.");
+        // Fresh fetch if we're on dashboard
+        if (activeTab === 'dashboard') {
+            fetchAndRenderSignals(true); 
+        }
+    });
+
+    fetchSystemStatus();
 });
 
 function saveConfigsToLocalStorage() {
-    localStorage.setItem('stock_signal_configs', JSON.stringify(CONFIGS));
+    const payload = {
+        configs: CONFIGS,
+        cache: signalCache,
+        lastMode: currentMode,
+        lastTab: activeTab
+    };
+    localStorage.setItem('stock_signal_v2_data', JSON.stringify(payload));
 }
 
 function loadConfigsFromLocalStorage() {
-    const saved = localStorage.getItem('stock_signal_configs');
+    const saved = localStorage.getItem('stock_signal_v2_data');
     if (saved) {
         try {
-            const parsed = JSON.parse(saved);
-            // Deep merge or simple assign? Simple assign for now to override defaults
-            Object.assign(CONFIGS, parsed);
+            const data = JSON.parse(saved);
+            if (data.configs) Object.assign(CONFIGS, data.configs);
+            if (data.cache) signalCache = data.cache;
+            if (data.lastMode) currentMode = data.lastMode;
+            // Note: lastTab is handled by initialization logic
         } catch (e) {
-            console.error("Failed to load saved configs:", e);
+            console.error("Failed to load saved data:", e);
         }
     }
 }
@@ -2603,7 +2663,7 @@ async function renderProScreener() {
     const sentimentPlaceholder = document.getElementById('screener-sentiment-placeholder');
     if (!tbody || !sentimentPlaceholder) return;
 
-    showTableSkeleton('screener-tbody', 9);
+    showTableSkeleton('screener-tbody'); // Auto-detect columns for perfect match
 
     if (tableControllers.screener) tableControllers.screener.abort();
     tableControllers.screener = new AbortController();
@@ -2680,8 +2740,9 @@ function applyScreenerFilters() {
 
         if (activeScreenerBlueprint) {
             const b = activeScreenerBlueprint.originalData;
-            tVal = resolveLevelQuery(b.target || "", 'TP', price, b.side || "BUY", s, screenerTfDataMap);
-            sVal = resolveLevelQuery(b.sl || "", 'SL', price, b.side || "BUY", s, screenerTfDataMap);
+            const bSide = (b.side || "BUY").toUpperCase();
+            tVal = resolveLevelQuery(b.target || "", 'TP', price, bSide, s, screenerTfDataMap);
+            sVal = resolveLevelQuery(b.sl || "", 'SL', price, bSide, s, screenerTfDataMap);
         }
 
         const targetVal = tVal || (score > 0 ? price * 1.05 : price * 0.95);
@@ -2739,35 +2800,62 @@ function applyScreenerFilters() {
 
         // --- Dynamic Column Calculation (Match User Requirement) ---
         let strategy = s.trade_strategy || (Math.abs(score) === 5 ? "High Conviction Confluence" : "Trend Support");
-        let targetVal = s.target || (isBullish ? price * 1.05 : price * 0.95);
-        let slVal = s.sl || (isBullish ? price * 0.97 : price * 1.03);
-        let accumVal = price; // Default
         let displayScore = s.pattern_score || 0;
         const metricsTooltip = getMetricsList(s);
+
+        let targets = [];
+        let stopLosses = [];
+        let accumulations = [{ label: 'Zone', price: price }]; // Standardize as object array
 
         if (activeScreenerBlueprint) {
             strategy = activeScreenerBlueprint.name;
             const b = activeScreenerBlueprint.originalData;
-            const bSide = b.side || "BUY";
+            const bSide = (b.side || "BUY").toUpperCase();
             
-            targetVal = resolveLevelQuery(b.target || "", 'TP', price, bSide, s, screenerTfDataMap);
-            slVal = resolveLevelQuery(b.sl || "", 'SL', price, bSide, s, screenerTfDataMap);
-            accumVal = resolveLevelQuery(b.accum || "", 'ACCUM', price, bSide, s, screenerTfDataMap);
+            targets = resolveMultiTarget(b.target || "", 'TP', price, bSide, s, screenerTfDataMap);
+            stopLosses = resolveMultiTarget(b.sl || "", 'SL', price, bSide, s, screenerTfDataMap);
+            accumulations = resolveMultiTarget(b.accum || "", 'ACCUM', price, bSide, s, screenerTfDataMap);
             
             // If the blueprint matched, ensure we show some positive score indicator if not present
             if (displayScore === 0) displayScore = 5; 
+        } else {
+            targets = [{ label: 'T1', price: (isBullish ? price * 1.05 : price * 0.95) }];
+            stopLosses = [{ label: 'SL', price: (isBullish ? price * 0.97 : price * 1.03) }];
         }
 
-        const risk = Math.abs(price - slVal);
-        const reward = Math.abs(targetVal - price);
-        const rrRatio = risk > 0 ? (reward / risk).toFixed(1) : "3.0+";
+        // Format Multi-Target Display
+        const formatLevel = (level, p) => {
+            if (!level || typeof level.price !== 'number') return '';
+            const diff = level.price - p;
+            const pct = p > 0 ? ((Math.abs(diff) / p) * 100).toFixed(1) : "0.0";
+            const prefix = diff >= 0 ? '+' : '-';
+            const color = diff >= 0 ? 'var(--success)' : 'var(--danger)';
+            return `<div style="margin-bottom:4px;">
+                <span style="font-size:10px; font-weight:800; opacity:0.6;">${level.label || 'LVL'}:</span> 
+                <span style="font-family:'Fira Code', monospace; font-weight:700;">${level.price.toFixed(2)}</span>
+                <span style="font-size:10px; color:${color}; font-weight:600;">(${prefix}${pct}%)</span>
+            </div>`;
+        };
 
-        const targetPct = ((reward / price) * 100).toFixed(1);
-        const slPct = ((risk / price) * 100).toFixed(1);
+        const targetsDisplay = targets.map(t => formatLevel(t, price)).join('');
+        const slDisplay = stopLosses.map(l => formatLevel(l, price)).join('');
+        const accumulationHTML = accumulations.map(a => `<div style="font-size:11px; opacity:0.8;">${a.label || 'Zone'}: ${a.price.toFixed(2)}</div>`).join('');
 
-        const targetsDisplay = `T1: ${targetVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(+${targetPct}%)</span>`;
-        const slDisplay = `${slVal.toFixed(2)}<br><span style="font-size:10px; opacity:0.7; font-weight:400;">(${slPct}%)</span>`;
-        const accumulation = `Zone: ${accumVal.toFixed(2)}`;
+        // Calculate R:R Range
+        let rrDisplay = "1:2.0";
+        if (targets.length > 0 && stopLosses.length > 0) {
+            const minT = targets[0].price;
+            const maxT = targets[targets.length - 1].price;
+            const sl = stopLosses[0].price;
+            
+            const risk = Math.max(0.1, Math.abs(price - sl));
+            const rewMin = Math.abs(minT - price);
+            const rewMax = Math.abs(maxT - price);
+            
+            const rrMin = (rewMin / risk).toFixed(1);
+            const rrMax = (rewMax / risk).toFixed(1);
+            rrDisplay = (rrMin === rrMax) ? `1:${rrMin}` : `1:${rrMin} \u279E ${rrMax}`;
+        }
 
         html += `
             <tr>
@@ -2790,10 +2878,10 @@ function applyScreenerFilters() {
                         ${strategy} <i class="fas fa-info-circle" style="font-size: 9px; opacity: 0.7;"></i>
                     </span>
                     <div style="font-size: 10px; color: var(--text-dim); margin-top: 6px;">
-                        Risk/Reward: <span style="color: var(--text-main); font-weight: 600;">1:${rrRatio}</span>
+                        Risk/Reward: <span style="color: var(--text-main); font-weight: 600;">${rrDisplay}</span>
                     </div>
                 </td>
-                <td style="color:var(--amber); font-weight:600; font-size:11px;">${accumulation}</td>
+                <td style="color:var(--amber); font-weight:600; font-size:11px;">${accumulationHTML}</td>
                 <td style="color:var(--success); font-weight:600; font-size:11px;">${targetsDisplay}</td>
                 <td style="color:var(--danger); font-weight:600; font-size:11px;">${slDisplay}</td>
                 <td style="text-align: center;">
@@ -3959,19 +4047,75 @@ function calculateStaticLevels(stock, tfDataMap) {
     const side = document.getElementById('strat-side').value;
     const targetQuery = document.getElementById('strat-target-query').value;
     const slQuery = document.getElementById('strat-sl-query').value;
+    const accumQuery = document.getElementById('strat-accum-query').value;
 
     return {
-        target: resolveLevelQuery(targetQuery, 'TP', ltp, side, stock, tfDataMap),
-        sl: resolveLevelQuery(slQuery, 'SL', ltp, side, stock, tfDataMap)
+        targets: resolveMultiTarget(targetQuery, 'TP', ltp, side, stock, tfDataMap),
+        stopLosses: resolveMultiTarget(slQuery, 'SL', ltp, side, stock, tfDataMap),
+        accumulations: resolveMultiTarget(accumQuery, 'ACCUM', ltp, side, stock, tfDataMap)
     };
+}
+
+function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime = true) {
+    if (isNaN(targetRSI) || isNaN(currentRSI) || isNaN(currentPrice)) return currentPrice;
+    
+    // RSI Formula: 100 - (100 / (1 + RS))
+    // RS = AvgGain / AvgLoss
+    // AvgGain = RS * AvgLoss
+    
+    // We don't have AvgGain/Loss history here, so we approximate it
+    // Assumption: Standard 14-period Wilder's Smoothing
+    const period = 14;
+    
+    // 1. Convert RSI to RS
+    const K = currentRSI / (100 - currentRSI);
+    const T = targetRSI / (100 - targetRSI);
+    
+    // 2. Estimate current AvgGain and AvgLoss by assuming a standard Volatility range
+    // Heuristic: Median daily range ~ 1.2%
+    const estimatedVolatility = currentPrice * 0.012; 
+    const avgLoss = estimatedVolatility / (K + 1);
+    const avgGain = estimatedVolatility - avgLoss;
+
+    // 3. Solve for NextGain or NextLoss to hit target RSI T
+    // (AvgGain * (N-1) + NextGain) / (AvgLoss * (N-1) + NextLoss) = T
+    // Assuming NextLoss = 0 if target > current, NextGain = 0 if target < current
+    let nextMove = 0;
+    if (targetRSI > currentRSI) {
+        // Solving for NextGain:
+        nextMove = T * (avgLoss * (period - 1)) - (avgGain * (period - 1));
+    } else {
+        // Solving for NextLoss:
+        nextMove = ( (avgGain * (period - 1)) / T ) - (avgLoss * (period - 1));
+        nextMove = -nextMove; // It's a price drop
+    }
+
+    return currentPrice + nextMove;
+}
+
+/**
+ * Handles multiple Targets/SLs separated by OR / |
+ */
+function resolveMultiTarget(query, type, ltp, side, stock, tfDataMap) {
+    const raw = (query || "").trim();
+    if (!raw) return [{ label: type === 'TP' ? 'T1' : 'SL', price: resolveLevelQuery("", type, ltp, side, stock, tfDataMap) }];
+    
+    const parts = raw.split(/\|| OR /i);
+    return parts.map((q, idx) => {
+        const label = parts.length > 1 ? `${type === 'TP' ? 'T' : 'S'}${idx + 1}` : (type === 'TP' ? 'T1' : 'SL');
+        return {
+            label: label,
+            price: resolveLevelQuery(q.trim(), type, ltp, side, stock, tfDataMap)
+        };
+    });
 }
 
 /**
  * Universal Price Resolver for Strategy Logic
- * Handles Percentages, Indicators [TF].KEY, and Arithmetic Offset
+ * Handles Percentages, Indicators [TF].KEY, Arithmetic Offset, and Inverse RSI
  */
 function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
-    const q = (query || "").trim();
+    let q = (query || "").trim();
     if (!q) {
         if (type === 'TP') return ltp * (side === 'BUY' ? 1.015 : 0.985);
         if (type === 'SL') return ltp * (side === 'BUY' ? 0.985 : 1.015);
@@ -3981,43 +4125,111 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
     let baseValue = ltp;
     let isToken = false;
 
+    // 0. Pre-process Shorthands (Assuming base timeframe if not provided)
+    // Handle @High, @Low shorthands
+    q = q.replace(/@High/gi, `[Current].Prev_High`);
+    q = q.replace(/@Low/gi, `[Current].Prev_Low`);
+    
+    // Auto-bracket indicators that are sitting alone
+    // e.g. "RSI + 2%" -> "[Current].RSI + 2%"
+    Object.keys(STRAT_ALIASES).sort((a,b)=>b.length-a.length).forEach(alias => {
+        const regex = new RegExp(`(?<!\\[|\\.)\\b${alias}\\b`, 'gi');
+        if (q.match(regex) && !q.includes('[')) {
+            q = q.replace(regex, `[Current].${alias}`);
+        }
+    });
+
     // 1. Identify Token and Base Price
-    const tokenMatch = q.match(/[\[\{]\s*(.*?)\s*[\]\}]\s*\.\s*(HIGH|LOW|PREV_HIGH|PREV_LOW|ST_V|ST|SUPERTRENDVALUE|EMA_F|EMA_S|EMA_V|RSI|PRICE|LTP)/i);
+    // Pattern: [Timeframe].Indicator or {Timeframe}.Indicator
+    const tokenRegex = /[\[\{\(](.*?)[\]\}\)]\s*\.\s*(\w+)/i;
+    const tokenMatch = q.match(tokenRegex);
+    
     if (tokenMatch) {
-        const tfKey = tokenMatch[1];
-        const indicator = tokenMatch[2].toUpperCase();
-        const tfData = tfDataMap[tfKey] || [];
+        let tfKey = tokenMatch[1].trim();
+        if (tfKey.toLowerCase() === 'current') {
+            // Use the timeframe of the stock record itself
+            const recordTf = (stock.timeframe || currentTimeframe);
+            tfKey = recordTf;
+        }
+
+        const indicatorInput = tokenMatch[2].trim();
+        const indicatorKey = STRAT_ALIASES[indicatorInput] || indicatorInput.toUpperCase();
+        
+        // Lookup data in map, trying both normalized and raw names
+        const normalizedTf = Object.keys(TF_MAP).find(k => k.toLowerCase() === tfKey.toLowerCase());
+        const apiTf = normalizedTf ? TF_MAP[normalizedTf] : tfKey;
+        
+        // Search in the map using any possible key
+        const tfData = tfDataMap[tfKey] || tfDataMap[apiTf] || tfDataMap[normalizedTf] || [];
         const s = tfData.find(item => item.isin === stock.isin);
 
         if (s) {
             isToken = true;
-            if (indicator === 'ST_V' || indicator === 'ST' || indicator === 'SUPERTRENDVALUE') baseValue = s.supertrend_value || s.supertrend_dir;
-            else if (indicator === 'EMA_F') baseValue = s.ema_fast;
-            else if (indicator === 'EMA_S') baseValue = s.ema_slow;
-            else if (indicator === 'EMA_V') baseValue = s.ema_value;
-            else if (indicator === 'RSI') baseValue = s.rsi;
-            else if (indicator === 'HIGH' || indicator === 'PREV_HIGH') baseValue = s.prev_high;
-            else if (indicator === 'LOW' || indicator === 'PREV_LOW') baseValue = s.prev_low;
-            else if (indicator === 'PRICE' || indicator === 'LTP') baseValue = s.ltp || s.close;
+            const mappedInd = {
+                'ST_V': 'supertrend_value', 'ST': 'supertrend_value', 'SUPERTRENDVALUE': 'supertrend_value',
+                'EMA_F': 'ema_fast', 'EMA_S': 'ema_slow', 'EMA_V': 'ema_value',
+                'RSI': 'rsi', 'LTP': 'ltp', 'PRICE': 'ltp', 'CLOSE': 'ltp',
+                'PREV_HIGH': 'prev_high', 'HIGH': 'prev_high',
+                'PREV_LOW': 'prev_low', 'LOW': 'prev_low',
+                'roe': 'roe', 'pe': 'pe', 'eps': 'eps'
+            };
+            const col = mappedInd[indicatorKey.toUpperCase()] || indicatorKey.toLowerCase();
+            baseValue = s[col] !== undefined && s[col] !== null ? s[col] : ltp;
         }
     }
 
-    // 2. Handle Arithmetic Adjustment (e.g. - 0.5%)
-    const arithmeticMatch = q.match(/([\+\-])\s*(\d+\.?\d*)\s*%/);
+    // 2. Handle Arithmetic Adjustment (e.g. - 0.5% or + 10)
+    // Matches: + 5%, - 2, + 1.5, etc.
+    const arithmeticMatch = q.match(/([\+\-])\s*(\d+\.?\d*)\s*(%?)/);
     if (arithmeticMatch) {
         const op = arithmeticMatch[1];
-        const pct = parseFloat(arithmeticMatch[2]) / 100;
-        const startVal = baseValue || ltp;
-        return op === '+' ? startVal * (1 + pct) : startVal * (1 - pct);
+        const val = parseFloat(arithmeticMatch[2]);
+        const isPct = arithmeticMatch[3] === '%';
+        const startVal = parseFloat(baseValue) || ltp;
+
+        if (isPct) {
+            const pct = val / 100;
+            return op === '+' ? startVal * (1 + pct) : startVal * (1 - pct);
+        } else {
+            return op === '+' ? startVal + val : startVal - val;
+        }
     }
 
     // 3. Standalone Percentage (e.g. 5%)
-    const purePctMatch = q.match(/^(\d+\.?\d*)\s*%$/);
+    const purePctMatch = q.match(/^(\+|-)?\s*(\d+\.?\d*)\s*%$/);
     if (purePctMatch && !isToken) {
-        const pct = parseFloat(purePctMatch[1]) / 100;
-        if (type === 'TP') return side.toUpperCase() === 'BUY' ? ltp * (1 + pct) : ltp * (1 - pct);
-        if (type === 'SL') return side.toUpperCase() === 'BUY' ? ltp * (1 - pct) : ltp * (1 + pct);
+        const pct = parseFloat(purePctMatch[2]) / 100;
+        const op = purePctMatch[1] || ""; // Handle "+5%" or "-5%"
+        const isBuy = side.toUpperCase() === 'BUY';
+        
+        if (op === "+") return ltp * (1 + pct);
+        if (op === "-") return ltp * (1 - pct);
+        
+        // Context-aware fallback if no sign provided
+        if (type === 'TP') return isBuy ? ltp * (1 + pct) : ltp * (1 - pct);
+        if (type === 'SL') return isBuy ? ltp * (1 - pct) : ltp * (1 + pct);
         return ltp;
+    }
+
+    // 5. Inverse RSI Solver (e.g. RSI[70] or RSI > 70)
+    const rsiMatch = q.match(/RSI\s*(?:\s*[\[\(]\s*(\d+\.?\d*)\s*[\]\)]|[><=]+\s*(\d+\.?\d*))/i);
+    if (rsiMatch) {
+        const targetRSI = parseFloat(rsiMatch[1] || rsiMatch[2]);
+        const currentRSI = stock.rsi || 50;
+        return forecastPriceFromRSI(targetRSI, ltp, currentRSI, side.toUpperCase() === 'BUY');
+    }
+
+    // Safety: If someone just put "RSI" alone in a price box, it's probably a mistake.
+    // We should either return current price or an Inverse RSI default.
+    // But since it's already pre-processed to [Current].RSI, it won't hit the standalone number logic.
+    // However, if isToken is true and the indicator is RSI/PE/PB, we should warn or handle.
+    if (isToken) {
+        // Indicators that are usually < 100 (Momentum/Ratio) should NOT be raw prices
+        const momentumInds = ['RSI', 'PE', 'ROE', 'PB', 'NPM', 'OPM'];
+        const indName = q.split('.').pop().toUpperCase();
+        if (momentumInds.includes(indName) && !q.includes('RSI')) {
+             return ltp; // Ignore raw score as price
+        }
     }
 
     return parseFloat(baseValue) || ltp;
@@ -4061,24 +4273,22 @@ function sortStrategyResults(column) {
 function exportStrategyToExcel() {
     if (!lastScanMatches || !lastScanMatches.length) return alert("No scan results to export.");
 
-    const headers = ["Symbol", "ISIN", "LTP", "Industry", "Sub-Group", "RSI", "PE", "Score", "Side", "Target", "Tgt %", "Stop Loss", "SL %"];
+    const headers = ["Symbol", "ISIN", "LTP", "Industry", "Sub-Group", "RSI", "PE", "Score", "Side", "Targets", "Tgt %", "Stop Loss", "SL %"];
     const rows = lastScanMatches.map(s => {
-        const tgtDiff = ((s.levels.target - s.ltp) / s.ltp * 100).toFixed(2);
-        const slDiff = ((s.levels.sl - s.ltp) / s.ltp * 100).toFixed(2);
         return [
             s.symbol,
             s.isin,
             s.ltp,
             s.i_group || '-',
             s.i_subgroup || '-',
-            s.rsi || '-',
-            s.pe || '-',
+            (s.rsi || 0).toFixed(1),
+            (s.pe || 0).toFixed(2),
             s.pattern_score || 0,
             s.side,
-            s.levels.target.toFixed(2),
-            tgtDiff + "%",
-            s.levels.sl.toFixed(2),
-            slDiff + "%"
+            s.levels.targets.map(t => t.price.toFixed(2)).join(" | "),
+            s.levels.targets.map(t => ((t.price - s.ltp) / s.ltp * 100).toFixed(1) + "%").join(" | "),
+            s.levels.stopLosses.map(t => t.price.toFixed(2)).join(" | "),
+            s.levels.stopLosses.map(t => ((t.price - s.ltp) / s.ltp * 100).toFixed(1) + "%").join(" | ")
         ];
     });
 
@@ -4117,11 +4327,23 @@ function renderScanResults(matches, isFilter = false) {
     grid.innerHTML = matches.map(s => {
         const sideColor = s.side === 'BUY' ? 'var(--success)' : 'var(--danger)';
         const ltpVal = formatCurrency(s.ltp);
-        const tgVal = formatCurrency(s.levels.target);
-        const slVal = formatCurrency(s.levels.sl);
 
-        const tgtDiff = ((s.levels.target - s.ltp) / s.ltp * 100).toFixed(1);
-        const slDiff = ((s.levels.sl - s.ltp) / s.ltp * 100).toFixed(1);
+        // Multi-Target Format for Grid
+        const formatMiniLevel = (levels, p) => {
+            return levels.map(l => {
+                const diff = l.price - p;
+                const pct = ((Math.abs(diff) / p) * 100).toFixed(1);
+                const prefix = diff >= 0 ? '+' : '-';
+                const color = diff >= 0 ? 'var(--success)' : 'var(--danger)';
+                return `<div style="margin-bottom:4px; display: flex; flex-direction: column; align-items: flex-end;">
+                    <div style="font-family:'Fira Code', monospace; font-weight:700; font-size:12px; color: ${color};">${formatCurrency(l.price)}</div>
+                    <div style="font-size:9px; opacity: 0.6; font-weight:600;">${l.label} (${prefix}${pct}%)</div>
+                </div>`;
+            }).join('');
+        };
+
+        const targetHTML = formatMiniLevel(s.levels.targets, s.ltp);
+        const slHTML = formatMiniLevel(s.levels.stopLosses, s.ltp);
 
         // Industry & Subgroup
         const industryHtml = `
@@ -4213,22 +4435,16 @@ function renderScanResults(matches, isFilter = false) {
                         ${s.side}
                     </span>
                 </td>
-                <td style="padding: 15px 10px; text-align: right; font-weight: 700; color: var(--success);">
-                    ${tgVal}
+                <td colspan="2" style="padding: 15px 20px; text-align: right; vertical-align: top;">
+                    ${targetHTML}
                 </td>
-                <td style="padding: 15px 10px; text-align: right; font-size: 12px; color: var(--success); opacity: 0.8;">
-                    ${tgtDiff}%
-                </td>
-                <td style="padding: 15px 10px; text-align: right; font-weight: 700; color: var(--danger);">
-                    ${slVal}
-                </td>
-                <td style="padding: 15px 10px; text-align: right; font-size: 12px; color: var(--danger); opacity: 0.8;">
-                    ${slDiff}%
+                <td colspan="2" style="padding: 15px 20px; text-align: right; vertical-align: top;">
+                    ${slHTML}
                 </td>
                 <td style="padding: 15px 20px; text-align: center;">
                     <div style="display: flex; gap: 8px; justify-content: center;">
                         <button class="btn btn-primary" style="height: 32px; padding: 0 12px; font-size: 11px;" 
-                            onclick="commitToTrade('${s.isin}', ${s.levels.target}, ${s.levels.sl})">
+                            onclick="commitToTrade('${s.isin}', ${s.levels.targets[0].price}, ${s.levels.stopLosses[0].price})">
                             <i class="fas fa-bolt"></i> Trade
                         </button>
                     </div>
@@ -4739,7 +4955,7 @@ async function populateScreenerBlueprints() {
         screenerBlueprints = json.data || [];
 
         const currentVal = dropdown.value;
-        dropdown.innerHTML = '<option value="none">Strategy Blueprint: None</option>';
+        dropdown.innerHTML = '<option value="none">Default Confluence Ranking</option>';
 
         screenerBlueprints.forEach(s => {
             const isSwing = s.mode === 'swing';
