@@ -570,33 +570,36 @@ async def stream_fetch(mode: str = "swing"):
                     
                     yield "data: Processing {}/{} - {}...\n\n".format(i, total, symbol)
                     
-                    # Fetch Logic (simplified version of fetch_history.py)
+                    # Fetch Logic (Dual fetch for Swing to support live synthesis)
                     try:
+                        fetch_configs = []
                         if mode == "swing":
-                            url = f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01"
-                            tf_key = '1d'
+                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01", 'tf': '1d'})
+                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5", 'tf': '5m'})
                         else:
-                            # Use dedicated intraday endpoint for live current-day candles (No dates required)
-                            url = f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5"
-                            tf_key = '5m'
+                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5", 'tf': '5m'})
                             
-                        res = await client.get(url, timeout=10.0)
-                        if res.status_code == 200:
-                            data = res.json()
-                            if data.get("status") == "success":
-                                candles = data["data"]["candles"]
-                                async with app_pool.acquire() as conn:
-                                    async with conn.cursor() as cur:
-                                        rows = []
-                                        for c in candles:
-                                            ts = c[0].split('+')[0].replace('T', ' ')
-                                            rows.append((isin, tf_key, ts, c[1], c[2], c[3], c[4], c[5]))
-                                        if rows:
-                                            await cur.executemany("""
-                                                INSERT INTO app_sg_ohlcv_prices (isin, timeframe, timestamp, open, high, low, close, volume)
-                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                                ON DUPLICATE KEY UPDATE open=VALUES(open), high=VALUES(high), low=VALUES(low), close=VALUES(close), volume=VALUES(volume)
-                                            """, rows)
+                        for cfg in fetch_configs:
+                            url = cfg['url']
+                            tf_key = cfg['tf']
+                            res = await client.get(url, timeout=10.0)
+                            if res.status_code == 200:
+                                data = res.json()
+                                if data.get("status") == "success":
+                                    candles = data["data"]["candles"]
+                                    async with app_pool.acquire() as conn:
+                                        async with conn.cursor() as cur:
+                                            rows = []
+                                            for c in candles:
+                                                ts = c[0].split('+')[0].replace('T', ' ')
+                                                rows.append((isin, tf_key, ts, c[1], c[2], c[3], c[4], c[5]))
+                                            if rows:
+                                                await cur.executemany("""
+                                                    INSERT INTO app_sg_ohlcv_prices (isin, timeframe, timestamp, open, high, low, close, volume)
+                                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                                    ON DUPLICATE KEY UPDATE open=VALUES(open), high=VALUES(high), low=VALUES(low), close=VALUES(close), volume=VALUES(volume)
+                                                """, rows)
+                                    # yield "data: ✅ {} - {} candles updated ({tf}).\n\n".format(symbol, len(candles), tf=tf_key)
                                 yield "data: ✅ {} - {} candles updated.\n\n".format(symbol, len(candles))
                     except Exception as e:
                         yield "data: ❌ Error fetching {}: {}\n\n".format(symbol, str(e))

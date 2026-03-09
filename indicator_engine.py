@@ -18,9 +18,19 @@ def clean_nan(obj):
         return {k: clean_nan(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [clean_nan(x) for x in obj]
-    elif isinstance(obj, float) and np.isnan(obj):
-        return None
+    elif isinstance(obj, (float, np.float64, np.float32)):
+        return None if np.isnan(obj) or not np.isfinite(obj) else obj
     return obj
+
+def to_db_float(val):
+    """Safely convert to float, returning None if NaN/Inf for MySQL DECIMAL compatibility."""
+    if val is None or pd.isna(val):
+        return None
+    try:
+        fval = float(val)
+        return fval if np.isfinite(fval) else None
+    except (ValueError, TypeError):
+        return None
 
 # Default configurations in case the database settings are empty
 DEFAULT_CONFIGS = {
@@ -643,14 +653,14 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     npm = float(f_data['bs_NPM']) if f_data.get('bs_NPM') is not None else None
 
                 signals_to_insert.append((
-                    isin, profile_id, timeframe, timestamp, ltp, rsi_val, 
-                    rsi_day_high, rsi_day_low,
-                    ema_signal, ema_fast, ema_slow, 
-                    vol_signal, vol_ratio,
-                    ema_fast, # Using ema_fast as legacy ema_value
-                    st_dir, st_value, json.dumps(clean_nan(dma_data)), rank,
-                    sl, target, trade_strategy, pattern_str, pattern_score, last_5_candles,
-                    sector, industry, pe, pb, roe, eps, opm, npm,
+                    isin, profile_id, timeframe, timestamp, to_db_float(ltp), to_db_float(rsi_val), 
+                    to_db_float(rsi_day_high), to_db_float(rsi_day_low),
+                    ema_signal, to_db_float(ema_fast), to_db_float(ema_slow), 
+                    vol_signal, to_db_float(vol_ratio),
+                    to_db_float(ema_fast), # Using ema_fast as legacy ema_value
+                    st_dir, to_db_float(st_value), json.dumps(clean_nan(dma_data)), rank,
+                    to_db_float(sl), to_db_float(target), trade_strategy, pattern_str, pattern_score, last_5_candles,
+                    sector, industry, to_db_float(pe), to_db_float(pb), to_db_float(roe), to_db_float(eps), to_db_float(opm), to_db_float(npm),
                     i_group, i_subgroup
                 ))
             
