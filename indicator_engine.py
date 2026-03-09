@@ -18,13 +18,15 @@ def clean_nan(obj):
         return {k: clean_nan(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [clean_nan(x) for x in obj]
-    elif isinstance(obj, (float, np.float64, np.float32)):
-        return None if np.isnan(obj) or not np.isfinite(obj) else obj
+    elif isinstance(obj, (float, np.float64, np.float32, np.float16, int, np.integer)):
+        if pd.isna(obj) or not np.isfinite(obj):
+            return None
+        return float(obj)
     return obj
 
 def to_db_float(val):
     """Safely convert to float, returning None if NaN/Inf for MySQL DECIMAL compatibility."""
-    if val is None or pd.isna(val):
+    if val is None or pd.isna(val) or val == "":
         return None
     try:
         fval = float(val)
@@ -315,354 +317,363 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
             signals_to_insert = []
             
             for isin in isins:
-                # Fetch recent historical data (increase limit to ensure 250 bar warmup AFTER resampling)
-                if timeframe in ['1w', '1mo']:
-                    limit = 3000 # 250 weeks = ~5 years
-                elif timeframe == '60m':
-                    limit = 3000 # 250 1-hour candles = 3000 5m candles
-                elif timeframe == '30m':
-                    limit = 1500 # 250 30-min candles = 1500 5m candles
-                elif timeframe == '15m':
-                    limit = 2000 # 250 15-min candles = 750 5m candles (using 2000 for extra buffer)
-                else: 
-                    limit = 1250 # 1d / 5m warmup (generous padding)
-                await cur.execute(
-                    """
-                    SELECT timestamp, open, high, low, close, volume 
-                    FROM app_sg_ohlcv_prices 
-                    WHERE isin = %s AND timeframe = %s 
-                    ORDER BY timestamp DESC LIMIT %s
-                    """,
-                    (isin, base_timeframe, limit)
-                )
-                rows = await cur.fetchall()
-                
-                # --- Synthesis Logic for "Live Daily" Candle ---
-                if base_timeframe == '1d':
-                    rows = await synthesize_live_candle(cur, isin, rows)
-
-                if len(rows) < 1: # Minimum rows to generate a signal record
-                    continue
-                    
-                df = pd.DataFrame(rows)
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df = df.sort_values('timestamp').reset_index(drop=True)
-                df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
-                
-                # Resampling Logic
-                if timeframe != base_timeframe:
-                    df.set_index('timestamp', inplace=True)
-                    
-                    resample_rule = {
-                        '1w': 'W-FRI',
-                        '1mo': 'ME',
-                        '15m': '15min',
-                        '30m': '30min',
-                        '60m': '60min'
-                    }.get(timeframe)
-                    
-                    resample_kwargs = {}
-                    if timeframe in ['15m', '30m', '60m'] and pd.to_timedelta('15min') is not None:
-                        resample_kwargs['offset'] = '15min'
-                    
-                    df = df.resample(resample_rule, **resample_kwargs).agg({
-                        'open': 'first',
-                        'high': 'max',
-                        'low': 'min',
-                        'close': 'last',
-                        'volume': 'sum'
-                    }).dropna()
-                    df.reset_index(inplace=True)
-                
-                if df.empty:
-                    continue
-
                 try:
-                    latest_data = calculate_indicators(df, settings)
-                except Exception as e:
-                    logging.error(f"Error calculating indicators for {isin}: {e}")
-                    continue
-                
-                # Extract values safely
-                ltp = float(latest_data['close'])
-                timestamp = latest_data['timestamp']
-                
-                rsi_val = None
-                rsi_day_high = None
-                rsi_day_low = None
-                if settings['RSI']['enabled']:
-                    rsi_col = f"RSI_{settings['RSI']['period']}"
-                    rsi_val = float(latest_data[rsi_col]) if rsi_col in latest_data and pd.notna(latest_data[rsi_col]) else None
-                    rsi_day_high = float(latest_data['RSI_day_high']) if 'RSI_day_high' in latest_data and pd.notna(latest_data['RSI_day_high']) else None
-                    rsi_day_low = float(latest_data['RSI_day_low']) if 'RSI_day_low' in latest_data and pd.notna(latest_data['RSI_day_low']) else None
-                # --- VPVR (Volume Profile) ---
-                vpvr_data = []
-                if not df.empty:
-                    prices_min = df['low'].min()
-                    prices_max = df['high'].max()
-                    num_bins = 24
-                    if prices_max > prices_min:
-                        bin_size = (prices_max - prices_min) / num_bins
-                        for i in range(num_bins):
-                            b_start = prices_min + (i * bin_size)
-                            b_end = b_start + bin_size
-                            # Volume in this price range
-                            v = df[(df['close'] >= b_start) & (df['close'] < b_end)]['volume'].sum()
-                            vpvr_data.append({
-                                "price": float(round(b_start, 2)),
-                                "volume": int(v)
+                    # Fetch recent historical data (increase limit to ensure 250 bar warmup AFTER resampling)
+                    if timeframe in ['1w', '1mo']:
+                        limit = 3000 # 250 weeks = ~5 years
+                    elif timeframe == '60m':
+                        limit = 3000 # 250 1-hour candles = 3000 5m candles
+                    elif timeframe == '30m':
+                        limit = 1500 # 250 30-min candles = 1500 5m candles
+                    elif timeframe == '15m':
+                        limit = 2000 # 250 15-min candles = 750 5m candles (using 2000 for extra buffer)
+                    else: 
+                        limit = 1250 # 1d / 5m warmup (generous padding)
+                    await cur.execute(
+                        """
+                        SELECT timestamp, open, high, low, close, volume 
+                        FROM app_sg_ohlcv_prices 
+                        WHERE isin = %s AND timeframe = %s 
+                        ORDER BY timestamp DESC LIMIT %s
+                        """,
+                        (isin, base_timeframe, limit)
+                    )
+                    rows = await cur.fetchall()
+                    
+                    # --- Synthesis Logic for "Live Daily" Candle ---
+                    if base_timeframe == '1d':
+                        rows = await synthesize_live_candle(cur, isin, rows)
+
+                    if len(rows) < 1: # Minimum rows to generate a signal record
+                        continue
+                        
+                    df = pd.DataFrame(rows)
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    df = df.sort_values('timestamp').reset_index(drop=True)
+                    df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
+                    
+                    # Resampling Logic
+                    if timeframe != base_timeframe:
+                        df.set_index('timestamp', inplace=True)
+                        
+                        resample_rule = {
+                            '1w': 'W-FRI',
+                            '1mo': 'ME',
+                            '15m': '15min',
+                            '30m': '30min',
+                            '60m': '60min'
+                        }.get(timeframe)
+                        
+                        resample_kwargs = {}
+                        if timeframe in ['15m', '30m', '60m'] and pd.to_timedelta('15min') is not None:
+                            resample_kwargs['offset'] = '15min'
+                        
+                        df = df.resample(resample_rule, **resample_kwargs).agg({
+                            'open': 'first',
+                            'high': 'max',
+                            'low': 'min',
+                            'close': 'last',
+                            'volume': 'sum'
+                        }).dropna()
+                        df.reset_index(inplace=True)
+                    
+                    if df.empty:
+                        continue
+
+                    try:
+                        latest_data = calculate_indicators(df, settings)
+                    except Exception as e:
+                        logging.warning(f"Error calculating indicators for {isin} ({timeframe}): {e}")
+                        continue
+                    
+                    # Extract values safely
+                    try:
+                        ltp = to_db_float(latest_data.get('close'))
+                        timestamp = latest_data.get('timestamp')
+                        if ltp is None or timestamp is None:
+                            continue
+                    except Exception:
+                        continue
+                    
+                    rsi_val = None
+                    rsi_day_high = None
+                    rsi_day_low = None
+                    if settings['RSI']['enabled']:
+                        rsi_col = f"RSI_{settings['RSI']['period']}"
+                        rsi_val = to_db_float(latest_data.get(rsi_col))
+                        rsi_day_high = to_db_float(latest_data.get('RSI_day_high'))
+                        rsi_day_low = to_db_float(latest_data.get('RSI_day_low'))
+
+                    # --- VPVR (Volume Profile) ---
+                    vpvr_data = []
+                    if not df.empty:
+                        prices_min = df['low'].min()
+                        prices_max = df['high'].max()
+                        num_bins = 24
+                        if prices_max > prices_min:
+                            bin_size = (prices_max - prices_min) / num_bins
+                            for i in range(num_bins):
+                                b_start = prices_min + (i * bin_size)
+                                b_end = b_start + bin_size
+                                # Volume in this price range
+                                v = df[(df['close'] >= b_start) & (df['close'] < b_end)]['volume'].sum()
+                                vpvr_data.append({
+                                    "price": float(round(b_start, 2)),
+                                    "volume": int(v)
+                                })
+                    
+                    ema_fast = None
+                    ema_slow = None
+                    ema_signal = None
+                    if settings['EMA']['enabled']:
+                        f_len = settings['EMA']['fast_period']
+                        s_len = settings['EMA']['slow_period']
+                        ema_fast = to_db_float(latest_data.get(f'EMA_{f_len}'))
+                        ema_slow = to_db_float(latest_data.get(f'EMA_{s_len}'))
+                        ema_signal = latest_data.get('ema_signal')
+
+                    vol_signal = 'NORMAL'
+                    vol_ratio = 1.0
+                    if settings.get('VOLUME', {}).get('enabled'):
+                        vol_signal = latest_data.get('vol_signal', 'NORMAL')
+                        vol_ratio = to_db_float(latest_data.get('vol_ratio')) or 1.0
+                    
+                    st_value = None
+                    st_dir = None
+                    if settings['SUPERTREND']['enabled'] and 'ST_value' in latest_data:
+                        st_value = float(latest_data['ST_value']) if pd.notna(latest_data['ST_value']) else None
+                        st_dir_num = latest_data.get('ST_dir')
+                        if pd.notna(st_dir_num):
+                            st_dir = 'BUY' if st_dir_num == 1 else 'SELL'
+                            
+                    # --- Anchored DMA Calculation (Always strictly Daily timeframe) ---
+                    dma_data = {}
+                    if settings['DMA']['enabled']:
+                        # Check memory cache first to avoid repeating Pandas math for the exact same company
+                        if isin in shared_cache and 'dma_data' in shared_cache[isin]:
+                            dma_data = shared_cache[isin]['dma_data']
+                        else:
+                            await cur.execute(
+                                "SELECT close FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d' ORDER BY timestamp DESC LIMIT 250",
+                                (isin,)
+                            )
+                            rows_1d = await cur.fetchall()
+                            if rows_1d:
+                                df_1d = pd.DataFrame(rows_1d)
+                                df_1d['close'] = df_1d['close'].astype(float)
+                                # Reverse so oldest data is first (required for accurate moving average calculations)
+                                df_1d = df_1d.iloc[::-1].reset_index(drop=True)
+                                for p in settings['DMA']['periods']:
+                                    if len(df_1d) >= p:
+                                        sma_series = ta.sma(df_1d['close'], length=p)
+                                        if sma_series is not None and not pd.isna(sma_series.iloc[-1]):
+                                            dma_data[f"SMA_{p}"] = float(sma_series.iloc[-1])
+                            
+                            # Save back to cache
+                            if isin not in shared_cache:
+                                shared_cache[isin] = {}
+                            shared_cache[isin]['dma_data'] = dma_data
+
+                    # --- Candlestick Patterns ---
+                    pattern_str = None
+                    pattern_score = 0
+                    patterns_opts = settings.get('patterns', {})
+                    if patterns_opts.get('enabled'):
+                        bullish_patterns = []
+                        bearish_patterns = []
+                        neutral_patterns = []
+                        
+                        bullish_cols = ['CDL_ENGULFING', 'CDL_HAMMER', 'CDL_MORNINGSTAR', 'CDL_PIERCING', 'CDL_MORNINGDOJISTAR', 'CDL_3WHITESOLDIERS', 'CDL_DRAGONFLYDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
+                        bearish_cols = ['CDL_ENGULFING', 'CDL_SHOOTINGSTAR', 'CDL_EVENINGSTAR', 'CDL_DARKCLOUDCOVER', 'CDL_EVENINGDOJISTAR', 'CDL_HANGINGMAN', 'CDL_3BLACKCROWS', 'CDL_GRAVESTONEDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
+                        neutral_cols = ['CDL_DOJI_10_0.1', 'CDL_SPINNINGTOP', 'CDL_HIGHWAVE', 'CDL_RICKSHAWMAN', 'CDL_LONGLEGGEDDOJI', 'CDL_INSIDE', 'CDL_BELTHOLD']
+                        
+                        # Pattern intensity scoring
+                        PATTERN_WEIGHTS = {
+                            'CDL_MORNINGSTAR': 3, 'CDL_EVENINGSTAR': 3, 'CDL_3WHITESOLDIERS': 3, 'CDL_3BLACKCROWS': 3, 'CDL_MORNINGDOJISTAR': 3, 'CDL_EVENINGDOJISTAR': 3, 'CDL_3INSIDE': 3, 'CDL_3OUTSIDE': 3,
+                            'CDL_ENGULFING': 2, 'CDL_PIERCING': 2, 'CDL_DARKCLOUDCOVER': 2,
+                            'CDL_HAMMER': 1, 'CDL_INVERTEDHAMMER': 1, 'CDL_SHOOTINGSTAR': 1, 'CDL_DRAGONFLYDOJI': 1, 'CDL_GRAVESTONEDOJI': 1, 'CDL_DOJI': 1
+                        }
+                        
+                        for key, val in latest_data.items():
+                            if not isinstance(key, str) or not key.startswith("CDL_") or pd.isna(val) or val == 0:
+                                continue
+                            
+                            # Only accept strong pattern signals (usually 100 or -100)
+                            if abs(val) < 10: 
+                                continue
+
+                            # Update score (Signed)
+                            weight = PATTERN_WEIGHTS.get(key, 1)
+                            if val < 0: weight = -weight
+                            if abs(weight) > abs(pattern_score):
+                                pattern_score = weight
+
+                            pattern_name = key.replace("CDL_", "").split("_")[0].title()
+                            
+                            if val > 0:
+                                if key in neutral_cols:
+                                    neutral_patterns.append(pattern_name)
+                                elif key in bearish_cols and key not in bullish_cols:
+                                    bearish_patterns.append(pattern_name)
+                                else:
+                                    bullish_patterns.append(pattern_name)
+                            elif val < 0:
+                                if key in neutral_cols:
+                                    neutral_patterns.append(pattern_name)
+                                elif key in bullish_cols and key not in bearish_cols:
+                                    bullish_patterns.append(pattern_name)
+                                else:
+                                    bearish_patterns.append(pattern_name)
+                                    
+                        active_found = []
+                        if patterns_opts.get('bullish') and bullish_patterns:
+                            active_found.append("Bullish " + "/".join(bullish_patterns))
+                        if patterns_opts.get('bearish') and bearish_patterns:
+                            active_found.append("Bearish " + "/".join(bearish_patterns))
+                        if patterns_opts.get('neutral') and neutral_patterns:
+                            active_found.append("Neutral " + "/".join(neutral_patterns))
+                            
+                        if active_found:
+                            pattern_str = " | ".join(active_found)
+                    
+                    # --- Confluence Ranking Logic ---
+                    # Example basic logic: 
+                    # +1 if Price > EMA
+                    # +1 if Supertrend is BUY
+                    # +1 if RSI > 50 (bullish momemtum)
+                    # +1 if Price > DMA(20)
+                    rank = 0
+                    # 1. EMA Signal (+1 for BUY, -1 for SELL)
+                    if ema_signal == 'BUY': rank += 1
+                    elif ema_signal == 'SELL': rank -= 1
+                    
+                    # 2. Supertrend (+1 for BUY, -1 for SELL)
+                    if st_dir == 'BUY': rank += 1
+                    elif st_dir == 'SELL': rank -= 1
+                    
+                    # 3. RSI (+1 for RSI > 50, -1 for RSI < 50)
+                    if rsi_val is not None:
+                        if rsi_val > 50: rank += 1
+                        elif rsi_val < 50: rank -= 1
+                    
+                    # 4. Anchor Trend (SMA 20) (+1 for price > SMA, -1 for price < SMA)
+                    if dma_data and dma_data.get('SMA_20'):
+                        sma20 = dma_data.get('SMA_20')
+                        if ltp > sma20: rank += 1
+                        else: rank -= 1
+                    
+                    # 5. Volume Signal (+1 for BULL_SPIKE, -1 for BEAR_SPIKE)
+                    if vol_signal == 'BULL_SPIKE': rank += 1
+                    elif vol_signal == 'BEAR_SPIKE': rank -= 1
+
+                    # --- Trade Plan Logic (Pick Stocks for Trade) ---
+                    sl = None
+                    target = None
+                    trade_strategy = "NORMAL"
+                    
+                    # Determine RR based on Profile
+                    rr_multiplier = 2.0 if profile_id == 'swing' else 1.5
+                    
+                    if st_dir == 'BUY':
+                        # SL is the lower of Supertrend and EMA Slow (safer floor)
+                        if st_value and ema_slow:
+                            sl = min(st_value, ema_slow)
+                        elif st_value:
+                            sl = st_value
+                        elif ema_slow:
+                            sl = ema_slow
+                            
+                        if sl and sl < ltp:
+                            risk = ltp - sl
+                            target = ltp + (risk * rr_multiplier) # Profile-specific RR
+                        else:
+                            # Fallback SL (e.g. 0.5% for intraday, 3% for swing)
+                            sl_pct = 0.03 if profile_id == 'swing' else 0.005
+                            sl = ltp * (1 - sl_pct)
+                            target = ltp * (1 + (sl_pct * rr_multiplier))
+                    elif st_dir == 'SELL':
+                        # Shorting Trade Plan
+                        if st_value and ema_slow:
+                            sl = max(st_value, ema_slow)
+                        elif st_value:
+                            sl = st_value
+                        elif ema_slow:
+                            sl = ema_slow
+                            
+                        if sl and sl > ltp:
+                            risk = sl - ltp
+                            target = ltp - (risk * rr_multiplier)
+                        else:
+                            sl_pct = 0.03 if profile_id == 'swing' else 0.005
+                            sl = ltp * (1 + sl_pct)
+                            target = ltp * (1 - (sl_pct * rr_multiplier))
+                    
+                    # Pick Strategy Labels
+                    if rank >= 4 and vol_signal == 'BULL_SPIKE' and ema_signal == 'BUY' and st_dir == 'BUY':
+                        trade_strategy = "PERFECT_BUY"
+                    elif rank <= -4 and vol_signal == 'BEAR_SPIKE' and ema_signal == 'SELL' and st_dir == 'SELL':
+                        trade_strategy = "PERFECT_SELL"
+                    elif st_dir == 'BUY' and dma_data:
+                        # Pullback logic: Check if price is near major DMA (20, 50, or 200)
+                        for dma_val in dma_data.values():
+                            if 0.985 <= (ltp / dma_val) <= 1.015:
+                                trade_strategy = "DMA_BOUNCE"
+                                break
+                    elif st_dir == 'SELL' and dma_data:
+                        # Resistance logic
+                        for dma_val in dma_data.values():
+                            if 0.985 <= (ltp / dma_val) <= 1.015:
+                                trade_strategy = "DMA_RESISTANCE"
+                                break
+
+                    # Last 5 candles visualizer
+                    last_5_candles = None
+                    if len(df) >= 5:
+                        recent_5 = df.iloc[-5:]
+                        candles_list = []
+                        for _, r in recent_5.iterrows():
+                            candles_list.append({
+                                "t": str(r['timestamp']),
+                                "o": float(r['open']),
+                                "h": float(r['high']),
+                                "l": float(r['low']),
+                                "c": float(r['close'])
                             })
-                
-                ema_fast = None
-                ema_slow = None
-                ema_signal = None
-                if settings['EMA']['enabled']:
-                    f_len = settings['EMA']['fast_period']
-                    s_len = settings['EMA']['slow_period']
-                    ema_fast = float(latest_data[f'EMA_{f_len}']) if f'EMA_{f_len}' in latest_data and pd.notna(latest_data[f'EMA_{f_len}']) else None
-                    ema_slow = float(latest_data[f'EMA_{s_len}']) if f'EMA_{s_len}' in latest_data and pd.notna(latest_data[f'EMA_{s_len}']) else None
-                    ema_signal = latest_data.get('ema_signal')
+                        last_5_candles = json.dumps(clean_nan(candles_list))
 
-                vol_signal = 'NORMAL'
-                vol_ratio = 1.0
-                if settings.get('VOLUME', {}).get('enabled'):
-                    vol_signal = latest_data.get('vol_signal', 'NORMAL')
-                    vr = latest_data.get('vol_ratio')
-                    vol_ratio = float(vr) if pd.notna(vr) else 1.0
-                    
-                st_value = None
-                st_dir = None
-                if settings['SUPERTREND']['enabled'] and 'ST_value' in latest_data:
-                    st_value = float(latest_data['ST_value']) if pd.notna(latest_data['ST_value']) else None
-                    st_dir_num = latest_data.get('ST_dir')
-                    if pd.notna(st_dir_num):
-                        st_dir = 'BUY' if st_dir_num == 1 else 'SELL'
+                    # --- Fundamentals Integration ---
+                    sector = industry = pe = pb = roe = eps = opm = npm = i_group = i_subgroup = None
+                    if settings.get('FUNDAMENTALS', {}).get('enabled'):
+                        f_data = fundamental_map.get(isin, {})
+                        sector = f_data.get('bs_Sector')
+                        industry = f_data.get('bs_IndustryNew')
+                        i_group = f_data.get('bs_IGroup')
+                        i_subgroup = f_data.get('bs_ISubGroup')
                         
-                # --- Anchored DMA Calculation (Always strictly Daily timeframe) ---
-                dma_data = {}
-                if settings['DMA']['enabled']:
-                    # Check memory cache first to avoid repeating Pandas math for the exact same company
-                    if isin in shared_cache and 'dma_data' in shared_cache[isin]:
-                        dma_data = shared_cache[isin]['dma_data']
-                    else:
-                        await cur.execute(
-                            "SELECT close FROM app_sg_ohlcv_prices WHERE isin = %s AND timeframe = '1d' ORDER BY timestamp DESC LIMIT 250",
-                            (isin,)
-                        )
-                        rows_1d = await cur.fetchall()
-                        if rows_1d:
-                            df_1d = pd.DataFrame(rows_1d)
-                            df_1d['close'] = df_1d['close'].astype(float)
-                            # Reverse so oldest data is first (required for accurate moving average calculations)
-                            df_1d = df_1d.iloc[::-1].reset_index(drop=True)
-                            for p in settings['DMA']['periods']:
-                                if len(df_1d) >= p:
-                                    sma_series = ta.sma(df_1d['close'], length=p)
-                                    if sma_series is not None and not pd.isna(sma_series.iloc[-1]):
-                                        dma_data[f"SMA_{p}"] = float(sma_series.iloc[-1])
+                        # For Intraday, PE/ROE are not meaningful context - skip them to maintain purity
+                        if profile_id != 'intraday':
+                            pe = to_db_float(f_data.get('bs_PE'))
+                            roe = to_db_float(f_data.get('bs_ROE'))
                         
-                        # Save back to cache
-                        if isin not in shared_cache:
-                            shared_cache[isin] = {}
-                        shared_cache[isin]['dma_data'] = dma_data
+                        pb = to_db_float(f_data.get('bs_PB'))
+                        eps = to_db_float(f_data.get('bs_EPS'))
+                        opm = to_db_float(f_data.get('bs_OPM'))
+                        npm = to_db_float(f_data.get('bs_NPM'))
 
-                # --- Candlestick Patterns ---
-                pattern_str = None
-                pattern_score = 0
-                patterns_opts = settings.get('patterns', {})
-                if patterns_opts.get('enabled'):
-                    bullish_patterns = []
-                    bearish_patterns = []
-                    neutral_patterns = []
-                    
-                    bullish_cols = ['CDL_ENGULFING', 'CDL_HAMMER', 'CDL_MORNINGSTAR', 'CDL_PIERCING', 'CDL_MORNINGDOJISTAR', 'CDL_3WHITESOLDIERS', 'CDL_DRAGONFLYDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
-                    bearish_cols = ['CDL_ENGULFING', 'CDL_SHOOTINGSTAR', 'CDL_EVENINGSTAR', 'CDL_DARKCLOUDCOVER', 'CDL_EVENINGDOJISTAR', 'CDL_HANGINGMAN', 'CDL_3BLACKCROWS', 'CDL_GRAVESTONEDOJI', 'CDL_3INSIDE', 'CDL_3OUTSIDE']
-                    neutral_cols = ['CDL_DOJI_10_0.1', 'CDL_SPINNINGTOP', 'CDL_HIGHWAVE', 'CDL_RICKSHAWMAN', 'CDL_LONGLEGGEDDOJI', 'CDL_INSIDE', 'CDL_BELTHOLD']
-                    
-                    # Pattern intensity scoring
-                    PATTERN_WEIGHTS = {
-                        'CDL_MORNINGSTAR': 3, 'CDL_EVENINGSTAR': 3, 'CDL_3WHITESOLDIERS': 3, 'CDL_3BLACKCROWS': 3, 'CDL_MORNINGDOJISTAR': 3, 'CDL_EVENINGDOJISTAR': 3, 'CDL_3INSIDE': 3, 'CDL_3OUTSIDE': 3,
-                        'CDL_ENGULFING': 2, 'CDL_PIERCING': 2, 'CDL_DARKCLOUDCOVER': 2,
-                        'CDL_HAMMER': 1, 'CDL_INVERTEDHAMMER': 1, 'CDL_SHOOTINGSTAR': 1, 'CDL_DRAGONFLYDOJI': 1, 'CDL_GRAVESTONEDOJI': 1, 'CDL_DOJI': 1
-                    }
-                    
-                    for key, val in latest_data.items():
-                        if not isinstance(key, str) or not key.startswith("CDL_") or pd.isna(val) or val == 0:
-                            continue
-                        
-                        # Only accept strong pattern signals (usually 100 or -100)
-                        if abs(val) < 10: 
-                            continue
-
-                        # Update score (Signed)
-                        weight = PATTERN_WEIGHTS.get(key, 1)
-                        if val < 0: weight = -weight
-                        if abs(weight) > abs(pattern_score):
-                            pattern_score = weight
-
-                        pattern_name = key.replace("CDL_", "").split("_")[0].title()
-                        
-                        if val > 0:
-                            if key in neutral_cols:
-                                neutral_patterns.append(pattern_name)
-                            elif key in bearish_cols and key not in bullish_cols:
-                                bearish_patterns.append(pattern_name)
-                            else:
-                                bullish_patterns.append(pattern_name)
-                        elif val < 0:
-                            if key in neutral_cols:
-                                neutral_patterns.append(pattern_name)
-                            elif key in bullish_cols and key not in bearish_cols:
-                                bullish_patterns.append(pattern_name)
-                            else:
-                                bearish_patterns.append(pattern_name)
-                                
-                    active_found = []
-                    if patterns_opts.get('bullish') and bullish_patterns:
-                        active_found.append("Bullish " + "/".join(bullish_patterns))
-                    if patterns_opts.get('bearish') and bearish_patterns:
-                        active_found.append("Bearish " + "/".join(bearish_patterns))
-                    if patterns_opts.get('neutral') and neutral_patterns:
-                        active_found.append("Neutral " + "/".join(neutral_patterns))
-                        
-                    if active_found:
-                        pattern_str = " | ".join(active_found)
-                
-                # --- Confluence Ranking Logic ---
-                # Example basic logic: 
-                # +1 if Price > EMA
-                # +1 if Supertrend is BUY
-                # +1 if RSI > 50 (bullish momemtum)
-                # +1 if Price > DMA(20)
-                rank = 0
-                # 1. EMA Signal (+1 for BUY, -1 for SELL)
-                if ema_signal == 'BUY': rank += 1
-                elif ema_signal == 'SELL': rank -= 1
-                
-                # 2. Supertrend (+1 for BUY, -1 for SELL)
-                if st_dir == 'BUY': rank += 1
-                elif st_dir == 'SELL': rank -= 1
-                
-                # 3. RSI (+1 for RSI > 50, -1 for RSI < 50)
-                if rsi_val is not None:
-                    if rsi_val > 50: rank += 1
-                    elif rsi_val < 50: rank -= 1
-                
-                # 4. Anchor Trend (SMA 20) (+1 for price > SMA, -1 for price < SMA)
-                if dma_data and dma_data.get('SMA_20'):
-                    sma20 = dma_data.get('SMA_20')
-                    if ltp > sma20: rank += 1
-                    else: rank -= 1
-                
-                # 5. Volume Signal (+1 for BULL_SPIKE, -1 for BEAR_SPIKE)
-                if vol_signal == 'BULL_SPIKE': rank += 1
-                elif vol_signal == 'BEAR_SPIKE': rank -= 1
-
-                # --- Trade Plan Logic (Pick Stocks for Trade) ---
-                sl = None
-                target = None
-                trade_strategy = "NORMAL"
-                
-                # Determine RR based on Profile
-                rr_multiplier = 2.0 if profile_id == 'swing' else 1.5
-                
-                if st_dir == 'BUY':
-                    # SL is the lower of Supertrend and EMA Slow (safer floor)
-                    if st_value and ema_slow:
-                        sl = min(st_value, ema_slow)
-                    elif st_value:
-                        sl = st_value
-                    elif ema_slow:
-                        sl = ema_slow
-                        
-                    if sl and sl < ltp:
-                        risk = ltp - sl
-                        target = ltp + (risk * rr_multiplier) # Profile-specific RR
-                    else:
-                        # Fallback SL (e.g. 0.5% for intraday, 3% for swing)
-                        sl_pct = 0.03 if profile_id == 'swing' else 0.005
-                        sl = ltp * (1 - sl_pct)
-                        target = ltp * (1 + (sl_pct * rr_multiplier))
-                elif st_dir == 'SELL':
-                    # Shorting Trade Plan
-                    if st_value and ema_slow:
-                        sl = max(st_value, ema_slow)
-                    elif st_value:
-                        sl = st_value
-                    elif ema_slow:
-                        sl = ema_slow
-                        
-                    if sl and sl > ltp:
-                        risk = sl - ltp
-                        target = ltp - (risk * rr_multiplier)
-                    else:
-                        sl_pct = 0.03 if profile_id == 'swing' else 0.005
-                        sl = ltp * (1 + sl_pct)
-                        target = ltp * (1 - (sl_pct * rr_multiplier))
-                
-                # Pick Strategy Labels
-                if rank >= 4 and vol_signal == 'BULL_SPIKE' and ema_signal == 'BUY' and st_dir == 'BUY':
-                    trade_strategy = "PERFECT_BUY"
-                elif rank <= -4 and vol_signal == 'BEAR_SPIKE' and ema_signal == 'SELL' and st_dir == 'SELL':
-                    trade_strategy = "PERFECT_SELL"
-                elif st_dir == 'BUY' and dma_data:
-                    # Pullback logic: Check if price is near major DMA (20, 50, or 200)
-                    for dma_val in dma_data.values():
-                        if 0.985 <= (ltp / dma_val) <= 1.015:
-                            trade_strategy = "DMA_BOUNCE"
-                            break
-                elif st_dir == 'SELL' and dma_data:
-                    # Resistance logic
-                    for dma_val in dma_data.values():
-                        if 0.985 <= (ltp / dma_val) <= 1.015:
-                            trade_strategy = "DMA_RESISTANCE"
-                            break
-
-                # Last 5 candles visualizer
-                last_5_candles = None
-                if len(df) >= 5:
-                    recent_5 = df.iloc[-5:]
-                    candles_list = []
-                    for _, r in recent_5.iterrows():
-                        candles_list.append({
-                            "t": str(r['timestamp']),
-                            "o": float(r['open']),
-                            "h": float(r['high']),
-                            "l": float(r['low']),
-                            "c": float(r['close'])
-                        })
-                    last_5_candles = json.dumps(clean_nan(candles_list))
-
-                # --- Fundamentals Integration ---
-                sector = industry = pe = pb = roe = eps = opm = npm = i_group = i_subgroup = None
-                if settings.get('FUNDAMENTALS', {}).get('enabled'):
-                    f_data = fundamental_map.get(isin, {})
-                    sector = f_data.get('bs_Sector')
-                    industry = f_data.get('bs_IndustryNew')
-                    i_group = f_data.get('bs_IGroup')
-                    i_subgroup = f_data.get('bs_ISubGroup')
-                    
-                    # For Intraday, PE/ROE are not meaningful context - skip them to maintain purity
-                    if profile_id != 'intraday':
-                        pe = float(f_data['bs_PE']) if f_data.get('bs_PE') is not None else None
-                        roe = float(f_data['bs_ROE']) if f_data.get('bs_ROE') is not None else None
-                    
-                    pb = float(f_data['bs_PB']) if f_data.get('bs_PB') is not None else None
-                    eps = float(f_data['bs_EPS']) if f_data.get('bs_EPS') is not None else None
-                    opm = float(f_data['bs_OPM']) if f_data.get('bs_OPM') is not None else None
-                    npm = float(f_data['bs_NPM']) if f_data.get('bs_NPM') is not None else None
-
-                signals_to_insert.append((
-                    isin, profile_id, timeframe, timestamp, to_db_float(ltp), to_db_float(rsi_val), 
-                    to_db_float(rsi_day_high), to_db_float(rsi_day_low),
-                    ema_signal, to_db_float(ema_fast), to_db_float(ema_slow), 
-                    vol_signal, to_db_float(vol_ratio),
-                    to_db_float(ema_fast), # Using ema_fast as legacy ema_value
-                    st_dir, to_db_float(st_value), json.dumps(clean_nan(dma_data)), rank,
-                    to_db_float(sl), to_db_float(target), trade_strategy, pattern_str, pattern_score, last_5_candles,
-                    sector, industry, to_db_float(pe), to_db_float(pb), to_db_float(roe), to_db_float(eps), to_db_float(opm), to_db_float(npm),
-                    i_group, i_subgroup
-                ))
+                    signals_to_insert.append((
+                        isin, profile_id, timeframe, timestamp, to_db_float(ltp), to_db_float(rsi_val), 
+                        to_db_float(rsi_day_high), to_db_float(rsi_day_low),
+                        ema_signal, to_db_float(ema_fast), to_db_float(ema_slow), 
+                        vol_signal, to_db_float(vol_ratio),
+                        to_db_float(ema_fast), # Using ema_fast as legacy ema_value
+                        st_dir, to_db_float(st_value), json.dumps(clean_nan(dma_data)), rank,
+                        to_db_float(sl), to_db_float(target), trade_strategy, pattern_str, pattern_score, last_5_candles,
+                        sector, industry, to_db_float(pe), to_db_float(pb), to_db_float(roe), to_db_float(eps), to_db_float(opm), to_db_float(npm),
+                        i_group, i_subgroup
+                    ))
+                except Exception as e:
+                    logging.error(f"FATAL error processing {isin} ({timeframe}): {e}")
+                    continue
             
             # Upsert into database
             if signals_to_insert:
