@@ -576,10 +576,8 @@ async def stream_fetch(mode: str = "swing"):
                             url = f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01"
                             tf_key = '1d'
                         else:
-                            # Use deep historical for intraday to support higher timeframes (15m, 30m, 60m)
-                            to_date = datetime.now().strftime('%Y-%m-%d')
-                            from_date = (datetime.now() - timedelta(days=15)).strftime('%Y-%m-%d')
-                            url = f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/minutes/5/{to_date}/{from_date}"
+                            # Use dedicated intraday endpoint for live current-day candles (No dates required)
+                            url = f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5"
                             tf_key = '5m'
                             
                         res = await client.get(url, timeout=10.0)

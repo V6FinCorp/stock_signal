@@ -12,6 +12,16 @@ from config import Config
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+def clean_nan(obj):
+    """Recursively convert NaN to None for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: clean_nan(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan(x) for x in obj]
+    elif isinstance(obj, float) and np.isnan(obj):
+        return None
+    return obj
+
 # Default configurations in case the database settings are empty
 DEFAULT_CONFIGS = {
     'intraday': {
@@ -318,7 +328,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 rows = await cur.fetchall()
                 
                 # --- Synthesis Logic for "Live Daily" Candle ---
-                if timeframe == '1d':
+                if base_timeframe == '1d':
                     rows = await synthesize_live_candle(cur, isin, rows)
 
                 if len(rows) < 1: # Minimum rows to generate a signal record
@@ -354,6 +364,9 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     }).dropna()
                     df.reset_index(inplace=True)
                 
+                if df.empty:
+                    continue
+
                 try:
                     latest_data = calculate_indicators(df, settings)
                 except Exception as e:
@@ -608,7 +621,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                             "l": float(r['low']),
                             "c": float(r['close'])
                         })
-                    last_5_candles = json.dumps(candles_list)
+                    last_5_candles = json.dumps(clean_nan(candles_list))
 
                 # --- Fundamentals Integration ---
                 sector = industry = pe = pb = roe = eps = opm = npm = i_group = i_subgroup = None
@@ -635,7 +648,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     ema_signal, ema_fast, ema_slow, 
                     vol_signal, vol_ratio,
                     ema_fast, # Using ema_fast as legacy ema_value
-                    st_dir, st_value, json.dumps(dma_data), rank,
+                    st_dir, st_value, json.dumps(clean_nan(dma_data)), rank,
                     sl, target, trade_strategy, pattern_str, pattern_score, last_5_candles,
                     sector, industry, pe, pb, roe, eps, opm, npm,
                     i_group, i_subgroup
@@ -727,7 +740,7 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
             df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
             
             # Resampling Logic (Matches process_profile)
-            if timeframe == '1d':
+            if base_timeframe == '1d':
                 rows = await synthesize_live_candle(cur, isin, rows)
                 df = pd.DataFrame(rows)
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
