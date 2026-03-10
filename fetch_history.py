@@ -150,6 +150,18 @@ async def main():
         logging.error(f"Failed to connect to databases. Please check your .env credentials: {e}")
         return
 
+    # 1.5 Fetch Portfolio holdings from APP DB
+    holdings_isins = set()
+    try:
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT DISTINCT isin FROM tb_app_sf_holdings")
+                h_rows = await cur.fetchall()
+                holdings_isins = {r[0] for r in h_rows if r[0]}
+                logging.info(f"Integrity Check: Found {len(holdings_isins)} unique portfolio ISINs.")
+    except Exception as e:
+        logging.warning(f"Failed to fetch holdings: {e}. Proceeding with default watchlist.")
+
     # 2. Fetch companies from DATAMART DB
     async with datamart_pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
@@ -173,12 +185,14 @@ async def main():
             
             # Filter the active companies based on mode
             if mode == "intraday":
+                # Intraday stays exclusive to predefined favourites
                 active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols]
             elif mode == "swing":
-                active_companies = [c for c in active_companies if c['symbol'] in swing_symbols]
+                # Swing = Predefined Swing Favourites + Portfolio Holdings (Deduplicated)
+                active_companies = [c for c in active_companies if c['symbol'] in swing_symbols or c['isin'] in holdings_isins]
             else:
-                # "all" mode: fetch both
-                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols or c['symbol'] in swing_symbols]
+                # "all" mode: fetch both universes
+                active_companies = [c for c in active_companies if c['symbol'] in intraday_symbols or c['symbol'] in swing_symbols or c['isin'] in holdings_isins]
             
     if not active_companies:
         logging.warning("No active companies found in Datamart DB.")

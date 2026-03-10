@@ -232,30 +232,65 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
             settings['FUNDAMENTALS'] = {}
         settings['FUNDAMENTALS']['enabled'] = use_fundamentals
     
-    # 1. Fetch the exact Companies aligned with dim_favourites from Datamart DB
-    target_dim = 1 if profile_id == 'intraday' else 2
-    favourite_symbols = set()
+    # 0. Fetch Portfolio holdings from APP DB
+    holdings_isins = set()
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT DISTINCT isin FROM tb_app_sf_holdings")
+                h_rows = await cur.fetchall()
+                holdings_isins = {r[0] for r in h_rows if r[0]}
+    except Exception as e:
+        logging.warning(f"Engine: Failed to fetch holdings: {e}")
+
+    # 1. Fetch Target Companies (Intersection of Active + (Favourites OR Holdings))
+    target_companies = []
+    isin_to_symbol = {}
+    favourite_isin_set = set() # Track for flag setting later
+
     try:
         async with datamart_pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    SELECT c.bs_symbol 
-                    FROM vw_e_bs_companies_favourite_indices c
-                    JOIN vw_e_bs_companies_all a ON c.bs_symbol = a.bs_SYMBOL
-                    WHERE c.dim_favourites = %s AND BINARY a.bs_Status = 'Active'
-                    """,
-                    (target_dim,)
-                )
-                rows = await cur.fetchall()
-                favourite_symbols = {row[0] for row in rows}
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("""
+                    SELECT a.bs_ISIN as isin, a.bs_SYMBOL as symbol, f.dim_favourites
+                    FROM vw_e_bs_companies_all a
+                    LEFT JOIN vw_e_bs_companies_favourite_indices f ON a.bs_SYMBOL = f.bs_symbol
+                    WHERE BINARY a.bs_Status = 'Active'
+                """)
+                active_universe = await cur.fetchall()
+                
+                target_dim = 1 if profile_id == 'intraday' else 2
+                
+                for c in active_universe:
+                    is_fav = (c['dim_favourites'] == target_dim)
+                    is_holding = (c['isin'] in holdings_isins)
+                    
+                    # Inclusion Rule:
+                    # Intraday: Only Predefined Favorites
+                    # Swing: Predefined Favorites OR Holdings
+                    include = is_fav
+                    if profile_id == 'swing':
+                        include = is_fav or is_holding
+                    
+                    if include:
+                        target_companies.append({
+                            'isin': c['isin'],
+                            'symbol': c['symbol'],
+                            'is_fav': is_fav,
+                            'is_holding': is_holding
+                        })
+                        isin_to_symbol[c['isin']] = c['symbol']
+                        if is_fav: favourite_isin_set.add(c['isin'])
+
     except Exception as e:
-        logging.error(f"Failed to fetch favourite indices from Datamart: {e}")
+        logging.error(f"Failed to fetch processing universe: {e}")
         return
-        
-    if not favourite_symbols:
-        logging.warning("No favourite indices found in Datamart. Aborting calculation.")
+
+    if not target_companies:
+        logging.warning(f"No stocks identified for processing in {profile_id} mode.")
         return
+
+    logging.info(f"Identified {len(target_companies)} stocks to process (Favs + Portfolio merge).")
 
     # Fetch Fundamental Data if enabled for this profile
     fundamental_map = {}
@@ -287,26 +322,15 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
     # 2. Connect to App DB and process JUST those companies
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            # We need to map available ISINs to their symbols to do the intersection
+            # 2. Get list of ISINs to process from our target set
+            target_isins = [c['isin'] for c in target_companies]
+            isin_meta_map = {c['isin']: c for c in target_companies}
+            
+            # Intersection: Only process ISINs that actually have price data in the DB
             await cur.execute("SELECT DISTINCT isin FROM app_sg_ohlcv_prices WHERE timeframe = %s", (base_timeframe,))
-            available_isins = {row['isin'] for row in await cur.fetchall()}
+            db_available_isins = {row['isin'] for row in await cur.fetchall()}
             
-            # Map those ISINs back to Symbols using the Datamart DB
-            isin_to_symbol = {}
-            if available_isins:
-                try:
-                    async with datamart_pool.acquire() as dm_conn:
-                        async with dm_conn.cursor(aiomysql.DictCursor) as dm_cur:
-                            # Using executemany isn't applicable for SELECT IN, constructing batch query
-                            format_strings = ','.join(['%s'] * len(available_isins))
-                            await dm_cur.execute(f"SELECT bs_ISIN, bs_SYMBOL FROM vw_e_bs_companies_all WHERE BINARY bs_Status = 'Active' AND bs_ISIN IN ({format_strings})", tuple(available_isins))
-                            for row in await dm_cur.fetchall():
-                                isin_to_symbol[row['bs_ISIN']] = row['bs_SYMBOL']
-                except Exception as e:
-                    pass
-            
-            # Intersection: Only keep ISINs where the mapped Symbol is in the Favourite Symbols list
-            isins = [isin for isin in available_isins if isin_to_symbol.get(isin) in favourite_symbols]
+            isins = [isin for isin in target_isins if isin in db_available_isins]
             
             if not isins:
                 logging.warning(f"No OHLCV data found for timeframe {timeframe}.")
@@ -660,6 +684,9 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         opm = to_db_float(f_data.get('bs_OPM'))
                         npm = to_db_float(f_data.get('bs_NPM'))
 
+                    # Get meta flags for signal classification
+                    meta = isin_meta_map.get(isin, {'is_fav': False, 'is_holding': False})
+
                     signals_to_insert.append((
                         isin, profile_id, timeframe, timestamp, to_db_float(ltp), to_db_float(rsi_val), 
                         to_db_float(rsi_day_high), to_db_float(rsi_day_low),
@@ -669,7 +696,8 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         st_dir, to_db_float(st_value), json.dumps(clean_nan(dma_data)), rank,
                         to_db_float(sl), to_db_float(target), trade_strategy, pattern_str, pattern_score, last_5_candles,
                         sector, industry, to_db_float(pe), to_db_float(pb), to_db_float(roe), to_db_float(eps), to_db_float(opm), to_db_float(npm),
-                        i_group, i_subgroup
+                        i_group, i_subgroup,
+                        meta['is_fav'], meta['is_holding']
                     ))
                 except Exception as e:
                     logging.error(f"FATAL error processing {isin} ({timeframe}): {e}")
@@ -684,8 +712,8 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                      supertrend_dir, supertrend_value, dma_data, confluence_rank, sl, target, 
                      trade_strategy, candlestick_pattern, pattern_score, last_5_candles,
                      sector, industry, pe, pb, roe, eps, opm, npm,
-                     i_group, i_subgroup)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     i_group, i_subgroup, is_fav, is_holding)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         timestamp=VALUES(timestamp), ltp=VALUES(ltp), rsi=VALUES(rsi), 
                         rsi_day_high=VALUES(rsi_day_high), rsi_day_low=VALUES(rsi_day_low),
@@ -700,7 +728,8 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                         last_5_candles=VALUES(last_5_candles),
                         sector=VALUES(sector), industry=VALUES(industry), pe=VALUES(pe), 
                         pb=VALUES(pb), roe=VALUES(roe), eps=VALUES(eps), opm=VALUES(opm), npm=VALUES(npm),
-                        i_group=VALUES(i_group), i_subgroup=VALUES(i_subgroup)
+                        i_group=VALUES(i_group), i_subgroup=VALUES(i_subgroup),
+                        is_fav=VALUES(is_fav), is_holding=VALUES(is_holding)
                 """
                 await cur.executemany(upsert_query, signals_to_insert)
                 logging.info(f"✅ Successfully updated {len(signals_to_insert)} signals for {profile_id} ({timeframe}).")

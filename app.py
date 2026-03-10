@@ -538,15 +538,30 @@ async def stream_fetch(mode: str = "swing"):
             app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
             datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
             
+            # Get Holdings ISINs for Integrity Check
+            holdings_isins = set()
+            try:
+                async with app_pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute("SELECT DISTINCT isin FROM tb_app_sf_holdings")
+                        h_rows = await cur.fetchall()
+                        holdings_isins = {r[0] for r in h_rows if r[0]}
+            except Exception as e:
+                logging.warning(f"Stream Fetch: Failed to fetch holdings: {e}")
+
             async with datamart_pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
                     target_dim = 1 if mode == 'intraday' else 2
+                    
+                    # Merge Logic: Get Favourites + Get info for any ISIN in holdings
+                    # We use a broad union query
                     await cur.execute("""
-                        SELECT c.bs_ISIN as isin, c.bs_SYMBOL as symbol 
+                        SELECT DISTINCT c.bs_ISIN as isin, c.bs_SYMBOL as symbol 
                         FROM vw_e_bs_companies_all c
-                        JOIN vw_e_bs_companies_favourite_indices f ON c.bs_SYMBOL = f.bs_symbol
-                        WHERE BINARY c.bs_Status = 'Active' AND f.dim_favourites = %s
-                    """, (target_dim,))
+                        LEFT JOIN vw_e_bs_companies_favourite_indices f ON c.bs_SYMBOL = f.bs_symbol
+                        WHERE BINARY c.bs_Status = 'Active' 
+                        AND (f.dim_favourites = %s OR (c.bs_ISIN IS NOT NULL AND %s = 2 AND c.bs_ISIN IN %s))
+                    """, (target_dim, target_dim, tuple(holdings_isins) if holdings_isins else ('',)))
                     companies = await cur.fetchall()
             
             if not companies:

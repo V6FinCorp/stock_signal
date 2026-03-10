@@ -138,6 +138,9 @@ let HUD_STATES = {
 let autoSyncTimerId = null;
 let isAutoSyncEnabled = false;
 let currentUsername = 'admin'; // Fallback
+let isPortfolioModeActive = false;
+let currentUniverse = 'default'; // 'default', 'all', 'portfolio'
+let holdingsISINs = []; // ISINs of stocks in user portfolio
 let activeScreenerBlueprint = null;
 let screenerBlueprints = [];
 let screenerTfDataMap = {}; // Shared cache for MTF data in Screener
@@ -217,6 +220,55 @@ async function changeUserPassword() {
     }
 }
 
+function setUniverse(univ) {
+    const oldUniv = currentUniverse;
+    currentUniverse = univ;
+    isPortfolioModeActive = (univ === 'portfolio');
+
+    // Portfolio Protection (Swing-only)
+    if (univ === 'portfolio' && currentMode === 'intraday') {
+        showToast("Portfolio universe is Swing-only. Switching to Swing Mode...", "info");
+        setMode('swing');
+        return;
+    }
+
+    // UI Updates
+    const nav = document.getElementById('universe-nav');
+    const slider = document.getElementById('uni-slider');
+    const options = nav.querySelectorAll('.universe-option');
+    
+    // Clear classes
+    nav.classList.remove('uni-state-all', 'uni-state-portfolio');
+    options.forEach(opt => opt.classList.remove('active'));
+
+    // Apply new state
+    if (univ === 'all') {
+        nav.classList.add('uni-state-all');
+        slider.style.left = 'calc(33.33% + 1px)';
+        options[1].classList.add('active');
+    } else if (univ === 'portfolio') {
+        nav.classList.add('uni-state-portfolio');
+        slider.style.left = 'calc(66.66% - 1px)';
+        options[2].classList.add('active');
+    } else {
+        slider.style.left = '3px';
+        options[0].classList.add('active');
+    }
+
+    // Body class for CSS overrides
+    document.body.classList.toggle('portfolio-mode-active', isPortfolioModeActive);
+    
+    // Refresh current view
+    if (activeTab === 'dashboard') renderSignals();
+    else if (activeTab === 'pro-screener') applyScreenerFilters();
+    
+    showToast(`Universe: ${univ.toUpperCase()}`, "info");
+}
+
+function updateHoldingsCount() {
+    // Placeholder for future use if needed, or remove
+}
+
 // --- Core API Logic ---
 
 async function fetchAndRenderSignals(forceFetch = false) {
@@ -288,6 +340,12 @@ function setMode(mode, skipFetch = false) {
     const oldMode = currentMode;
     currentMode = mode;
     currentTimeframe = MODES[mode].defaultTF;
+
+    // Mode Restriction: If switching to Intraday, Portfolio universe MUST revert to Default
+    if (mode === 'intraday' && currentUniverse === 'portfolio') {
+        setUniverse('default');
+        showToast("Portfolio Mode disabled (Swing-only feature)", "info");
+    }
 
     // Pulse navigation
     document.querySelectorAll('#mode-swing, #mode-intraday').forEach(btn => btn.classList.remove('active'));
@@ -555,16 +613,17 @@ function renderSignals() {
     }
 
     // Filter by RSI Range
-    const rsiMinInput = document.getElementById('filter-rsi-min');
-    const rsiMaxInput = document.getElementById('filter-rsi-max');
-    if (rsiMinInput && rsiMaxInput) {
-        const rsiMin = parseFloat(rsiMinInput.value || 0);
-        const rsiMax = parseFloat(rsiMaxInput.value || 100);
-        displayData = displayData.filter(s => {
-            if (s.rsi === null || s.rsi === undefined) return false;
-            return s.rsi >= rsiMin && s.rsi <= rsiMax;
-        });
+    // (Existing code...)
+
+    // Filter by Universe State
+    if (currentUniverse === 'portfolio') {
+        // Show only stocks found in the user's demat holdings
+        displayData = displayData.filter(s => s.is_holding);
+    } else if (currentUniverse === 'default') {
+        // Show only the predefined market watchlist
+        displayData = displayData.filter(s => s.is_fav);
     }
+    // 'all' shows the deduplicated combination (already handled by the backend processing pool)
 
     // 3. Sort Data
     if (currentSortColumn) {
@@ -605,7 +664,10 @@ function renderSignals() {
         rowHtml = `
             <td class="col-rank"><div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score > 0 ? '+' : ''}${score}</div></td>
             <td class="col-symbol">
-                <div class="symbol-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stock.symbol}</div>
+                <div style="display: flex; align-items: center;">
+                    <div class="symbol-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stock.symbol}</div>
+                    ${holdingsISINs.includes(stock.isin) ? '<span class="holdings-badge">HOLDING</span>' : ''}
+                </div>
                 <div class="isin-code">${stock.isin}</div>
             </td>
         `;
@@ -2618,6 +2680,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyZoom(); 
     switchTab('dashboard');
     setMode(currentMode, true); // skipFetch=true to use ONLY cache for now
+    updateHoldingsCount();
     
     // 3. Background Verification & ONE Fresh Data Fetch
     verifySession().then(() => {
@@ -2704,6 +2767,14 @@ function applyScreenerFilters() {
         // 1. Search filter
         const matchesSearch = s.symbol.toLowerCase().includes(searchTerm) || s.isin.toLowerCase().includes(searchTerm);
         if (!matchesSearch) return false;
+
+        // Universe Filter
+        if (currentUniverse === 'portfolio') {
+            if (!s.is_holding) return false;
+        } else if (currentUniverse === 'default') {
+            if (!s.is_fav) return false;
+        }
+        // 'all' includes both automatically
 
         // 2. High-Conviction Filter: Default to Absolute Rank 4+ if no custom strategy is active
         const customFilterId = document.getElementById('screener-filter-custom')?.value || 'none';
@@ -2864,7 +2935,10 @@ function applyScreenerFilters() {
                     <div style="margin-top: 8px;">${tfBadge}</div>
                 </td>
                 <td>
-                    <div style="font-weight:700;">${s.symbol}</div>
+                    <div style="display: flex; align-items: center;">
+                        <div style="font-weight:700;">${s.symbol}</div>
+                        ${holdingsISINs.includes(s.isin) ? '<span class="holdings-badge">HOLDING</span>' : ''}
+                    </div>
                     <div style="font-size:10px; color:var(--text-dim);">${s.isin}</div>
                 </td>
                 <td style="font-weight:700; color:var(--text-main);">
@@ -4008,6 +4082,11 @@ async function runStrategyScan() {
             });
 
             if (skip) return;
+
+            // Portfolio Mode Filter
+            if (isPortfolioModeActive) {
+                if (!holdingsISINs.includes(stock.isin)) return;
+            }
 
             try {
                 // Use the side from the form for evaluation

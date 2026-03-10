@@ -77,6 +77,9 @@
                     <i class="fas fa-microchip"></i> <span>Strategy Lab</span></a>
                 <a href="#" class="nav-item" id="nav-history" onclick="switchTab('history')"><i
                         class="fas fa-history"></i> <span>Signal History</span></a>
+                <a href="#" class="nav-item" id="nav-portfolio" onclick="switchTab('portfolio')">
+                    <i class="fas fa-briefcase"></i> <span>My Portfolio</span>
+                </a>
                 <a href="#" class="nav-item" id="nav-db-manager" onclick="switchTab('db-manager')"><i
                         class="fas fa-database"></i> <span>Database Manager</span></a>
                 <a href="#" class="nav-item" id="nav-settings" onclick="switchTab('settings')"><i
@@ -138,10 +141,22 @@
                     </div>
                 </div>
                 <div class="header-right" style="display: flex; gap: 12px; align-items: center;">
+                    <div class="universe-selector" id="universe-nav">
+                        <div class="universe-slider" id="uni-slider"></div>
+                        <div class="universe-option active" onclick="setUniverse('default')" title="Standard watchlist">
+                            <i class="fas fa-check-circle"></i> Default
+                        </div>
+                        <div class="universe-option" onclick="setUniverse('all')" title="All market stocks">
+                            <i class="fas fa-globe"></i> All
+                        </div>
+                        <div class="universe-option" onclick="setUniverse('portfolio')" title="My demat holdings">
+                            <i class="fas fa-briefcase"></i> Portfolio
+                        </div>
+                    </div>
                     <div class="auto-sync-toggle"
-                        style="display: flex; align-items: center; gap: 8px; margin-right: 15px;">
+                         style="display: flex; align-items: center; gap: 8px; margin-right: 15px;">
                         <span class="text-dim" style="font-size: 13px; font-weight: 600;"
-                            id="auto-sync-label">Auto-Sync</span>
+                              id="auto-sync-label">Auto-Sync</span>
                         <label class="switch" style="margin: 0;">
                             <input type="checkbox" id="auto-sync-switch" onchange="toggleAutoSync()">
                             <span class="slider round"></span>
