@@ -556,7 +556,7 @@ async def stream_fetch(mode: str = "swing"):
                     # Merge Logic: Get Favourites + Get info for any ISIN in holdings
                     # We use a broad union query
                     await cur.execute("""
-                        SELECT DISTINCT c.bs_ISIN as isin, c.bs_SYMBOL as symbol 
+                        SELECT DISTINCT c.bs_ISIN as isin, c.bs_SYMBOL as symbol, c.bs_Available_ON as exchange
                         FROM vw_e_bs_companies_all c
                         LEFT JOIN vw_e_bs_companies_favourite_indices f ON c.bs_SYMBOL = f.bs_symbol
                         WHERE BINARY c.bs_Status = 'Active' 
@@ -588,11 +588,14 @@ async def stream_fetch(mode: str = "swing"):
                     # Fetch Logic (Dual fetch for Swing to support live synthesis)
                     try:
                         fetch_configs = []
+                        # Select correct prefix based on exchange availability
+                        prefix = "BSE_EQ" if comp.get('exchange') == 'BSE' else "NSE_EQ"
+                        
                         if mode == "swing":
-                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01", 'tf': '1d'})
-                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5", 'tf': '5m'})
+                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/{prefix}|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01", 'tf': '1d'})
+                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/{prefix}|{isin}/minutes/5", 'tf': '5m'})
                         else:
-                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5", 'tf': '5m'})
+                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/{prefix}|{isin}/minutes/5", 'tf': '5m'})
                             
                         for cfg in fetch_configs:
                             url = cfg['url']
