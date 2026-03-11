@@ -888,13 +888,18 @@ function renderSignals() {
             });
         }
 
-        // Supetrend
-        rowHtml += `
-            <td>
-                <div class="signal-pill ${stock.supertrend_dir === 'BUY' ? 'pill-buy' : (stock.supertrend_dir === 'SELL' ? 'pill-sell' : 'pill-wait')}" style="font-size: 13px;">${stock.supertrend_dir || '-'}</div>
-                <div class="st-value" style="margin-top: 4px;">@ ${stock.supertrend_value !== null ? stock.supertrend_value.toFixed(2) : '-'}</div>
-            </td>
-            `;
+        // Supertrend
+        const stDir = stock.supertrend_dir;
+        const stVal = stock.supertrend_value;
+        if (stDir) {
+            rowHtml += `
+                <td>
+                    <div class="${stDir === 'BUY' ? 'text-success' : 'text-danger'} font-bold" style="font-size: 15px;">${stDir}</div>
+                    <div class="text-dim" style="font-size: 10px; margin-top: 2px;">(${stVal !== null ? stVal.toFixed(1) : '-'})</div>
+                </td>`;
+        } else {
+            rowHtml += `<td><div style="font-size: 15px; color: var(--text-dim);">-</div></td>`;
+        }
 
         // MTF Agreement
         rowHtml += `<td class="tf-agreement" style="gap: 8px; justify-content: flex-start; align-items: center; display: flex; padding-top: 22px;">`;
