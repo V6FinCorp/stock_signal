@@ -673,7 +673,13 @@ function renderSignals() {
         );
     }
 
-    // Higher filters like RSI Range (already handled by displayData mutation above)
+    // Higher filters like RSI Range
+    const rsiMin = parseFloat(document.getElementById('filter-rsi-min').value);
+    const rsiMax = parseFloat(document.getElementById('filter-rsi-max').value);
+    displayData = displayData.filter(s => {
+        const r = parseFloat(s.rsi);
+        return !isNaN(r) && r >= rsiMin && r <= rsiMax;
+    });
 
     // (Universe State was handled at step 1)
 

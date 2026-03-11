@@ -428,7 +428,13 @@ async def api_status(mode: str = "swing", timeframe: str = None):
                 tf_key = timeframe if timeframe else ('1d' if mode == 'swing' else '5m')
                 query_tf = tf_check_map.get(tf_key, tf_key)
                 
-                await cur.execute("SELECT MAX(timestamp) as latest_ohlc FROM app_sg_ohlcv_prices WHERE timeframe = %s", (query_tf,))
+                # Check both the target timeframe and '5m' for today's synthesis if we are in daily-based modes
+                # This ensures OHLC shows today's date if 5m data is available, even if 1d is lagging
+                if query_tf in ['1d', '1w', '1mo']:
+                    await cur.execute("SELECT MAX(timestamp) as latest_ohlc FROM app_sg_ohlcv_prices WHERE timeframe IN (%s, '5m')", (query_tf,))
+                else:
+                    await cur.execute("SELECT MAX(timestamp) as latest_ohlc FROM app_sg_ohlcv_prices WHERE timeframe = %s", (query_tf,))
+                    
                 ohlc_row = await cur.fetchone()
                 latest_ohlc = ohlc_row['latest_ohlc'] if ohlc_row and ohlc_row['latest_ohlc'] else None
                 

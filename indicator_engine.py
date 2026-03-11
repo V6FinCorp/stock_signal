@@ -251,6 +251,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
     try:
         async with datamart_pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
+                target_dim = 1 if profile_id == 'intraday' else 2
                 await cur.execute("""
                     SELECT a.bs_ISIN as isin, a.bs_SYMBOL as symbol, f.dim_favourites
                     FROM vw_e_bs_companies_all a
@@ -258,8 +259,6 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     WHERE BINARY a.bs_Status = 'Active'
                 """, (target_dim,))
                 active_universe = await cur.fetchall()
-                
-                target_dim = 1 if profile_id == 'intraday' else 2
                 
                 for c in active_universe:
                     is_fav = (c['dim_favourites'] == target_dim)
