@@ -2843,6 +2843,7 @@ async function renderProScreener() {
         screenerMasterData = result.data || [];
         applyScreenerFilters();
     } catch (e) {
+        if (e.name === 'AbortError') return;
         console.error("Pro Screener Fetch Error:", e);
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--danger);">Failed to load alerts.</td></tr>';
     }
@@ -2943,13 +2944,15 @@ function applyScreenerFilters() {
         if (isBull) {
             metrics.push(s.ema_signal === 'BUY' ? "✓ EMA: Bullish Golden Crossover" : "✗ EMA: Neutral/Bearish");
             metrics.push(s.supertrend_dir === 'BUY' ? "✓ SUPERTREND: Bullish Support" : "✗ SUPERTREND: No Support");
-            metrics.push(s.rsi > 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Strong Momentum)` : `✗ RSI: ${s.rsi.toFixed(1)} (Weak)`);
+            const rsiVal = s.rsi !== null && s.rsi !== undefined ? parseFloat(s.rsi).toFixed(1) : 'N/A';
+            metrics.push(s.rsi > 50 ? `✓ RSI: ${rsiVal} (Strong Momentum)` : `✗ RSI: ${rsiVal} (Weak)`);
             metrics.push(s.ltp > (s.dma_data?.SMA_20 || 0) ? "✓ ANCHOR TREND: Above SMA 20" : "✗ ANCHOR TREND: Overextended/Below");
             metrics.push(s.volume_signal === 'BULL_SPIKE' ? "✓ VOLUME: Institutional Buy Surge" : "✗ VOLUME: Normal Activity");
         } else {
             metrics.push(s.ema_signal === 'SELL' ? "✓ EMA: Bearish Death Cross" : "✗ EMA: Neutral/Bullish");
             metrics.push(s.supertrend_dir === 'SELL' ? "✓ SUPERTREND: Bearish Resistance" : "✗ SUPERTREND: No Resistance");
-            metrics.push(s.rsi < 50 ? `✓ RSI: ${s.rsi.toFixed(1)} (Selling Pressure)` : `✗ RSI: ${s.rsi.toFixed(1)} (Strong)`);
+            const rsiVal = s.rsi !== null && s.rsi !== undefined ? parseFloat(s.rsi).toFixed(1) : 'N/A';
+            metrics.push(s.rsi < 50 ? `✓ RSI: ${rsiVal} (Selling Pressure)` : `✗ RSI: ${rsiVal} (Strong)`);
             metrics.push(s.ltp < (s.dma_data?.SMA_20 || 1000000) ? "✓ ANCHOR TREND: Below SMA 20" : "✗ ANCHOR TREND: Overbought/Above");
             metrics.push(s.volume_signal === 'BEAR_SPIKE' ? "✓ VOLUME: Institutional Sell Panic" : "✗ VOLUME: Normal Activity");
         }
