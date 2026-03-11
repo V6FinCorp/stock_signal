@@ -114,8 +114,8 @@ const CONFIGS = {
     }
 };
 
-let currentMode = 'swing';
-let currentTimeframe = 'Daily';
+let currentMode = 'intraday';
+let currentTimeframe = '5m';
 let fetchEvtSource = null;
 let liveSignals = [];
 let signalCache = {};
