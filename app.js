@@ -131,12 +131,12 @@ let screenerMasterData = []; // Cache for local screener filtering
 let currentEditorMode = 'query';
 let currentStrategyId = null; 
 let HUD_STATES = {
-    swing: { active: false, expanded: false },
-    intraday: { active: false, expanded: false }
+    swing: { active: false, expanded: false, operation: null },
+    intraday: { active: false, expanded: false, operation: null }
 };
 
-let autoSyncTimerId = null;
-let isAutoSyncEnabled = false;
+let autoSyncTimers = { swing: null, intraday: null };
+let autoSyncEnabledByMode = { swing: false, intraday: false };
 let currentUsername = 'admin'; // Fallback
 let isPortfolioModeActive = false;
 let currentUniverse = 'default'; // 'default', 'all', 'portfolio'
@@ -324,6 +324,7 @@ async function fetchAndRenderSignals(forceFetch = false) {
 
     renderSignals();
     updateSectorSentiment();
+    fetchSystemStatus(); // Update header timestamps after data fetch
 }
 
 // --- UI Logic ---
@@ -341,10 +342,13 @@ function setMode(mode, skipFetch = false) {
     currentMode = mode;
     currentTimeframe = MODES[mode].defaultTF;
 
-    // Mode Restriction: If switching to Intraday, Portfolio universe MUST revert to Default
-    if (mode === 'intraday' && currentUniverse === 'portfolio') {
-        setUniverse('default');
-        showToast("Portfolio Mode disabled (Swing-only feature)", "info");
+    // Mode Restriction: Universe selector is Swing-only. 
+    // Intraday uses 'all' by default as specialized universes are not applicable.
+    if (mode === 'intraday') {
+        if (currentUniverse === 'portfolio') {
+            showToast("Portfolio Mode disabled (Swing-only feature)", "info");
+        }
+        setUniverse('all');
     }
 
     // Pulse navigation
@@ -367,6 +371,53 @@ function setMode(mode, skipFetch = false) {
     if (oldMode !== mode) {
         signalCache = {};
         screenerMasterData = [];
+    }
+
+    // --- Mode-Specific UI Sync ---
+    
+    // 1. Auto-Sync Toggle Position
+    const autoSyncSwitch = document.getElementById('auto-sync-switch');
+    if (autoSyncSwitch) {
+        autoSyncSwitch.checked = autoSyncEnabledByMode[mode];
+    }
+
+    // 2. Universe Selector Visibility (Swing Only)
+    const universeNav = document.getElementById('universe-nav');
+    if (universeNav) {
+        universeNav.style.display = (mode === 'intraday') ? 'none' : 'flex';
+    }
+
+    // 3. Button Status Sync (Fetch / Calc)
+    const fetchBtn = document.getElementById('fetch-data-btn');
+    const calcBtn = document.getElementById('calc-signals-btn');
+    
+    // Reset buttons to default first
+    if (fetchBtn) {
+        fetchBtn.disabled = false;
+        fetchBtn.innerHTML = '<i class="fas fa-download" id="fetch-icon"></i> Fetch';
+        fetchBtn.classList.remove('btn-disabled');
+    }
+    if (calcBtn) {
+        calcBtn.disabled = false;
+        calcBtn.innerHTML = '<i class="fas fa-sync-alt" id="refresh-icon"></i> Calculate';
+        calcBtn.classList.remove('btn-disabled');
+    }
+
+    // Apply active state if the mode we just switched to is busy
+    if (HUD_STATES[mode].active) {
+        if (HUD_STATES[mode].operation === 'fetch') {
+            if (fetchBtn) {
+                fetchBtn.disabled = true;
+                fetchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+                fetchBtn.classList.add('btn-disabled');
+            }
+        } else if (HUD_STATES[mode].operation === 'calculate') {
+             if (calcBtn) {
+                calcBtn.disabled = true;
+                calcBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
+                calcBtn.classList.add('btn-disabled');
+            }
+        }
     }
 
     // HUD Context Sync
@@ -562,17 +613,27 @@ function renderSignals() {
 
     const conf = CONFIGS[currentMode];
 
-    // 1. Update Stats dynamically based on the full DB pull BEFORE filtering
-    document.getElementById('stat-total').innerText = liveSignals.length.toLocaleString();
-    const bullish = liveSignals.filter(s => s.supertrend_dir === 'BUY').length;
+    // --- 1. Filter by Universe State FIRST (Base Data Set) ---
+    let displayData = liveSignals;
+
+    if (currentUniverse === 'portfolio') {
+        // Show only stocks found in the user's demat holdings
+        displayData = displayData.filter(s => s.is_holding);
+    } else if (currentUniverse === 'default') {
+        // Show only the predefined market watchlist
+        displayData = displayData.filter(s => s.is_fav);
+    }
+
+    // --- 2. Update Stats dynamically based on the filtered UNIVERSE ---
+    document.getElementById('stat-total').innerText = displayData.length.toLocaleString();
+    const bullish = displayData.filter(s => s.supertrend_dir === 'BUY').length;
     document.getElementById('stat-bullish').innerText = bullish.toLocaleString();
-    const bearish = liveSignals.filter(s => s.supertrend_dir === 'SELL').length;
+    const bearish = displayData.filter(s => s.supertrend_dir === 'SELL').length;
     document.getElementById('stat-bearish').innerText = bearish.toLocaleString();
-    const confluence = liveSignals.filter(s => Math.abs(s.confluence_rank) >= 3).length;
+    const confluence = displayData.filter(s => Math.abs(s.confluence_rank) >= 3).length;
     document.getElementById('stat-confluence').innerText = confluence.toLocaleString();
 
-    // 2. Filter Data
-    let displayData = liveSignals;
+    // --- 3. Apply Sub-Filters (Stat Cards, Search, Rank) ---
 
     // Filter by active stat card
     if (activeStatFilter === 'bullish') {
@@ -612,18 +673,9 @@ function renderSignals() {
         );
     }
 
-    // Filter by RSI Range
-    // (Existing code...)
+    // Higher filters like RSI Range (already handled by displayData mutation above)
 
-    // Filter by Universe State
-    if (currentUniverse === 'portfolio') {
-        // Show only stocks found in the user's demat holdings
-        displayData = displayData.filter(s => s.is_holding);
-    } else if (currentUniverse === 'default') {
-        // Show only the predefined market watchlist
-        displayData = displayData.filter(s => s.is_fav);
-    }
-    // 'all' shows the deduplicated combination (already handled by the backend processing pool)
+    // (Universe State was handled at step 1)
 
     // 3. Sort Data
     if (currentSortColumn) {
@@ -1112,8 +1164,8 @@ function saveProfileSettings() {
         renderSignals();
     }
 
-    if (isAutoSyncEnabled) {
-        startAutoSync();
+    if (autoSyncEnabledByMode[profile]) {
+        startAutoSync(profile);
     }
 
     saveConfigsToLocalStorage();
@@ -1393,85 +1445,110 @@ function toggleSidebar() {
 // --- Auto Sync Logic ---
 
 function toggleAutoSync() {
-    isAutoSyncEnabled = document.getElementById('auto-sync-switch').checked;
+    const mode = currentMode;
+    autoSyncEnabledByMode[mode] = document.getElementById('auto-sync-switch').checked;
     const label = document.getElementById('auto-sync-label');
 
-    if (isAutoSyncEnabled) {
+    if (autoSyncEnabledByMode[mode]) {
         label.innerText = "Auto-Sync: ON";
         label.style.color = "var(--primary)";
-        startAutoSync();
-        // Immediately trigger first cycle
-        runAutoSyncLoop();
+        startAutoSync(mode);
+        // Immediately trigger first cycle for this mode
+        runAutoSyncLoop(mode);
     } else {
         label.innerText = "Auto-Sync";
         label.style.color = "var(--text-dim)";
-        if (autoSyncTimerId) {
-            clearTimeout(autoSyncTimerId);
-            autoSyncTimerId = null;
+        if (autoSyncTimers[mode]) {
+            clearTimeout(autoSyncTimers[mode]);
+            autoSyncTimers[mode] = null;
         }
     }
 }
 
-function startAutoSync() {
-    if (autoSyncTimerId) clearTimeout(autoSyncTimerId);
-    if (!isAutoSyncEnabled) return;
+function startAutoSync(mode) {
+    const targetMode = mode || currentMode;
+    if (autoSyncTimers[targetMode]) clearTimeout(autoSyncTimers[targetMode]);
+    if (!autoSyncEnabledByMode[targetMode]) return;
 
-    const interval = CONFIGS[currentMode].auto.interval || 180000;
-    autoSyncTimerId = setTimeout(runAutoSyncLoop, interval);
+    const interval = (CONFIGS[targetMode] && CONFIGS[targetMode].auto) ? (CONFIGS[targetMode].auto.interval || 180000) : 180000;
+    autoSyncTimers[targetMode] = setTimeout(() => runAutoSyncLoop(targetMode), interval);
 }
 
-function runAutoSyncLoop() {
-    if (!isAutoSyncEnabled) return;
+function runAutoSyncLoop(mode) {
+    const targetMode = mode || currentMode;
+    if (!autoSyncEnabledByMode[targetMode]) return;
 
-    // Reschedule next cycle
-    startAutoSync();
+    // Reschedule next cycle for THIS specific mode
+    startAutoSync(targetMode);
 
-    const conf = CONFIGS[currentMode];
+    const conf = CONFIGS[targetMode];
 
     // Check Market Hours if enabled
     if (conf.auto && conf.auto.marketHoursOnly) {
-        // Simple client-side time check (assuming user is in IST or checking against local system time)
-        // A more robust implementation would fetch server time, but this suffices for the UI toggle
         const now = new Date();
-
-        // Adjust system date to IST for calculation
-        // IST is UTC + 5:30 -> (5 * 60 + 30) = 330 minutes
         const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
         const istDate = new Date(utc + (3600000 * 5.5));
 
-        const day = istDate.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
+        const day = istDate.getDay(); 
         const hours = istDate.getHours();
         const minutes = istDate.getMinutes();
 
-        // Check if weekend
         if (day === 0 || day === 6) {
-            console.log("Auto-Sync skipped: Market is closed (Weekend).");
+            console.log(`Auto-Sync [${targetMode}] skipped: Market is closed (Weekend).`);
             return;
         }
 
-        // Check if outside 9:15 AM - 3:30 PM (15:30)
         const timeInMinutes = (hours * 60) + minutes;
-        const marketOpen = (9 * 60) + 15; // 555
-        const marketClose = (15 * 60) + 30; // 930
+        const marketOpen = (9 * 60) + 15; 
+        const marketClose = (15 * 60) + 30; 
 
         if (timeInMinutes < marketOpen || timeInMinutes > marketClose) {
-            console.log("Auto-Sync skipped: Outside of market hours (9:15 AM - 3:30 PM).");
+            console.log(`Auto-Sync [${targetMode}] skipped: Outside of market hours.`);
             return;
         }
     }
 
-    const fetchBtn = document.getElementById('fetch-data-btn');
-    const refreshIcon = document.getElementById('refresh-icon');
-
-    // Safety check to prevent overlapping runs or triggering during manual runs
-    if (fetchEvtSource || fetchBtn.disabled || (refreshIcon && refreshIcon.classList.contains('fa-spin'))) {
+    // Safety check: Don't trigger if THIS mode is already busy
+    if (HUD_STATES[targetMode].active) {
+        console.log(`Auto-Sync [${targetMode}] skipped: Operation already in progress.`);
         return;
     }
 
     if (conf.auto.fetch) {
-        fetchMarketData();
+        // Pass mode explicitly to fetchMarketData if we refactor it further, 
+        // for now it uses currentMode if none passed, but we should make it reliable.
+        if (targetMode === currentMode) {
+            fetchMarketData(targetMode);
+        } else {
+            // Background fetch for non-active mode
+            triggerBackgroundFetch(targetMode);
+        }
     } else if (conf.auto.calc) {
-        refreshSignals();
+        if (targetMode === currentMode) {
+            refreshSignals();
+        } else {
+            triggerBackgroundCalc(targetMode);
+        }
+    }
+}
+
+// Helper to trigger operations for non-active mode without UI block
+async function triggerBackgroundFetch(mode) {
+    console.log(`Starting background fetch for ${mode}`);
+    // Simplified fetch without EventSource if it's in the background, 
+    // or just use the same logic but don't update current active buttons.
+    // Actually, fetchMarketData already takes 'mode' as a parameter (from line 1500).
+    fetchMarketData(mode); 
+}
+
+async function triggerBackgroundCalc(mode) {
+    console.log(`Starting background calculation for ${mode}`);
+    const fundamentals = (CONFIGS[mode] && CONFIGS[mode].fundamentals && CONFIGS[mode].fundamentals.enabled) || false;
+    try {
+        await fetch(`/api/calculate?mode=${mode}&fundamentals=${fundamentals}`, { method: 'POST' });
+        console.log(`Background calculation for ${mode} complete.`);
+    } catch (e) {
+        console.error(`Background calculation for ${mode} failed:`, e);
     }
 }
 
@@ -1511,6 +1588,7 @@ async function fetchMarketData() {
     btn.disabled = true;
 
     HUD_STATES[mode].active = true;
+    HUD_STATES[mode].operation = 'fetch';
     syncHudVisibility();
     consoleEl.innerHTML = '';
     statusText.innerText = `Fetching ${mode.toUpperCase()} Market Data...`;
@@ -1533,13 +1611,14 @@ async function fetchMarketData() {
 
             setTimeout(() => {
                 HUD_STATES[mode].active = false;
+                HUD_STATES[mode].operation = null;
                 syncHudVisibility();
                 btn.innerHTML = originalHTML;
                 btn.classList.remove('btn-disabled');
                 btn.disabled = false;
                 fetchSystemStatus();
 
-                if (isAutoSyncEnabled && CONFIGS[mode] && CONFIGS[mode].auto.calc) {
+                if (autoSyncEnabledByMode[mode] && CONFIGS[mode] && CONFIGS[mode].auto.calc) {
                     refreshSignals();
                 }
             }, 1500);
@@ -1570,6 +1649,7 @@ async function fetchMarketData() {
         evtSource.close();
         fetchEvtSource = null;
         HUD_STATES[mode].active = false;
+        HUD_STATES[mode].operation = null;
         syncHudVisibility();
         btn.innerHTML = originalHTML;
         btn.disabled = false;
@@ -1583,11 +1663,12 @@ async function stopFetch() {
         if (fetchEvtSource) fetchEvtSource.close();
         fetchEvtSource = null;
         HUD_STATES[currentMode].active = false;
+        HUD_STATES[currentMode].operation = null;
         syncHudVisibility();
 
         const btn = document.getElementById('fetch-data-btn');
         btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-download"></i> Fetch Market Data';
+        btn.innerHTML = '<i class="fas fa-download" id="fetch-icon"></i> Fetch';
     } catch (e) {
         console.error("Stop fetch failed:", e);
     }
@@ -1603,6 +1684,11 @@ async function refreshSignals() {
 
     try {
         const mode = currentMode;
+        
+        // Track calculation state for UI isolation
+        HUD_STATES[mode].active = true;
+        HUD_STATES[mode].operation = 'calculate';
+        
         const fundamentals = (CONFIGS[mode] && CONFIGS[mode].fundamentals && CONFIGS[mode].fundamentals.enabled) || false;
 
         const res = await fetch(`/api/calculate?mode=${mode}&fundamentals=${fundamentals}`, { method: 'POST' });
@@ -1618,6 +1704,8 @@ async function refreshSignals() {
     } catch (e) {
         showToast("Error during calculation. Check server.", "error");
     } finally {
+        HUD_STATES[currentMode].active = false;
+        HUD_STATES[currentMode].operation = null;
         icon.classList.remove('fa-spin');
         btn.disabled = false;
     }
@@ -1635,7 +1723,8 @@ async function fetchSystemStatus() {
     });
 
     try {
-        const res = await fetch(`/api/status?mode=${currentMode}`);
+        const apiTf = TF_MAP[currentTimeframe] || '1d';
+        const res = await fetch(`/api/status?mode=${currentMode}&timeframe=${apiTf}`);
         const result = await res.json();
         if (result.status === 'success') {
             const fetchEl = document.getElementById('last-fetch-time');

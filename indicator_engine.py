@@ -254,9 +254,9 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                 await cur.execute("""
                     SELECT a.bs_ISIN as isin, a.bs_SYMBOL as symbol, f.dim_favourites
                     FROM vw_e_bs_companies_all a
-                    LEFT JOIN vw_e_bs_companies_favourite_indices f ON a.bs_SYMBOL = f.bs_symbol
+                    LEFT JOIN vw_e_bs_companies_favourite_indices f ON a.bs_SYMBOL = f.bs_symbol AND f.dim_favourites = %s
                     WHERE BINARY a.bs_Status = 'Active'
-                """)
+                """, (target_dim,))
                 active_universe = await cur.fetchall()
                 
                 target_dim = 1 if profile_id == 'intraday' else 2

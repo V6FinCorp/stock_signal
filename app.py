@@ -406,7 +406,7 @@ async def execute_strategy(payload: dict):
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/status", dependencies=[Depends(check_auth)])
-async def api_status(mode: str = "swing"):
+async def api_status(mode: str = "swing", timeframe: str = None):
     app_pool = None
     try:
         app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
@@ -417,8 +417,18 @@ async def api_status(mode: str = "swing"):
                 job_times = await cur.fetchone()
                 
                 # 2. Latest Market Data Timestamp (Actual OHLC age)
-                tf_key = '1d' if mode == 'swing' else '5m'
-                await cur.execute("SELECT MAX(timestamp) as latest_ohlc FROM app_sg_ohlcv_prices WHERE timeframe = %s", (tf_key,))
+                # Map synthesized timeframes to their base timeframe for status check
+                tf_check_map = {
+                    '1w': '1d',
+                    '1mo': '1d',
+                    '15m': '5m',
+                    '30m': '5m',
+                    '60m': '5m'
+                }
+                tf_key = timeframe if timeframe else ('1d' if mode == 'swing' else '5m')
+                query_tf = tf_check_map.get(tf_key, tf_key)
+                
+                await cur.execute("SELECT MAX(timestamp) as latest_ohlc FROM app_sg_ohlcv_prices WHERE timeframe = %s", (query_tf,))
                 ohlc_row = await cur.fetchone()
                 latest_ohlc = ohlc_row['latest_ohlc'] if ohlc_row and ohlc_row['latest_ohlc'] else None
                 

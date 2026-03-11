@@ -124,7 +124,22 @@
         <main class="main-content" id="dashboard-view">
             <header class="top-header">
                 <div class="header-left">
-                    <h1 id="page-title">Swing Trading Dashboard</h1>
+                    <div style="display: flex; align-items: center; gap: 24px;">
+                        <h1 id="page-title" style="margin-bottom: 0;">Swing Trading Dashboard</h1>
+                        
+                        <div class="universe-selector" id="universe-nav" style="margin-right: 0;">
+                            <div class="universe-slider" id="uni-slider"></div>
+                            <div class="universe-option active" onclick="setUniverse('default')" title="Standard watchlist">
+                                <i class="fas fa-check-circle"></i> Default
+                            </div>
+                            <div class="universe-option" onclick="setUniverse('all')" title="All market stocks">
+                                <i class="fas fa-globe"></i> All
+                            </div>
+                            <div class="universe-option" onclick="setUniverse('portfolio')" title="My demat holdings">
+                                <i class="fas fa-briefcase"></i> Portfolio
+                            </div>
+                        </div>
+                    </div>
                     <div class="subtitle text-dim"
                         style="display: flex; align-items: center; gap: 20px; font-size: 11px; margin-top: 8px;">
                         <span>Market Status: <span class="text-success" style="font-weight: 700;">Live <i
@@ -140,19 +155,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="header-right" style="display: flex; gap: 12px; align-items: center;">
-                    <div class="universe-selector" id="universe-nav">
-                        <div class="universe-slider" id="uni-slider"></div>
-                        <div class="universe-option active" onclick="setUniverse('default')" title="Standard watchlist">
-                            <i class="fas fa-check-circle"></i> Default
-                        </div>
-                        <div class="universe-option" onclick="setUniverse('all')" title="All market stocks">
-                            <i class="fas fa-globe"></i> All
-                        </div>
-                        <div class="universe-option" onclick="setUniverse('portfolio')" title="My demat holdings">
-                            <i class="fas fa-briefcase"></i> Portfolio
-                        </div>
-                    </div>
+                <div class="header-right" style="display: flex; gap: 12px; align-items: center; align-self: flex-start;">
                     <div class="auto-sync-toggle"
                          style="display: flex; align-items: center; gap: 8px; margin-right: 15px;">
                         <span class="text-dim" style="font-size: 13px; font-weight: 600;"
@@ -164,14 +167,14 @@
                     </div>
                     <button class="btn btn-primary" onclick="fetchMarketData()" id="fetch-data-btn"
                         style="background: var(--amber); border-color: var(--amber);">
-                        <i class="fas fa-download" id="fetch-icon"></i> Fetch Market Data
+                        <i class="fas fa-download" id="fetch-icon"></i> Fetch
                     </button>
                     <button class="btn btn-primary" onclick="stopFetch()" id="stop-fetch-btn"
                         style="background: var(--danger); border-color: var(--danger); display: none;">
                         <i class="fas fa-stop-circle"></i> Stop Fetch
                     </button>
                     <button class="btn btn-primary" onclick="refreshSignals()" id="calc-signals-btn">
-                        <i class="fas fa-sync-alt" id="refresh-icon"></i> Calculate Signals
+                        <i class="fas fa-sync-alt" id="refresh-icon"></i> Calculate
                     </button>
                 </div>
             </header>

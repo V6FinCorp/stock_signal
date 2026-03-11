@@ -1707,17 +1707,9 @@ input:checked+.slider:before {
 }
 
 .portfolio-mode-active #page-title::after {
-    content: " (My Portfolio)";
-    color: var(--portfolio);
-    font-size: 16px;
-    margin-left: 10px;
-    font-weight: 400;
+    content: ""; /* Removed redundant label */
 }
 
 .portfolio-mode-active #page-title-pro::after {
-    content: " (My Portfolio)";
-    color: var(--portfolio);
-    font-size: 16px;
-    margin-left: 10px;
-    font-weight: 400;
-}
+    content: ""; /* Removed redundant label */
+}
