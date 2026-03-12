@@ -2845,13 +2845,14 @@ async function renderProScreener() {
     } catch (e) {
         if (e.name === 'AbortError') return;
         console.error("Pro Screener Fetch Error:", e);
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:40px; color:var(--danger);">Failed to load alerts.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:40px; color:var(--danger);">Failed to load alerts.</td></tr>';
     }
 }
 
 function applyScreenerFilters() {
     const tbody = document.getElementById('screener-tbody');
     if (!tbody) return;
+    const conf = CONFIGS[currentMode];
 
     const searchTerm = document.getElementById('screener-search').value.toLowerCase();
     const tfFilter = document.getElementById('screener-filter-tf').value;
@@ -3015,6 +3016,80 @@ function applyScreenerFilters() {
         const slDisplay = stopLosses.map(l => formatLevel(l, price)).join('');
         const accumulationHTML = accumulations.map(a => `<div style="font-size:11px; opacity:0.8;">${a.label || 'Zone'}: ${a.price.toFixed(2)}</div>`).join('');
 
+        // --- Formation & Pattern Calculation (Dashboard Sync) ---
+        let sparklineHtml = `<td class="formation-col"><div style="font-size: 13px; color: var(--text-dim);">-</div></td>`;
+        let patternNameHtml = `<td class="pattern-name-col"><div style="font-size: 13px; color: var(--text-dim);">-</div></td>`;
+
+        if (conf.patterns && conf.patterns.enabled) {
+            let l5_data = s.last_5_candles;
+            if (typeof l5_data === 'string' && l5_data.trim()) {
+                try { l5_data = JSON.parse(l5_data); } catch (e) { }
+            }
+
+            if (Array.isArray(l5_data) && l5_data.length > 0) {
+                let minLow = Infinity;
+                let maxHigh = -Infinity;
+                l5_data.forEach(c => {
+                    if (c.l < minLow) minLow = c.l;
+                    if (c.h > maxHigh) maxHigh = c.h;
+                });
+                let range = maxHigh - minLow;
+                if (range === 0) range = maxHigh * 0.01 || 1;
+
+                const svgHeight = 28;
+                const candleWidth = 8;
+                const gap = 4;
+                const svgWidth = (candleWidth * 5) + (gap * 4);
+                const pad = 2;
+                const usableHeight = svgHeight - (pad * 2);
+
+                const patternLabel = s.candlestick_pattern || '';
+                const rawDataJson = encodeURIComponent(JSON.stringify(l5_data));
+
+                let svgContent = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="cursor: pointer;" onclick="showCandlesPopup('${s.isin}', '${s.symbol}', ${price}, this.dataset.pattern, this.dataset.candles)" data-candles="${rawDataJson}" data-pattern="${patternLabel}">`;
+
+                l5_data.forEach((c, i) => {
+                    const isGreen = c.c > c.o;
+                    const color = isGreen ? '#089981' : (c.c < c.o ? '#F23645' : '#787B86');
+                    const xCenter = (i * (candleWidth + gap)) + (candleWidth / 2);
+                    const yHigh = pad + usableHeight - ((c.h - minLow) / range) * usableHeight;
+                    const yLow = pad + usableHeight - ((c.l - minLow) / range) * usableHeight;
+                    const yOpen = pad + usableHeight - ((c.o - minLow) / range) * usableHeight;
+                    const yClose = pad + usableHeight - ((c.c - minLow) / range) * usableHeight;
+                    const topBody = Math.min(yOpen, yClose);
+                    const bottomBody = Math.max(yOpen, yClose);
+                    let bodyHeight = Math.max(1, bottomBody - topBody);
+                    if (Math.abs(c.c - c.o) < 0.0001) bodyHeight = Math.max(1.5, usableHeight * 0.02);
+
+                    svgContent += `<line x1="${xCenter}" y1="${yHigh}" x2="${xCenter}" y2="${yLow}" stroke="${color}" stroke-width="1.2" opacity="1.0" shape-rendering="crispEdges"/>`;
+                    svgContent += `<rect x="${xCenter - (candleWidth / 2)}" y="${topBody}" width="${candleWidth}" height="${bodyHeight}" fill="${color}" opacity="1.0" shape-rendering="crispEdges"/>`;
+                });
+                svgContent += `</svg>`;
+
+                sparklineHtml = `<td class="formation-col"><div title="Click to enlarge" class="hover-scale" style="background: rgba(14, 21, 31, 0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 4px; padding: 6px 8px; display: inline-block; transition: all 0.2s;">
+                    ${svgContent}
+                </div></td>`;
+            }
+
+            const pattern = s.candlestick_pattern;
+            const pScore = s.pattern_score || 0;
+            if (pattern) {
+                let textColor = "var(--text-dim)";
+                if (pattern.includes("Bullish")) textColor = "var(--success)";
+                else if (pattern.includes("Bearish")) textColor = "var(--danger)";
+
+                let scoreHtml = '';
+                if (pScore > 0) {
+                    scoreHtml = `<div style="display: flex; gap: 3px; margin-top: 4px;" title="Strength Score: ${pScore}/3">`;
+                    for (let i = 0; i < 3; i++) {
+                        scoreHtml += `<div style="width: 4px; height: 4px; border-radius: 50%; background: ${i < pScore ? textColor : 'rgba(255,255,255,0.1)'};"></div>`;
+                    }
+                    scoreHtml += `</div>`;
+                }
+                patternNameHtml = `<td class="pattern-name-col"><div class="pattern-text" style="color: ${textColor};" title="${pattern}">${pattern}${scoreHtml}</div></td>`;
+            }
+        }
+
         // Calculate R:R Range
         let rrDisplay = "1:2.0";
         if (targets.length > 0 && stopLosses.length > 0) {
@@ -3058,6 +3133,8 @@ function applyScreenerFilters() {
                         Risk/Reward: <span style="color: var(--text-main); font-weight: 600;">${rrDisplay}</span>
                     </div>
                 </td>
+                ${sparklineHtml}
+                ${patternNameHtml}
                 <td style="color:var(--amber); font-weight:600; font-size:11px;">${accumulationHTML}</td>
                 <td style="color:var(--success); font-weight:600; font-size:11px;">${targetsDisplay}</td>
                 <td style="color:var(--danger); font-weight:600; font-size:11px;">${slDisplay}</td>
@@ -4176,7 +4253,7 @@ async function runStrategyScan() {
                 } else if (typeof val === 'string') {
                     val = `'${val}'`;
                 } else {
-                    val = val || 0;
+                    val = (val !== null && val !== undefined) ? val : "undefined";
                 }
 
                 // Global replacement for the token in the query
@@ -5410,7 +5487,7 @@ function evaluateBlueprintMatch(stock, blueprint) {
             else val = "None";
         }
 
-        if (val === undefined || val === null) return 0;
+        if (val === undefined || val === null) return "undefined";
 
         if (typeof val === 'string') return `'${val}'`;
         return val;

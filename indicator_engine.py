@@ -795,7 +795,8 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
                 df = df.sort_values('timestamp').reset_index(drop=True)
                 df[['open', 'high', 'low', 'close', 'volume']] = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
-            elif timeframe != base_timeframe:
+            
+            if timeframe != base_timeframe:
                 df.set_index('timestamp', inplace=True)
                 resample_rule = {
                     '1w': 'W-FRI',
