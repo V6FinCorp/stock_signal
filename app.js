@@ -3256,55 +3256,41 @@ async function closeTrade(id) {
 // --- Strategy Lab Beta (DSL Query Engine) ---
 
 const STRAT_ALIASES = {
-    "CMP": "LTP",
-    "LTP": "LTP",
-    "Close": "LTP",
-    "SuperTrend": "ST",
-    "ST": "ST",
-    "SuperTrendValue": "ST_V",
-    "ST_V": "ST_V",
-    "STV": "ST_V",
+    "Price": "Price",
     "RSI": "RSI",
-    "VOL": "VOL",
-    "VOL_R": "VOL_R",
-    "BULL_S": "BULL_S",
-    "BEAR_S": "BEAR_S",
-    "EMA_F": "EMA_F",
-    "EMA_S": "EMA_S",
-    "EMA_C": "EMA_C",
-    "EMA_V": "EMA_V",
-    "PE": "pe",
-    "PB": "pb",
-    "ROE": "roe",
-    "EPS": "eps",
-    "OPM": "opm",
-    "NPM": "npm",
-    "Prev_High": "prev_high",
-    "Prev_Low": "prev_low",
-    "Pattern": "candlestick_pattern",
-    "Pattern_Score": "pattern_score",
-    "SMA_10": "SMA_10", "SMA_20": "SMA_20", "SMA_50": "SMA_50", "SMA_100": "SMA_100", "SMA_200": "SMA_200",
-    "DMA_10": "SMA_10", "DMA_20": "SMA_20", "DMA_50": "SMA_50", "DMA_100": "SMA_100", "DMA_200": "SMA_200"
+    "Trend": "Trend",
+    "SuperTrendValue": "SuperTrendValue",
+    "Volume": "Volume",
+    "VolumeRatio": "VolumeRatio",
+    "Pattern": "Pattern",
+    "PatternScore": "PatternScore",
+    "EMA_Fast": "EMA_Fast",
+    "EMA_Slow": "EMA_Slow",
+    "EMA_Cross": "EMA_Cross",
+    "PE": "PE",
+    "PB": "PB",
+    "ROE": "ROE",
+    "High": "High",
+    "Low": "Low"
 };
 
 const STRAT_KEYWORDS = [
-    // Core Indicators & Tokens
-    "ST", "ST_V", "RSI", "LTP", "CMP", "VOL", "VOL_R",
-    "EMA_F", "EMA_S", "PE", "PB", "ROE", "EPS", "OPM", "NPM",
-    "Prev_High", "Prev_Low", "High", "Low", "Pattern", "Pattern_Score", "Bullish", "Bearish",
+    // Core Indicators (One Syntax Only)
+    "Price", "RSI", "Trend", "SuperTrendValue", "Volume", "VolumeRatio",
+    "EMA_Fast", "EMA_Slow", "EMA_Cross", "PE", "PB", "ROE",
+    "High", "Low", "Pattern", "PatternScore", "Bullish", "Bearish",
 
     // Timeframes
     "[5m]", "[15m]", "[30m]", "[1h]", "[Daily]", "[Weekly]", "[Monthly]",
 
-    // Commands & Logic
-    "AND", "OR", "NOT", "Timeframe =", "BUY", "SELL"
+    // Logic
+    "AND", "OR", "NOT", "BUY", "SELL"
 ];
 
 const STRAT_INDICATOR_TOKENS = [
-    "RSI", "ST_V", "ST", "STV", "SuperTrend", "SuperTrendValue",
-    "LTP", "CMP", "High", "Low", "Prev_High", "Prev_Low",
-    "EMA_F", "EMA_S", "EMA_V", "EMA_C", "VOL_R", "VOL", "Pattern",
-    "Bullish", "Bearish", "PE", "PB", "ROE", "OPM", "NPM", "EPS", "Market_Cap", "Pattern_Score"
+    "Price", "RSI", "Trend", "SuperTrendValue", "Volume", "VolumeRatio",
+    "High", "Low", "Pattern", "PatternScore",
+    "Bullish", "Bearish", "PE", "PB", "ROE"
 ];
 
 function initStrategyLab() {
@@ -4263,10 +4249,10 @@ async function runStrategyScan() {
 
             if (skip) return;
 
-            // Portfolio Mode Filter
-            if (isPortfolioModeActive) {
-                if (!holdingsISINs.includes(stock.isin)) return;
-            }
+            // Direction Filter: Strictly respect the form's side
+            const isBullish = (stock.confluence_rank || 0) > 0;
+            if (side === 'BUY' && !isBullish) return;
+            if (side === 'SELL' && isBullish) return;
 
             try {
                 // Use the side from the form for evaluation
@@ -4446,12 +4432,11 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
         if (s) {
             isToken = true;
             const mappedInd = {
-                'ST_V': 'supertrend_value', 'ST': 'supertrend_value', 'SUPERTRENDVALUE': 'supertrend_value',
-                'EMA_F': 'ema_fast', 'EMA_S': 'ema_slow', 'EMA_V': 'ema_value',
-                'RSI': 'rsi', 'LTP': 'ltp', 'PRICE': 'ltp', 'CLOSE': 'ltp',
-                'PREV_HIGH': 'prev_high', 'HIGH': 'prev_high',
-                'PREV_LOW': 'prev_low', 'LOW': 'prev_low',
-                'roe': 'roe', 'pe': 'pe', 'eps': 'eps'
+                'SUPERTRENDVALUE': 'supertrend_value',
+                'EMA_FAST': 'ema_fast', 'EMA_SLOW': 'ema_slow',
+                'RSI': 'rsi', 'PRICE': 'ltp',
+                'HIGH': 'prev_high', 'LOW': 'prev_low',
+                'ROE': 'roe', 'PE': 'pe'
             };
             const col = mappedInd[indicatorKey.toUpperCase()] || indicatorKey.toLowerCase();
             baseValue = s[col] !== undefined && s[col] !== null ? s[col] : ltp;
@@ -5284,12 +5269,13 @@ async function onScreenerCustomStrategyChange() {
             tfPicker.value = apiTf;
         }
 
-        // Force a re-fetch of the main signals list for this specific timeframe 
-        // to ensure we have the best data for the evaluation engine
-        await renderProScreener();
+        // Force a re-fetch of the main signals list for the blueprint's primary timeframe
+        // This ensures the BASE list of stocks is consistent regardless of what was previously on screen
+        const baseTf = TF_MAP[strat.timeframe] || strat.timeframe || '1mo';
+        await renderProScreener(baseTf);
     } else {
-        // If no specific timeframe, ensure we still have clean data
-        await renderProScreener();
+        // If no specific timeframe, ensure we still have clean data (Monthly is best for Swing strategy scans)
+        await renderProScreener('1mo');
     }
 
     // NEW: Fetch all timeframes required by the blueprint to enable full MTF matching in Screener
@@ -5363,46 +5349,21 @@ function evaluateBlueprintMatch(stock, blueprint) {
 
     // 1. Prepare Indicator Mapping (Same as Lab)
     const indMap = {
-        'RSI': 'rsi',
-        'rsi': 'rsi',
-        'ST': 'supertrend_dir',
-        'st': 'supertrend_dir',
-        'ST_V': 'supertrend_value',
-        'st_v': 'supertrend_value',
-        'LTP': 'ltp',
-        'ltp': 'ltp',
         'Price': 'ltp',
-        'price': 'ltp',
-        'Close': 'ltp',
-        'close': 'ltp',
-        'EMA_C': 'ema_signal',
-        'ema_c': 'ema_signal',
-        'EMA_F': 'ema_fast',
-        'ema_f': 'ema_fast',
-        'EMA_S': 'ema_slow',
-        'ema_s': 'ema_slow',
-        'EMA_V': 'ema_value',
-        'ema_v': 'ema_value',
-        'VOL': 'volume_signal',
-        'vol': 'volume_signal',
-        'VOL_R': 'volume_ratio',
-        'vol_r': 'volume_ratio',
+        'RSI': 'rsi',
+        'Trend': 'supertrend_dir',
+        'SuperTrendValue': 'supertrend_value',
+        'Volume': 'volume_signal',
+        'VolumeRatio': 'volume_ratio',
         'Pattern': 'candlestick_pattern',
-        'pattern': 'candlestick_pattern',
-        'Pattern_Score': 'pattern_score',
-        'pattern_score': 'pattern_score',
+        'PatternScore': 'pattern_score',
+        'EMA_Fast': 'ema_fast',
+        'EMA_Slow': 'ema_slow',
+        'EMA_Cross': 'ema_signal',
         'ROE': 'roe',
-        'roe': 'roe',
         'PE': 'pe',
-        'pe': 'pe',
-        'HIGH': 'prev_high',
-        'high': 'prev_high',
-        'LOW': 'prev_low',
-        'low': 'prev_low',
-        'PREV_HIGH': 'prev_high',
-        'prev_high': 'prev_high',
-        'PREV_LOW': 'prev_low',
-        'prev_low': 'prev_low'
+        'High': 'prev_high',
+        'Low': 'prev_low'
     };
 
     // 2. Process query for JS execution
@@ -5424,7 +5385,8 @@ function evaluateBlueprintMatch(stock, blueprint) {
 
     // Replace tokens with stock values
     const finalQuery = processed.replace(tokenRegex, (match, tf, attr) => {
-        const key = indMap[attr] || attr;
+        const attrKey = Object.keys(indMap).find(k => k.toLowerCase() === attr.toLowerCase()) || attr;
+        const key = indMap[attrKey] || attr.toLowerCase();
 
         let val = null;
 
@@ -5437,7 +5399,7 @@ function evaluateBlueprintMatch(stock, blueprint) {
         // 2. MTF SuperTrend Fallback (cached in primary stock row)
         if (val === undefined || val === null) {
             if (stock.mtf_data && stock.mtf_data[tf]) {
-                if (key === 'supertrend_dir' || attr === 'ST') {
+                if (key === 'supertrend_dir' || attrKey === 'Trend') {
                     val = stock.mtf_data[tf];
                 }
             }
@@ -5458,31 +5420,26 @@ function evaluateBlueprintMatch(stock, blueprint) {
             }
         }
 
-        // STRICT: If a timeframe was explicitly requested [TF], we MUST NOT fall back to the primary stock row
-        // unless it's the SAME timeframe as current (which is covered by screenerTfDataMap check anyway)
-        // If we reach here and val is still null, it truly is missing for that TF
-        if (val === undefined || val === null) return "undefined";
+        // --- Sentiment & Status Normalization ---
+        if (attrKey === 'Trend' || attrKey === 'Volume' || attrKey === 'Pattern') {
+            const valStr = String(val || "").toUpperCase();
+            const isBullish = (valStr === 'BUY' || valStr === 'BULLISH' || valStr === 'BULL_S' || valStr === 'BULL_SPIKE' || val === 1 || val === true);
+            const isBearish = (valStr === 'SELL' || valStr === 'BEARISH' || valStr === 'BEAR_S' || valStr === 'BEAR_SPIKE' || val === -1 || val === false);
 
-        // --- Sentiment & Status Normalization (Match Strategy Lab) ---
-        if (attr === 'ST' || key === 'supertrend_dir' || attr === 'Supertrend') {
-            // Ensure ST is always BUY/SELL
-            val = (val === 'BUY' || val === 1 || val === true) ? "BUY" : "SELL";
-        } else if (attr === 'VOL' || key === 'volume_signal') {
-            val = (val === 'BULL_SPIKE' || val === 'BULL_S') ? "BULL_S" : ((val === 'BEAR_SPIKE' || val === 'BEAR_S') ? "BEAR_S" : "NONE");
-        } else if (attr === 'Pattern' || key === 'candlestick_pattern') {
-            // Use numerical pattern_score for much more accurate sentiment detection
-            // if we are matching [Weekly].Pattern == 'Bullish', we check if net score is positive
-            const pScore = stock.pattern_score || 0;
-            const pStr = String(val || "").toLowerCase();
-
-            if (pScore > 0) val = "Bullish";
-            else if (pScore < 0) val = "Bearish";
-            else {
-                // Fallback for names if score is 0 but name exists
-                if (pStr.includes('bullish')) val = "Bullish";
-                else if (pStr.includes('bearish')) val = "Bearish";
+            if (attrKey === 'Pattern') {
+                let lookupObj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : (tf === stock.timeframe ? stock : null);
+                const pScore = (lookupObj ? lookupObj.pattern_score : (stock.mtf_data ? stock.mtf_data[tf+'_score'] : 0)) || 0;
+                if (pScore > 0) val = "Bullish";
+                else if (pScore < 0) val = "Bearish";
                 else val = "None";
+            } else {
+                val = isBullish ? "Bullish" : (isBearish ? "Bearish" : "None");
             }
+        } else if (attrKey === 'PatternScore') {
+            // Precise score lookup for [TF].PatternScore
+            let lookupObj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : null;
+            if (lookupObj) val = lookupObj.pattern_score;
+            else if (stock.mtf_data && stock.mtf_data[tf+'_score']) val = stock.mtf_data[tf+'_score'];
         }
 
         if (val === undefined || val === null) return "undefined";
