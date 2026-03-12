@@ -5408,15 +5408,17 @@ function evaluateBlueprintMatch(stock, blueprint) {
         return `(${token} * ${factor})`;
     });
 
-    // 3. Resolve Tokens (Simplified for Screener)
-    const tokenRegex = /[\[\{]\s*(.*?)\s*[\]\}]\s*\.\s*([A-Z_a-z0-9]+)/g;
-
-    // Replace tokens with stock values
+    // 3. Resolve Tokens (Simpl    // Replace tokens with stock values
     const finalQuery = processed.replace(tokenRegex, (match, tf, attr) => {
         const attrKey = Object.keys(indMap).find(k => k.toLowerCase() === attr.toLowerCase()) || attr;
         const key = indMap[attrKey] || attr.toLowerCase();
 
         let val = null;
+        let lookupTf = tf;
+        
+        // Internal mapping: Ensure Daily/Weekly/Monthly are checked in the right universe
+        const swingTfs = ['Daily', 'Weekly', 'Monthly', '1d', '1w', '1mo'];
+        const isSwingReq = swingTfs.some(stf => stf.toLowerCase() === tf.toLowerCase());
 
         // 1. Precise MTF Match (from full data fetch)
         if (screenerTfDataMap[tf]) {
@@ -5424,35 +5426,21 @@ function evaluateBlueprintMatch(stock, blueprint) {
             if (m) val = m[key];
         }
 
-        // 2. MTF SuperTrend Fallback (cached in primary stock row)
+        // 2. Fallback to mtf_data if primary record doesn't have it
         if (val === undefined || val === null) {
-            if (stock.mtf_data && stock.mtf_data[tf]) {
+            if (stock.mtf_data && (stock.mtf_data[tf] || stock.mtf_data[tf.toLowerCase()])) {
                 if (key === 'supertrend_dir' || attrKey === 'Trend') {
-                    val = stock.mtf_data[tf];
-                }
-            }
-        }
-
-        // 3. DMA/SMA JSON Lookup (Consistent with Strategy Lab)
-        if (val === undefined || val === null) {
-            let s_obj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : null;
-            if (s_obj && s_obj.dma_data) {
-                let dma = s_obj.dma_data;
-                if (typeof dma === 'string') {
-                    try { dma = JSON.parse(dma); } catch (e) { }
-                }
-                if (typeof dma === 'object' && dma !== null) {
-                    const dmaKey = Object.keys(dma).find(k => k.toLowerCase() === attr.toLowerCase());
-                    if (dmaKey) val = dma[dmaKey];
+                    val = stock.mtf_data[tf] || stock.mtf_data[tf.toLowerCase()];
                 }
             }
         }
 
         // --- Sentiment & Status Normalization ---
-        if (attrKey === 'Trend' || attrKey === 'Volume' || attrKey === 'Sentiment' || attrKey === 'Pattern') {
-            const valStr = String(val || "").toUpperCase();
-            const isBullish = (valStr === 'BUY' || valStr === 'BULLISH' || valStr === 'BULL_S' || valStr === 'BULL_SPIKE' || val === 1 || val === true || valStr === 'BULL');
-            const isBearish = (valStr === 'SELL' || valStr === 'BEARISH' || valStr === 'BEAR_S' || valStr === 'BEAR_SPIKE' || val === -1 || val === false || valStr === 'BEAR');
+        // Force database codes (BUY, BULL_SPIKE, 1) to "Bullish"
+        if (attrKey === 'Trend' || attrKey === 'Volume' || attrKey === 'Pattern') {
+            const rawVal = String(val || "").toUpperCase();
+            const isBullish = (rawVal === 'BUY' || rawVal === 'BULLISH' || rawVal === 'BULL_SPIKE' || rawVal === 'BULL_S' || rawVal === 'BULL' || val === 1 || val === true);
+            const isBearish = (rawVal === 'SELL' || rawVal === 'BEARISH' || rawVal === 'BEAR_SPIKE' || rawVal === 'BEAR_S' || rawVal === 'BEAR' || val === -1 || val === false);
 
             if (attrKey === 'Pattern') {
                 let lookupObj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : (tf === stock.timeframe ? stock : null);
@@ -5463,15 +5451,9 @@ function evaluateBlueprintMatch(stock, blueprint) {
             } else {
                 val = isBullish ? "Bullish" : (isBearish ? "Bearish" : "None");
             }
-        } else if (attrKey === 'PatternScore') {
-            // Precise score lookup for [TF].PatternScore
-            let lookupObj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : null;
-            if (lookupObj) val = lookupObj.pattern_score;
-            else if (stock.mtf_data && stock.mtf_data[tf+'_score']) val = stock.mtf_data[tf+'_score'];
-        }
-
+        } 
+        
         if (val === undefined || val === null) return "undefined";
-
         if (typeof val === 'string') return `'${val}'`;
         return val;
     });
