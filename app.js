@@ -2888,15 +2888,15 @@ function applyScreenerFilters() {
         // 3. Timeframe filter
         if (tfFilter !== 'all' && s.timeframe !== tfFilter) return false;
 
-        // 4. Direction filter (Bypass if custom strategy is active)
-        if (customFilterId === 'none' && dirFilter !== 'all') {
+        // 4. Direction filter
+        if (dirFilter !== 'all') {
             const isBuy = (s.confluence_rank || 0) > 0;
             if (dirFilter === 'buy' && !isBuy) return false;
             if (dirFilter === 'sell' && isBuy) return false;
         }
 
-        // 5. Strategy filter (Bypass if custom strategy is active)
-        if (customFilterId === 'none' && stratFilter !== 'all' && s.trade_strategy !== stratFilter) return false;
+        // 5. Strategy filter
+        if (stratFilter !== 'all' && s.trade_strategy !== stratFilter) return false;
 
         // 6. Custom Blueprint Strategy Filter
         if (customFilterId !== 'none' && activeScreenerBlueprint) {
@@ -5443,20 +5443,9 @@ function evaluateBlueprintMatch(stock, blueprint) {
             }
         }
 
-        // 3. Current Timeframe Fallback
+        // 3. DMA/SMA JSON Lookup (Consistent with Strategy Lab)
         if (val === undefined || val === null) {
-            val = stock[key];
-        }
-
-        // 4. DMA/SMA JSON Lookup (Consistent with Strategy Lab)
-        if (val === undefined || val === null) {
-            let s_obj = null;
-            if (screenerTfDataMap[tf]) {
-                s_obj = screenerTfDataMap[tf].find(s => s.isin === stock.isin);
-            } else {
-                s_obj = stock;
-            }
-
+            let s_obj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : null;
             if (s_obj && s_obj.dma_data) {
                 let dma = s_obj.dma_data;
                 if (typeof dma === 'string') {
@@ -5469,11 +5458,10 @@ function evaluateBlueprintMatch(stock, blueprint) {
             }
         }
 
-        if (val === undefined || val === null) {
-            // Case-insensitive fallback for fundamentals/others
-            const lowerKey = Object.keys(stock).find(k => k.toLowerCase() === attr.toLowerCase());
-            if (lowerKey) val = stock[lowerKey];
-        }
+        // STRICT: If a timeframe was explicitly requested [TF], we MUST NOT fall back to the primary stock row
+        // unless it's the SAME timeframe as current (which is covered by screenerTfDataMap check anyway)
+        // If we reach here and val is still null, it truly is missing for that TF
+        if (val === undefined || val === null) return "undefined";
 
         // --- Sentiment & Status Normalization (Match Strategy Lab) ---
         if (attr === 'ST' || key === 'supertrend_dir' || attr === 'Supertrend') {
@@ -5482,9 +5470,19 @@ function evaluateBlueprintMatch(stock, blueprint) {
         } else if (attr === 'VOL' || key === 'volume_signal') {
             val = (val === 'BULL_SPIKE' || val === 'BULL_S') ? "BULL_S" : ((val === 'BEAR_SPIKE' || val === 'BEAR_S') ? "BEAR_S" : "NONE");
         } else if (attr === 'Pattern' || key === 'candlestick_pattern') {
-            if (typeof val === 'string' && val.includes('Bullish')) val = "Bullish";
-            else if (typeof val === 'string' && val.includes('Bearish')) val = "Bearish";
-            else val = "None";
+            // Use numerical pattern_score for much more accurate sentiment detection
+            // if we are matching [Weekly].Pattern == 'Bullish', we check if net score is positive
+            const pScore = stock.pattern_score || 0;
+            const pStr = String(val || "").toLowerCase();
+
+            if (pScore > 0) val = "Bullish";
+            else if (pScore < 0) val = "Bearish";
+            else {
+                // Fallback for names if score is 0 but name exists
+                if (pStr.includes('bullish')) val = "Bullish";
+                else if (pStr.includes('bearish')) val = "Bearish";
+                else val = "None";
+            }
         }
 
         if (val === undefined || val === null) return "undefined";
