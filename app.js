@@ -3290,7 +3290,7 @@ const STRAT_KEYWORDS = [
 const STRAT_INDICATOR_TOKENS = [
     "Price", "RSI", "Trend", "SuperTrendValue", "Volume", "VolumeRatio",
     "High", "Low", "Pattern", "PatternScore",
-    "Bullish", "Bearish", "PE", "PB", "ROE"
+    "EMA_Fast", "EMA_Slow", "EMA_Cross", "PE", "PB", "ROE"
 ];
 
 function initStrategyLab() {
@@ -4089,6 +4089,34 @@ async function runStrategyScan() {
     const translation = translateUserQuery(entryLogic, side, timeframe);
     const query = translation.query;
     const defaultTf = translation.primaryTf; // This now comes from the form field or query
+
+    // 2. Auto-Sync all mentioned timeframes in Query + Target + SL
+    const tfRegex = /[\[\{]\s*(.*?)\s*[\]\}]/g;
+    const neededTfs = [defaultTf];
+    let m;
+    [query, document.getElementById('strat-target-query').value, document.getElementById('strat-sl-query').value].forEach(logic => {
+        if (!logic) return;
+        while ((m = tfRegex.exec(logic)) !== null) {
+            neededTfs.push(m[1]);
+        }
+    });
+    
+    const uniqueTfs = [...new Set(neededTfs)].filter(t => t.toLowerCase() !== 'current');
+    if (uniqueTfs.length > 1 || (uniqueTfs.length === 1 && uniqueTfs[0] !== currentTimeframe)) {
+        if (statusEl) statusEl.innerHTML = `<i class="fas fa-sync fa-spin"></i> Syncing Market Data (${uniqueTfs.join(', ')})...`;
+        await Promise.all(uniqueTfs.map(async (tf) => {
+            if (screenerTfDataMap[tf]) return; // Already cached
+            const normalizedTf = Object.keys(TF_MAP).find(k => k.toLowerCase() === tf.toLowerCase());
+            const apiTf = normalizedTf ? TF_MAP[normalizedTf] : tf;
+            const fetchMode = ['1d', '1w', '1mo'].includes(apiTf) ? 'swing' : 'intraday';
+            const res = await fetch(`/api/signals?mode=${fetchMode}&timeframe=${apiTf}`);
+            const json = await res.json();
+            if (json.status === 'success') {
+                screenerTfDataMap[tf] = json.data;
+                if (normalizedTf) screenerTfDataMap[normalizedTf] = json.data;
+            }
+        }));
+    }
 
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
     btn.disabled = true;
@@ -5421,10 +5449,10 @@ function evaluateBlueprintMatch(stock, blueprint) {
         }
 
         // --- Sentiment & Status Normalization ---
-        if (attrKey === 'Trend' || attrKey === 'Volume' || attrKey === 'Pattern') {
+        if (attrKey === 'Trend' || attrKey === 'Volume' || attrKey === 'Sentiment' || attrKey === 'Pattern') {
             const valStr = String(val || "").toUpperCase();
-            const isBullish = (valStr === 'BUY' || valStr === 'BULLISH' || valStr === 'BULL_S' || valStr === 'BULL_SPIKE' || val === 1 || val === true);
-            const isBearish = (valStr === 'SELL' || valStr === 'BEARISH' || valStr === 'BEAR_S' || valStr === 'BEAR_SPIKE' || val === -1 || val === false);
+            const isBullish = (valStr === 'BUY' || valStr === 'BULLISH' || valStr === 'BULL_S' || valStr === 'BULL_SPIKE' || val === 1 || val === true || valStr === 'BULL');
+            const isBearish = (valStr === 'SELL' || valStr === 'BEARISH' || valStr === 'BEAR_S' || valStr === 'BEAR_SPIKE' || val === -1 || val === false || valStr === 'BEAR');
 
             if (attrKey === 'Pattern') {
                 let lookupObj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : (tf === stock.timeframe ? stock : null);
