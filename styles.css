@@ -1361,30 +1361,81 @@ input:checked+.slider:before {
     font-weight: 600;
 }
 
+.sidebar-collapsed {
+    grid-template-columns: 1fr 0px !important;
+    gap: 0 !important;
+}
+
+.sidebar-collapsed #strategy-sidebar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(20px);
+}
+
+/* Strategy Lab segment collapsibility */
+.segment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    margin-bottom: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+
+.segment-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.segment-content {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 2000px;
+    overflow: hidden;
+    opacity: 1;
+}
+
+.segment-content.collapsed {
+    max-height: 0;
+    opacity: 0 !important;
+    margin-bottom: 0 !important;
+    pointer-events: none;
+}
+
 /* Visual Builder Rows */
 .visual-rule-row {
-    display: grid;
-    grid-template-columns: 45px 55px 95px 65px 1fr 32px;
-    gap: 6px;
+    display: flex;
     align-items: center;
-    background: rgba(255, 255, 255, 0.03);
-    padding: 8px;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 8px 12px;
     border-radius: 8px;
     margin-bottom: 10px;
     border: 1px solid var(--border-color);
     transition: all 0.2s;
+    flex-wrap: nowrap;
 }
 
 .visual-rule-row:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.04);
     border-color: rgba(var(--primary-rgb), 0.3);
 }
 
+.visual-rule-row select.rule-logic-op { width: 65px !important; min-width: 65px; flex-shrink: 0; }
+.visual-rule-row select.rule-tf { width: 85px !important; min-width: 85px; flex-shrink: 0; }
+.visual-rule-row select.rule-ind { width: 140px !important; min-width: 140px; flex-shrink: 0; }
+.visual-rule-row select.rule-op { width: 60px !important; min-width: 60px; flex-shrink: 0; }
+.visual-rule-row .rule-val { flex: 1; min-width: 80px; }
+
 .visual-rule-row select,
 .visual-rule-row input {
-    height: 32px !important;
-    font-size: 11px !important;
-    padding: 0 6px !important;
+    height: 34px !important;
+    font-size: 12px !important;
+    padding: 0 8px !important;
+    background: rgba(0,0,0,0.3) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 6px !important;
+    color: white !important;
 }
 
 .visual-rule-row .rule-logic {
@@ -1419,22 +1470,27 @@ input:checked+.slider:before {
 }
 
 .add-rule-btn {
-    background: transparent;
-    border: 1px dashed var(--border-color);
-    color: var(--text-dim);
+    background: rgba(var(--primary-rgb), 0.05);
+    border: 1px dashed var(--primary);
+    color: var(--primary);
     width: 100%;
-    padding: 8px;
-    border-radius: 8px;
+    padding: 12px;
+    border-radius: 10px;
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .add-rule-btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-    background: rgba(var(--primary-rgb), 0.05);
+    border-style: solid;
+    background: rgba(var(--primary-rgb), 0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 /* Support Section Styling */
@@ -1713,3 +1769,18 @@ input:checked+.slider:before {
 .portfolio-mode-active #page-title-pro::after {
     content: ""; /* Removed redundant label */
 }
+
+/* Strategy Lab Sidebar Toggle */
+#strategy-editor-container.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) 0px !important;
+    gap: 0px !important;
+}
+
+#strategy-sidebar {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#strategy-editor-container.sidebar-collapsed #strategy-sidebar {
+    opacity: 0;
+    pointer-events: none;
+}

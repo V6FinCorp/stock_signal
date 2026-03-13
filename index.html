@@ -697,6 +697,10 @@
                             style="padding: 0 16px; font-weight: 700; height: 48px; border-radius: 10px; border: 1px solid var(--primary-trans); color: var(--primary);">
                             <i class="fas fa-book" style="margin-right: 8px;"></i> Strategy Guide
                         </button>
+                        <button class="btn btn-dim" id="toggle-sidebar-btn" onclick="toggleStrategySidebar()"
+                            style="padding: 0 16px; font-weight: 700; height: 48px; border-radius: 10px; border: 1px solid var(--border-color); margin-right: 12px;">
+                            <i class="fas fa-columns" style="margin-right: 8px;"></i> Sidebar
+                        </button>
                         <button class="btn btn-dim" id="toggle-strat-form" onclick="toggleStrategyForm()"
                             style="padding: 0 16px; font-weight: 700; height: 48px; border-radius: 10px; border: 1px solid var(--border-color);">
                             <i class="fas fa-compress-alt" style="margin-right: 8px;"></i> <span
@@ -772,86 +776,135 @@
                                 <!-- Column 1: Entry & Target -->
                                 <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
                                     <div style="position: relative;">
-                                        <label
-                                            style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--success); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
-                                            <i class="fas fa-sign-in-alt"></i> 1. Entry Condition
-                                        </label>
-
-                                        <div id="container-entry-query">
-                                            <textarea id="strat-entry-query" class="select-input strategy-textarea"
-                                                style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(16, 185, 129, 0.2);"
-                                                placeholder="e.g. RSI < 35 AND EMA_F > EMA_S"
-                                                oninput="updateStrategyExplainer()"></textarea>
+                                        <div class="segment-header" onclick="toggleStrategySegment('entry')">
+                                            <label
+                                                style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--success); margin: 0; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;">
+                                                <i class="fas fa-sign-in-alt"></i> 1. Entry Condition
+                                            </label>
+                                            <i class="fas fa-chevron-up text-dim" id="icon-segment-entry"></i>
                                         </div>
 
-                                        <div id="container-entry-visual" class="hidden">
-                                            <div id="entry-visual-rules">
-                                                <!-- Dynamic Rule Rows -->
+                                        <div id="content-segment-entry" class="segment-content">
+                                            <div id="container-entry-query">
+                                                <textarea id="strat-entry-query" class="select-input strategy-textarea"
+                                                    style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(16, 185, 129, 0.2);"
+                                                    placeholder="e.g. RSI < 35 AND EMA_F > EMA_S"
+                                                    oninput="updateStrategyExplainer()"></textarea>
                                             </div>
-                                            <button class="add-rule-btn" onclick="addVisualRule('entry')">
-                                                <i class="fas fa-plus"></i> Add Condition
-                                            </button>
+
+                                            <div id="container-entry-visual" class="hidden">
+                                                <div id="entry-visual-rules">
+                                                    <!-- Dynamic Rule Rows -->
+                                                </div>
+                                                <button class="add-rule-btn" onclick="addVisualRule('entry')">
+                                                    <i class="fas fa-plus"></i> Add Condition
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                     <div style="position: relative;">
-                                        <label
-                                            style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--amber); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
-                                            <i class="fas fa-crosshairs"></i> 2. Target Criteria (TP)
-                                        </label>
-                                        <textarea id="strat-target-query" class="select-input strategy-textarea"
-                                            style="width: 100%; height: 60px; font-family: 'Fira Code', monospace; font-size: 13px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(245, 158, 11, 0.2);"
-                                            placeholder="e.g. 1.5% -or- [1d].ST_V -or- [1h].High"
-                                            oninput="updateStrategyExplainer()"></textarea>
+                                        <div class="segment-header" onclick="toggleStrategySegment('target')">
+                                            <label
+                                                style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--amber); margin: 0; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;">
+                                                <i class="fas fa-crosshairs"></i> 2. Target Criteria (TP)
+                                            </label>
+                                            <i class="fas fa-chevron-up text-dim" id="icon-segment-target"></i>
+                                        </div>
+                                        <div id="content-segment-target" class="segment-content">
+                                            <div id="container-target-query">
+                                                <textarea id="strat-target-query" class="select-input strategy-textarea"
+                                                    style="width: 100%; height: 60px; font-family: 'Fira Code', monospace; font-size: 13px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(245, 158, 11, 0.2);"
+                                                    placeholder="e.g. 1.5% -or- [1d].ST_V -or- [1h].High"
+                                                    oninput="updateStrategyExplainer()"></textarea>
+                                            </div>
+                                            <div id="container-target-visual" class="hidden">
+                                                <div id="target-visual-rules"></div>
+                                                <button class="add-rule-btn" onclick="addVisualRule('target')">
+                                                    <i class="fas fa-plus"></i> Add Multi-Target
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
                                 <!-- Column 2: Exit & Stop Loss -->
                                 <div style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
                                     <div style="position: relative;">
-                                        <label
-                                            style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--primary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
-                                            <i class="fas fa-sign-out-alt"></i> 3. Exit Condition
-                                        </label>
-
-                                        <div id="container-exit-query">
-                                            <textarea id="strat-exit-query" class="select-input strategy-textarea"
-                                                style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(14, 165, 233, 0.2);"
-                                                placeholder="e.g. SuperTrend == 'SELL'"
-                                                oninput="updateStrategyExplainer()"></textarea>
+                                        <div class="segment-header" onclick="toggleStrategySegment('exit')">
+                                            <label
+                                                style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--primary); margin: 0; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;">
+                                                <i class="fas fa-sign-out-alt"></i> 3. Exit Condition
+                                            </label>
+                                            <i class="fas fa-chevron-up text-dim" id="icon-segment-exit"></i>
                                         </div>
 
-                                        <div id="container-exit-visual" class="hidden">
-                                            <div id="exit-visual-rules">
-                                                <!-- Dynamic Rule Rows -->
+                                        <div id="content-segment-exit" class="segment-content">
+                                            <div id="container-exit-query">
+                                                <textarea id="strat-exit-query" class="select-input strategy-textarea"
+                                                    style="width: 100%; height: 100px; font-family: 'Fira Code', monospace; font-size: 14px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(14, 165, 233, 0.2);"
+                                                    placeholder="e.g. SuperTrend == 'SELL'"
+                                                    oninput="updateStrategyExplainer()"></textarea>
                                             </div>
-                                            <button class="add-rule-btn" onclick="addVisualRule('exit')">
-                                                <i class="fas fa-plus"></i> Add Condition
-                                            </button>
+
+                                            <div id="container-exit-visual" class="hidden">
+                                                <div id="exit-visual-rules">
+                                                    <!-- Dynamic Rule Rows -->
+                                                </div>
+                                                <button class="add-rule-btn" onclick="addVisualRule('exit')">
+                                                    <i class="fas fa-plus"></i> Add Condition
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                     <div style="position: relative;">
-                                        <label
-                                            style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--danger); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
-                                            <i class="fas fa-shield-alt"></i> 4. Stop Loss Logic (SL)
-                                        </label>
-                                        <textarea id="strat-sl-query" class="select-input strategy-textarea"
-                                            style="width: 100%; height: 60px; font-family: 'Fira Code', monospace; font-size: 13px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(239, 68, 68, 0.2);"
-                                            placeholder="e.g. 0.8% -or- [1h].ST_V - 0.2%"
-                                            oninput="updateStrategyExplainer()"></textarea>
+                                        <div class="segment-header" onclick="toggleStrategySegment('sl')">
+                                            <label
+                                                style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--danger); margin: 0; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;">
+                                                <i class="fas fa-shield-alt"></i> 4. Stop Loss Logic (SL)
+                                            </label>
+                                            <i class="fas fa-chevron-up text-dim" id="icon-segment-sl"></i>
+                                        </div>
+                                        <div id="content-segment-sl" class="segment-content">
+                                            <div id="container-sl-query">
+                                                <textarea id="strat-sl-query" class="select-input strategy-textarea"
+                                                    style="width: 100%; height: 60px; font-family: 'Fira Code', monospace; font-size: 13px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(239, 68, 68, 0.2);"
+                                                    placeholder="e.g. 0.8% -or- [1h].ST_V - 0.2%"
+                                                    oninput="updateStrategyExplainer()"></textarea>
+                                            </div>
+                                            <div id="container-sl-visual" class="hidden">
+                                                <div id="sl-visual-rules"></div>
+                                                <button class="add-rule-btn" onclick="addVisualRule('sl')">
+                                                    <i class="fas fa-plus"></i> Add Multi-SL
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Accumulation / Pyramiding Block -->
                             <div style="margin-bottom: 24px;">
-                                <label
-                                    style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--purple); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
-                                    <i class="fas fa-layer-group"></i> 5. Accumulation & Pyramid Logic
-                                </label>
-                                <textarea id="strat-accum-query" class="select-input strategy-textarea"
-                                    style="width: 100%; height: 60px; font-family: 'Fira Code', monospace; font-size: 13px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(168, 85, 247, 0.2);"
-                                    placeholder="e.g. Add 25% if Price > Prev_Close AND RSI < 45"
-                                    oninput="updateStrategyExplainer()"></textarea>
+                                <div class="segment-header" onclick="toggleStrategySegment('accum')">
+                                    <label
+                                        style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: var(--purple); margin: 0; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;">
+                                        <i class="fas fa-layer-group"></i> 5. Accumulation & Pyramid Logic
+                                    </label>
+                                    <i class="fas fa-chevron-up text-dim" id="icon-segment-accum"></i>
+                                </div>
+                                <div id="content-segment-accum" class="segment-content">
+                                    <div id="container-accum-query">
+                                        <textarea id="strat-accum-query" class="select-input strategy-textarea"
+                                            style="width: 100%; height: 60px; font-family: 'Fira Code', monospace; font-size: 13px; background: #0d1117; color: #e6edf3; border-radius: 8px; padding: 12px; resize: none; border: 1px solid rgba(168, 85, 247, 0.2);"
+                                            placeholder="e.g. Add 25% if Price > Prev_Close AND RSI < 45"
+                                            oninput="updateStrategyExplainer()"></textarea>
+                                    </div>
+                                    <div id="container-accum-visual" class="hidden">
+                                        <div id="accum-visual-rules"></div>
+                                        <button class="add-rule-btn" onclick="addVisualRule('accum')">
+                                            <i class="fas fa-plus"></i> Add Accumulation Logic
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Footer Actions -->
@@ -876,14 +929,17 @@
                         </div>
 
                         <!-- Live Logic Explainer Panel -->
-                        <div class="bg-card"
+                        <div class="bg-card" id="strat-explainer-panel"
                             style="padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); background: rgba(var(--primary-rgb), 0.03);">
-                            <h3
-                                style="font-size: 15px; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; color: var(--primary-light);">
-                                <i class="fas fa-project-diagram"></i> Strategy Blueprint & Logic Parsing
-                            </h3>
+                            <div class="segment-header" onclick="toggleStrategySegment('explainer')">
+                                <h3
+                                    style="font-size: 15px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 10px; color: var(--primary-light);">
+                                    <i class="fas fa-project-diagram"></i> Strategy Blueprint & Logic Parsing
+                                </h3>
+                                <i class="fas fa-chevron-up text-dim" id="icon-segment-explainer"></i>
+                            </div>
 
-                            <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 40px;">
+                            <div id="content-segment-explainer" class="segment-content" style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 40px;">
                                 <!-- Left: Plain English Explainer -->
                                 <div id="strat-explainer-text"
                                     style="font-size: 14px; line-height: 2; color: var(--text-main);">
@@ -944,7 +1000,7 @@
                     </div>
 
                     <!-- Right Column: Sidebar -->
-                    <div style="display: flex; flex-direction: column; gap: 24px;">
+                    <div id="strategy-sidebar" style="display: flex; flex-direction: column; gap: 24px; transition: all 0.3s ease; min-width: 0; overflow: hidden;">
 
                         <!-- Sample Query Panel -->
                         <div class="bg-card"
@@ -953,9 +1009,12 @@
                                 style="position: absolute; top: -15px; right: -15px; opacity: 0.1; transform: rotate(15deg);">
                                 <i class="fas fa-lightbulb fa-6x"></i>
                             </div>
-                            <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 20px;">Library Samples</h3>
+                            <div class="segment-header" onclick="toggleStrategySegment('library')" style="margin-bottom: 20px;">
+                                <h3 style="font-size: 15px; font-weight: 700; margin: 0;">Library Samples</h3>
+                                <i class="fas fa-chevron-up text-dim" id="icon-segment-library"></i>
+                            </div>
 
-                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <div id="content-segment-library" class="segment-content" style="display: flex; flex-direction: column; gap: 12px;">
                                 <div class="sample-chip" onclick="loadSampleQuery('bullish_dip')"
                                     style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
                                     <div

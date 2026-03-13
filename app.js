@@ -124,7 +124,7 @@ let currentSortColumn = 'rsi'; // Default sort by RSI
 let currentSortDirection = 'desc'; // Default desc
 let activeSectorFilter = 'all';
 let isSectorBarCollapsed = true;
-let activeTab = 'dashboard';
+let activeTab = localStorage.getItem('activeTab') || 'dashboard';
 let appZoom = 1.0;
 let screenerMasterData = []; // Cache for local screener filtering
 
@@ -1238,6 +1238,7 @@ function switchTab(tabId) {
     if (target) {
         target.classList.remove('hidden');
         activeTab = tabId;
+        localStorage.setItem('activeTab', tabId);
     }
 
     // Update sidebar navigation active state
@@ -1270,6 +1271,7 @@ function switchTab(tabId) {
         fetchActiveTrades();
     } else if (tabId === 'strategy-lab') {
         initStrategyLab();
+        initStrategyLabSegments();
     } else if (tabId === 'history') {
         loadSignalHistory();
     } else if (tabId === 'support') {
@@ -2778,7 +2780,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Immediate UI Setup (No waiting for API)
     setupRSISlider(); 
     applyZoom(); 
-    switchTab('dashboard');
+    switchTab(activeTab);
     setMode(currentMode, true); // skipFetch=true to use ONLY cache for now
     updateHoldingsCount();
     
@@ -3259,14 +3261,17 @@ const STRAT_ALIASES = {
     "Price": "Price",
     "RSI": "RSI",
     "Trend": "Trend",
+    "SuperTrend": "Trend",
     "SuperTrendValue": "SuperTrendValue",
+    "ST_V": "SuperTrendValue",
     "Volume": "Volume",
     "VolumeRatio": "VolumeRatio",
     "Pattern": "Pattern",
     "PatternScore": "PatternScore",
-    "EMA_Fast": "EMA_Fast",
-    "EMA_Slow": "EMA_Slow",
+    "EMA_F": "EMA_Fast",
+    "EMA_S": "EMA_Slow",
     "EMA_Cross": "EMA_Cross",
+    "EMA_C": "EMA_Cross",
     "PE": "PE",
     "PB": "PB",
     "ROE": "ROE",
@@ -3317,6 +3322,28 @@ function toggleStrategyForm() {
         btn.querySelector('i').className = 'fas fa-expand-alt';
     }
 }
+
+function toggleStrategySidebar() {
+    const container = document.getElementById('strategy-editor-container');
+    if (!container) return;
+    
+    const isCollapsed = container.classList.toggle('sidebar-collapsed');
+    
+    // Optional: update a button icon if I add one
+    const btn = document.getElementById('toggle-sidebar-btn');
+    if (btn) {
+        if (isCollapsed) {
+            btn.classList.add('active');
+            btn.style.borderColor = 'var(--primary)';
+            btn.style.color = 'var(--primary)';
+        } else {
+            btn.classList.remove('active');
+            btn.style.borderColor = 'var(--border-color)';
+            btn.style.color = 'var(--text-dim)';
+        }
+    }
+}
+
 
 function filterStrategyResults() {
     const term = document.getElementById('strat-results-search').value.toLowerCase();
@@ -4198,6 +4225,7 @@ async function runStrategyScan() {
             'prev_high': 'prev_high',
             'prev_low': 'prev_low',
             'Pattern': 'candlestick_pattern',
+            'PatternScore': 'pattern_score',
             'Pattern_Score': 'pattern_score'
         };
 
@@ -4245,30 +4273,39 @@ async function runStrategyScan() {
                 let val = s[key];
                 
                 // --- DMA/SMA Lookup Fix (also handle lowercase fallbacks) ---
+                // --- Start Improved Literal Parsing ---
                 if (val === undefined || val === null) {
-                    // Try case-insensitive fallback on the object itself first
-                    const lowerKey = Object.keys(s).find(k => k.toLowerCase() === token.attr.toLowerCase());
-                    if (lowerKey) val = s[lowerKey];
+                    const lowerSearch = token.attr.toLowerCase();
+                    const directMatch = Object.keys(s).find(k => k.toLowerCase() === lowerSearch);
+                    if (directMatch) val = s[directMatch];
                     
+                    if (val === undefined || val === null) {
+                        const noUnderscoreSearch = lowerSearch.replace(/_/g, '');
+                        const fuzzyMatch = Object.keys(s).find(k => k.toLowerCase().replace(/_/g, '') === noUnderscoreSearch);
+                        if (fuzzyMatch) val = s[fuzzyMatch];
+                    }
+
                     if ((val === undefined || val === null) && s.dma_data) {
-                        const dmaKey = Object.keys(s.dma_data).find(k => k.toLowerCase() === token.attr.toLowerCase());
+                        const dmaKey = Object.keys(s.dma_data).find(k => k.toLowerCase() === lowerSearch);
                         if (dmaKey) val = s.dma_data[dmaKey];
                     }
                 }
-                // --- End Fix ---
 
-                if (token.attr === 'volume_signal' || key === 'volume_signal') {
+                if (key === 'volume_signal' || token.attr === 'volume_signal') {
                     val = val === 'BULL_SPIKE' ? "'BULL_S'" : (val === 'BEAR_SPIKE' ? "'BEAR_S'" : "'NONE'");
-                } else if (token.attr === 'candlestick_pattern' || key === 'candlestick_pattern') {
-                    // Simplified sentiment matching
+                } else if (key === 'candlestick_pattern' || token.attr === 'candlestick_pattern') {
                     if (val && val.includes('Bullish')) val = "'Bullish'";
                     else if (val && val.includes('Bearish')) val = "'Bearish'";
                     else val = "'None'";
-                } else if (typeof val === 'string') {
+                } else if (typeof val === 'string' && isNaN(val)) {
                     val = `'${val}'`;
+                } else if (val !== null && val !== undefined) {
+                    // Force Numeric if possible to avoid string comparison (e.g. "-1" >= 0 being true in JS sometimes if not careful)
+                    val = isNaN(parseFloat(val)) ? "0" : parseFloat(val);
                 } else {
-                    val = (val !== null && val !== undefined) ? val : "undefined";
+                    val = "0";
                 }
+                // --- End Fix ---
 
                 // Global replacement for the token in the query
                 const escapedToken = token.full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -4277,14 +4314,19 @@ async function runStrategyScan() {
 
             if (skip) return;
 
-            // Direction Filter: Strictly respect the form's side
-            const isBullish = (stock.confluence_rank || 0) > 0;
-            if (side === 'BUY' && !isBullish) return;
-            if (side === 'SELL' && isBullish) return;
+            // Direction Filter: Users in the Lab should be able to see all matches to their custom logic.
+            // Strict confluence_rank checks based on form side are removed to allow mean-reversion and custom indicators.
+            // (Previously requested checks: side === 'BUY' && !isBullish, side === 'SELL' && isBullish)
+
 
             try {
-                // Use the side from the form for evaluation
-                if (new Function(`return ${evalStr}`)()) {
+                // Determine if this is a match
+                const isMatch = new Function(`return ${evalStr}`)();
+                if (masterList.indexOf(stock) === 0) {
+                    console.log(`[Lab Eval] ${stock.symbol} | Code: ${evalStr} | Result: ${isMatch}`);
+                }
+                
+                if (isMatch) {
                     const levels = calculateStaticLevels(stock, tfDataMap);
                     matches.push({ ...stock, levels, side: side, isMatch: true });
                 }
@@ -4461,9 +4503,11 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
             isToken = true;
             const mappedInd = {
                 'SUPERTRENDVALUE': 'supertrend_value',
+                'ST_V': 'supertrend_value',
                 'EMA_FAST': 'ema_fast', 'EMA_SLOW': 'ema_slow',
-                'RSI': 'rsi', 'PRICE': 'ltp',
+                'RSI': 'rsi', 'PRICE': 'ltp', 'LTP': 'ltp',
                 'HIGH': 'prev_high', 'LOW': 'prev_low',
+                'PATTERNSCORE': 'pattern_score', 'PATTERN_SCORE': 'pattern_score',
                 'ROE': 'roe', 'PE': 'pe'
             };
             const col = mappedInd[indicatorKey.toUpperCase()] || indicatorKey.toLowerCase();
@@ -4842,17 +4886,18 @@ function addVisualRule(section, data = null) {
         `<select class="select-input rule-logic-op" style="color:var(--amber); font-weight:800; background:rgba(217,119,6,0.1);">
             <option value="AND">AND</option>
             <option value="OR">OR</option>
+            ${(section === 'target' || section === 'sl') ? '<option value="-or-">-or-</option><option value="|">|</option>' : ''}
          </select>`;
 
     row.innerHTML = `
         ${logicHtml}
         <select class="select-input rule-tf">
-            <option value="[Daily]">[Daily]</option>
-            <option value="[Weekly]">[Weekly]</option>
-            <option value="[Monthly]">[Monthly]</option>
-            <option value="[1h]">[1h]</option>
-            <option value="[15m]">[15m]</option>
-            <option value="[5m]">[5m]</option>
+            <option value="[1d]">Daily</option>
+            <option value="[1w]">Weekly</option>
+            <option value="[1mo]">Monthly</option>
+            <option value="[60m]">1 Hour</option>
+            <option value="[15m]">15 Min</option>
+            <option value="[5m]">5 Min</option>
         </select>
         <select class="select-input rule-ind">
             <option value="RSI">RSI</option>
@@ -4860,10 +4905,9 @@ function addVisualRule(section, data = null) {
             <option value="EMA_F">Fast EMA</option>
             <option value="EMA_S">Slow EMA</option>
             <option value="ST_V">SuperTrend</option>
-            <option value="ATR">ATR</option>
-            <option value="Volume">Volume</option>
-            <option value="Pattern">Pattern</option>
-            <option value="Pattern_Score">Pattern Score</option>
+            <option value="Volume">Volume Spike</option>
+            <option value="Pattern">Candle Sentiment</option>
+            <option value="PatternScore">Pattern Score</option>
         </select>
         <select class="select-input rule-op">
             <option value="<"><</option>
@@ -4974,9 +5018,20 @@ function syncVisualToQuery(section) {
         const val = row.querySelector('.rule-val').value;
 
         if (ind && op && val) {
-            let part = `${tf}.${ind} ${op} ${val}`;
+            let part = `${tf}.${ind}`;
+            // If operator is == and value is 0, it might be a standalone indicator like [1d].High
+            if (op === '==' && val === '0') {
+               // part = part (no change)
+            } else if (ind === 'LTP' && op === '==' && val.includes('%')) {
+               part = val; // Standalone percentage like 1.5%
+            } else {
+               part = `${tf}.${ind} ${op} ${val}`;
+            }
+
             if (logic) {
-                queryParts.push(` ${logic} ${part}`);
+                // Use standardized separator based on section
+                const sep = (section === 'target' || section === 'sl') ? (logic === 'OR' ? ' -or- ' : ` ${logic} `) : ` ${logic} `;
+                queryParts.push(`${sep}${part}`);
             } else {
                 queryParts.push(part);
             }
@@ -4997,9 +5052,9 @@ function syncQueryToVisual(section) {
 
     if (!query) return;
 
-    // Best-effort parser for [TF].IND OP VAL (AND|OR) ...
-    // Split by AND or OR (case insensitive)
-    const parts = query.split(/\s+(AND|OR)\s+/i);
+    // Best-effort parser for [TF].IND OP VAL (AND|OR|-or-||) ...
+    // Split by AND or OR or -or- or | (case insensitive)
+    const parts = query.split(/\s+(AND|OR|\||-or-)\s+/i);
 
     let currentLogic = null;
 
@@ -5010,44 +5065,55 @@ function syncQueryToVisual(section) {
             continue;
         }
 
-        // Flexible Parse: ([TF].)?TOKEN OP VALUE
-        const match = p.match(/(\[[^\]]+\]\.)?([^\s]+)\s+([<>=!]+)\s+(.+)/);
-        if (match) {
-            let tf = match[1] ? match[1].slice(0, -1) : "[Daily]";
+        // Flexible Parse:
+        // 1. Full Match: ([TF].)?TOKEN OP VALUE
+        const fullMatch = p.match(/(\[[^\]]+\]\.)?([^\s]+)\s+([<>=!]+)\s+(.+)/);
+        if (fullMatch) {
+            let tf = fullMatch[1] ? fullMatch[1].slice(0, -1) : "[1d]";
             const data = {
                 logic: currentLogic,
                 tf: tf,
-                ind: match[2],
-                op: match[3],
-                val: match[4]
+                ind: fullMatch[2],
+                op: fullMatch[3],
+                val: fullMatch[4]
             };
             addVisualRule(section, data);
-            currentLogic = null; // Reset for the next rule
+            currentLogic = null;
+        } 
+        // 2. Standalone Value or Token Sync: [TF].IND or 1.5%
+        else {
+            const tokenMatch = p.match(/(\[[^\]]+\]\.)?([^\s]+)/);
+            if (tokenMatch) {
+                let tf = tokenMatch[1] ? tokenMatch[1].slice(0, -1) : "[1d]";
+                const data = {
+                    logic: currentLogic,
+                    tf: tf,
+                    ind: tokenMatch[2].includes('.') ? tokenMatch[2].split('.').pop() : (section === 'target' || section === 'sl' ? 'LTP' : 'RSI'),
+                    op: "==",
+                    val: tokenMatch[2].includes('.') ? "0" : tokenMatch[2] // If it was just 1.5%, put it in val
+                };
+                
+                // Adjustment for standalone indicator like [1h].High
+                if (tokenMatch[2].includes('.') || (tokenMatch[1] && !tokenMatch[2].includes('%'))) {
+                     data.ind = tokenMatch[2];
+                     data.op = "==";
+                     data.val = "0";
+                } else if (tokenMatch[2].match(/^[\d\.]+%?$/)) {
+                     // Standalone percentage/number
+                     data.ind = "LTP";
+                     data.op = "==";
+                     data.val = tokenMatch[2];
+                }
+
+                addVisualRule(section, data);
+                currentLogic = null;
+            }
         }
     }
 
     // If no rules were parsed but text exists, add one empty rule
     if (rulesContainer.innerHTML === '' && query !== '') {
         addVisualRule(section);
-    }
-}
-
-function setGlobalEditorMode(mode) {
-    currentEditorMode = mode;
-    document.querySelectorAll('.mode-toggle-btn').forEach(btn => btn.classList.remove('active'));
-    if (mode === 'query') {
-        document.getElementById('btn-global-query').classList.add('active');
-        document.querySelectorAll('[id$="-query"]').forEach(el => el.classList.remove('hidden'));
-        document.querySelectorAll('[id$="-visual"]').forEach(el => el.classList.add('hidden'));
-    } else {
-        document.getElementById('btn-global-visual').classList.add('active');
-        document.querySelectorAll('[id$="-query"]').forEach(el => el.classList.add('hidden'));
-        document.querySelectorAll('[id$="-visual"]').forEach(el => el.classList.remove('hidden'));
-
-        // Sync Visual from Query
-        ['entry', 'exit', 'target', 'sl', 'accum'].forEach(section => {
-            syncQueryToVisual(section);
-        });
     }
 }
 
@@ -5381,10 +5447,12 @@ function evaluateBlueprintMatch(stock, blueprint) {
         'RSI': 'rsi',
         'Trend': 'supertrend_dir',
         'SuperTrendValue': 'supertrend_value',
+        'ST_V': 'supertrend_value',
         'Volume': 'volume_signal',
         'VolumeRatio': 'volume_ratio',
         'Pattern': 'candlestick_pattern',
         'PatternScore': 'pattern_score',
+        'Pattern_Score': 'pattern_score',
         'EMA_Fast': 'ema_fast',
         'EMA_Slow': 'ema_slow',
         'EMA_Cross': 'ema_signal',
@@ -5473,6 +5541,53 @@ switchTab = function (tabId) {
     }
     _screener_origSwitchTab(tabId);
 };
+
+// --- Strategy Lab Collapsibility & UI Helpers ---
+
+function toggleStrategySegment(segmentId) {
+    const content = document.getElementById(`content-segment-${segmentId}`);
+    const icon = document.getElementById(`icon-segment-${segmentId}`);
+    if (!content) return;
+
+    const isCollapsed = content.classList.toggle('collapsed');
+    
+    if (icon) {
+        icon.className = isCollapsed ? 'fas fa-chevron-down text-dim' : 'fas fa-chevron-up text-dim';
+    }
+
+    // Persist state
+    const savedStates = JSON.parse(localStorage.getItem('strat_segments') || '{}');
+    savedStates[segmentId] = isCollapsed;
+    localStorage.setItem('strat_segments', JSON.stringify(savedStates));
+
+    // Handle sidebar width shrinking
+    if (segmentId === 'library') {
+        const container = document.getElementById('strategy-editor-container');
+        if (container) {
+            if (isCollapsed) container.classList.add('sidebar-collapsed');
+            else container.classList.remove('sidebar-collapsed');
+        }
+    }
+}
+
+function initStrategyLabSegments() {
+    const savedStates = JSON.parse(localStorage.getItem('strat_segments') || '{}');
+    const segments = ['entry', 'target', 'exit', 'sl', 'accum', 'explainer', 'library'];
+    
+    segments.forEach(s => {
+        const content = document.getElementById(`content-segment-${s}`);
+        const icon = document.getElementById(`icon-segment-${s}`);
+        if (content && savedStates[s] === true) {
+            content.classList.add('collapsed');
+            if (icon) icon.className = 'fas fa-chevron-down text-dim';
+        }
+    });
+
+    if (savedStates['library'] === true) {
+        const container = document.getElementById('strategy-editor-container');
+        if (container) container.classList.add('sidebar-collapsed');
+    }
+}
 
 function scrollToSupport(id) {
     const el = document.getElementById('support-' + id);
