@@ -1381,6 +1381,30 @@ function closeStrategyHelp() {
     document.getElementById('strategy-help-modal').classList.add('hidden');
 }
 
+function switchHelpTab(tabId) {
+    // 1. Update Tabs
+    const btns = document.querySelectorAll('.help-tab-btn');
+    btns.forEach(btn => {
+        const isActive = btn.getAttribute('onclick').includes(tabId);
+        btn.classList.toggle('active', isActive);
+        btn.style.color = isActive ? 'var(--primary)' : 'var(--text-dim)';
+        btn.style.borderBottom = isActive ? '2px solid var(--primary)' : 'none';
+    });
+
+    // 2. Show/Hide Content
+    const contents = document.querySelectorAll('.help-tab-content');
+    contents.forEach(content => {
+        content.classList.add('hidden');
+        content.style.display = 'none';
+    });
+
+    const target = document.getElementById('help-' + tabId);
+    if (target) {
+        target.classList.remove('hidden');
+        target.style.display = 'block';
+    }
+}
+
 async function clearDbData(type) {
     const modal = document.getElementById('confirm-modal');
     const msgEl = document.getElementById('confirm-modal-msg');
