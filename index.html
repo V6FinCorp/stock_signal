@@ -1684,86 +1684,143 @@
                 <button class="close-modal" onclick="closeStrategyHelp()">&times;</button>
             </div>
             <div class="modal-body" style="padding: 30px; max-height: 70vh; overflow-y: auto;">
+                <!-- Token Reference Table -->
+                <div style="margin-bottom: 30px;">
+                    <h3 style="font-size: 15px; color: var(--primary); margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                        <i class="fas fa-list"></i> Core Indicators & Tokens
+                    </h3>
+                    <table class="help-table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="text-align: left; background: rgba(255,255,255,0.05);">
+                                <th style="padding: 12px;">Token</th>
+                                <th style="padding: 12px;">Internal Key</th>
+                                <th style="padding: 12px;">Example Usage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">Price</code> | <code>LTP</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Current Price</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Price > [Daily].High</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">RSI</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Momentum Index</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>RSI < 30 OR [1h].RSI > 60</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">Trend</code> | <code>ST</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">SuperTrend Dir</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Trend == 'Bullish'</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">ST_V</code> | <code>STV</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">SuperTrend Price</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>LTP > ST_V + 2%</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">Pattern</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Candle Analysis</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Pattern == 'Bullish'</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">PatternScore</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Signal Strength</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>PatternScore >= 3</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">EMA_F</code> | <code>EMA_S</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Fast/Slow EMA</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>EMA_F > EMA_S</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">EMA_Cross</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Golden/Death Cross</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>EMA_Cross == 'Bullish'</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">Volume</code> | <code>Vol</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Volume Signal</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Volume == 'Bullish'</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">VOL_R</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Volume Ratio</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>VOL_R > 2.0</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">PatternScore</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Signal Strength (-5 to +5)</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>PatternScore >= 3</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">ROE</code> | <code>ROE_V</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Return on Equity %</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>ROE > 20</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">PE</code> | <code>PE_Ratio</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Price to Earnings</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>PE < 25</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">Market_Cap</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">MCap in Crores</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Market_Cap > 50000</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code style="color:var(--success)">Prev_High</code> | <code>Prev_Low</code></td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-dim)">Last Candle High/Low</td>
+                                <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>LTP > [Daily].Prev_High</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Syntax Rules Section -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
-                    <!-- Technicals -->
                     <div>
-                        <h3
-                            style="font-size: 14px; text-transform: uppercase; color: var(--success); margin-bottom: 12px;">
-                            Technicals & Tokens</h3>
-                        <div class="help-box" style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 15px;">
-                            <ul
-                                style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
-                                <li><code>RSI</code> - Relative Strength Index</li>
-                                <li><code>ST_V</code> | <code>STV</code> | <code>SuperTrendValue</code> - ST Price</li>
-                                <li><code>ST</code> | <code>SuperTrend</code> - ST Direction</li>
-                                <li><code>EMA_F</code> | <code>EMA_S</code> - Fast/Slow EMAs</li>
-                                <li><code>EMA_V</code> | <code>EMA_C</code> - EMA Value/Crossover</li>
-                                <li><code>VOL_R</code> | <code>VOL</code> - Volume Ratio / Signal</li>
-                                <li><code>LTP</code> | <code>CMP</code> - Current Market Price</li>
+                        <h3 style="font-size: 14px; text-transform: uppercase; color: var(--amber); margin-bottom: 15px;">
+                            <i class="fas fa-history"></i> TF Wrappers (Multi-TF)
+                        </h3>
+                        <div class="help-box" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 15px; border: 1px solid rgba(255,191,0,0.2);">
+                            <p style="font-size: 12px; margin-bottom: 10px; color: var(--text-dim);">Access any indicator from any timeframe using brackets:</p>
+                            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 12px;">
+                                <li><code>[Daily].Trend</code> - Daily SuperTrend</li>
+                                <li><code>[1h].RSI</code> - 1 Hour Relative Strength</li>
+                                <li><code>[15m].EMA_F</code> - 15 Min Fast EMA</li>
+                                <li><code>[Weekly].High</code> - Previous Week High</li>
                             </ul>
                         </div>
                     </div>
-                    <!-- Fundamentals & Levels -->
                     <div>
-                        <h3
-                            style="font-size: 14px; text-transform: uppercase; color: var(--amber); margin-bottom: 12px;">
-                            Fundamentals & Levels</h3>
-                        <div class="help-box" style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 15px;">
-                            <ul
-                                style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
-                                <li><code>PE</code> | <code>PB</code> | <code>ROE</code> - Valuation & Efficiency</li>
-                                <li><code>OPM</code> | <code>NPM</code> | <code>EPS</code> - Profitability Ratios</li>
-                                <li><code>Market_Cap</code> - Company Size</li>
-                                <li><code>Prev_High</code> | <code>Prev_Low</code> - Previous Close High/Low</li>
-                                <li><code>High</code> | <code>Low</code> - OHLC Levels</li>
-                                <li><code>[Daily]</code>, <code>[1h]</code>, <code>[15m]</code> - TF Wrappers</li>
+                        <h3 style="font-size: 14px; text-transform: uppercase; color: var(--primary); margin-bottom: 15px;">
+                            <i class="fas fa-percent"></i> Percentage Arithmetic
+                        </h3>
+                        <div class="help-box" style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 15px; border: 1px solid rgba(var(--primary-rgb),0.2);">
+                            <p style="font-size: 12px; margin-bottom: 10px; color: var(--text-dim);">Apply offsets to price levels or indicators:</p>
+                            <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 12px;">
+                                <li><code>LTP + 5%</code> - Current price plus 5%</li>
+                                <li><code>ST_V - 0.5%</code> - ST line minus buffer</li>
+                                <li><code>High + 1.5%</code> - 1.5% above Resistance</li>
+                                <li><code>Low - 1.25%</code> - 1.25% below Support</li>
                             </ul>
                         </div>
                     </div>
                 </div>
 
-                <!-- Examples Section -->
-                <div style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px;">
-                    <h3 style="font-size: 14px; text-transform: uppercase; color: var(--primary); margin-bottom: 15px;">
-                        Target & Stop-Loss Examples</h3>
-                    <div style="display: grid; grid-template-columns: 1fr; gap: 12px;">
-                        <div
-                            style="background: rgba(255,255,255,0.03); padding: 12px 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <div style="font-weight: 700; font-size: 14px;">Relative Arithmetic</div>
-                                <div style="font-size: 12px; color: var(--text-dim);">Sets target 0.5% below the daily
-                                    SuperTrend</div>
-                            </div>
-                            <code
-                                style="background: #000; padding: 4px 10px; border-radius: 4px; color: var(--success);">[Daily].ST_V - 0.5%</code>
-                        </div>
-                        <div
-                            style="background: rgba(255,255,255,0.03); padding: 12px 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <div style="font-weight: 700; font-size: 14px;">Dynamic Stop</div>
-                                <div style="font-size: 12px; color: var(--text-dim);">Sets stop loss exactly at the Slow
-                                    EMA line</div>
-                            </div>
-                            <code
-                                style="background: #000; padding: 4px 10px; border-radius: 4px; color: var(--danger);">[1h].EMA_S</code>
-                        </div>
-                        <div
-                            style="background: rgba(255,255,255,0.03); padding: 12px 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <div style="font-weight: 700; font-size: 14px;">Fundamental Screen</div>
-                                <div style="font-size: 12px; color: var(--text-dim);">Scan for High ROE & Low PE</div>
-                            </div>
-                            <code
-                                style="background: #000; padding: 4px 10px; border-radius: 4px; color: var(--amber);">ROE > 20 AND PE < 15</code>
+                <!-- Pro Tips -->
+                <div style="margin-top: 30px; background: rgba(var(--primary-rgb), 0.1); border: 1px solid var(--primary); padding: 20px; border-radius: 12px; font-size: 13px; line-height: 1.6;">
+                    <div style="display: flex; gap: 15px;">
+                        <i class="fas fa-lightbulb fa-2x" style="color: var(--amber);"></i>
+                        <div>
+                            <strong style="display: block; margin-bottom: 5px; color: var(--primary);">Power User Tips</strong>
+                            • You can mix timeframes in a single line: <code>RSI > 50 AND [Daily].Trend == 'Bullish'</code><br>
+                            • Sentiment values like <strong>Pattern</strong> and <strong>Trend</strong> always use single quotes: <code>'Bullish'</code> or <code>'Bearish'</code>.<br>
+                            • Use <code>@High</code> and <code>@Low</code> as shorthands for the previous candle's High/Low in the base timeframe.<br>
+                            • Percentage math works on any price token: <code>LTP > ST_V + 0.5%</code>.
                         </div>
                     </div>
-                </div>
-
-                <div
-                    style="margin-top: 30px; background: var(--primary-trans); border: 1px solid var(--primary); padding: 15px; border-radius: 8px; font-size: 12px; line-height: 1.5;">
-                    <strong>Pro Tip:</strong> Brackets <code>[...]</code> are for timeframes. Dots <code>.</code> are
-                    for indicators within those timeframes.
-                    Tokens with multiple aliases (like <code>ST_V</code> and <code>STV</code>) are identical.
                 </div>
             </div>
             <div class="modal-footer" style="padding: 15px 30px;">
