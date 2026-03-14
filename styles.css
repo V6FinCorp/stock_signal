@@ -1982,9 +1982,50 @@ input:checked+.slider:before {
         opacity: 0;
         transform: translateY(5px);
     }
-
     to {
         opacity: 1;
         transform: translateY(0);
     }
 }
+
+/* Portfolio Grouped Table Styles */
+.portfolio-group-row {
+    cursor: pointer;
+    background: rgba(255,255,255,0.02);
+    transition: background 0.2s;
+}
+
+.portfolio-group-row:hover {
+    background: rgba(var(--primary-rgb), 0.05);
+}
+
+.portfolio-child-row {
+    background: rgba(0,0,0,0.15);
+    border-left: 3px solid var(--primary);
+}
+
+.portfolio-child-row td {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+    font-size: 12px !important;
+    border-bottom: 1px solid rgba(255,255,255,0.03) !important;
+}
+
+.expand-icon {
+    transition: transform 0.3s;
+    color: var(--primary);
+    width: 20px;
+}
+
+.expand-icon.expanded {
+    transform: rotate(90deg);
+}
+
+.broker-pill {
+    background: rgba(255,255,255,0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: monospace;
+}

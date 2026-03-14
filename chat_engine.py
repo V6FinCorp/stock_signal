@@ -105,9 +105,22 @@ async def get_market_sentiment(mode: str = 'swing'):
 
 import httpx
 
-async def chat_with_assistant(messages):
+async def chat_with_assistant(messages, mode='swing'):
     client = openai.AsyncOpenAI(http_client=httpx.AsyncClient())
     
+    system_instruction = (
+        f"You are a helpful expert stock market analysis assistant integrated into the StockSignal Pro app. "
+        f"The current trading mode is **{mode.upper()}**. Your answers should focus on {mode} trade assumptions and data. "
+        "Provide concise, clear answers based on the actual technical signals retrieved via tools. "
+        "If the user asks about a stock, use 'get_stock_status'. For general market, use 'get_market_sentiment'."
+    )
+    
+    # Update or insert system message to include mode context
+    if messages and messages[0].get("role") == "system":
+        messages[0]["content"] = system_instruction
+    else:
+        messages.insert(0, {"role": "system", "content": system_instruction})
+
     tools = [
         {
             "type": "function",

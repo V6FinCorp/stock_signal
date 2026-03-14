@@ -146,6 +146,8 @@ let holdingsISINs = []; // ISINs of stocks in user portfolio
 let activeScreenerBlueprint = null;
 let screenerBlueprints = [];
 let screenerTfDataMap = {}; // Shared cache for MTF data in Screener
+let _indicesData = []; // Cache for local indices filtering
+let _indicesSortState = { key: 'bs_indexSymbol', asc: true };
 
 // --- Authentication & Session ---
 async function verifySession() {
@@ -443,6 +445,15 @@ function setMode(mode, skipFetch = false) {
     updateScreenerTimeframeOptions();
     fetchSystemStatus();
     updateSectorSentiment();
+    updateChatHeader();
+}
+
+function updateChatHeader() {
+    const aiTitle = document.querySelector('.ai-title span');
+    if (aiTitle) {
+        const modeLabel = currentMode === 'swing' ? 'Swing' : 'Intraday';
+        aiTitle.innerText = `Signal Assistant (${modeLabel})`;
+    }
 }
 
 function updateStrategyLabOptions() {
@@ -5636,97 +5647,158 @@ async function fetchAndRenderIndices() {
     const tbody = document.getElementById('indices-table-body');
     if (!tbody) return;
 
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i> Loading advanced indices...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i> Loading advanced indices...</td></tr>';
 
     try {
         const res = await fetch('/api/indices');
         const result = await res.json();
 
         if (result.status === 'success' && result.data && result.data.length > 0) {
-            tbody.innerHTML = '';
-            
-            // Render table rows
-            result.data.forEach(idx => {
-                const tr = document.createElement('tr');
-                tr.style.borderBottom = '1px solid var(--border-color)';
-                
-                // Extract metrics
-                const ltp = parseFloat(idx.bs_last ?? idx.bs_ltp ?? 0);
-                
-                // Day metrics
-                const dChange = idx.bs_percentChange !== null && idx.bs_percentChange !== '' ? parseFloat(idx.bs_percentChange) : 0;
-                const dColor = dChange > 0 ? 'var(--success)' : (dChange < 0 ? 'var(--danger)' : 'var(--text-main)');
-                const dChangeText = dChange > 0 ? `+${dChange.toFixed(2)}%` : `${dChange.toFixed(2)}%`;
-                const dHigh = parseFloat(idx.bs_high || ltp);
-                const dLow = parseFloat(idx.bs_low || ltp);
-                
-                // Calculate Day Triangle Position (0 to 100)
-                let dPos = 50;
-                if (dHigh > dLow) dPos = ((ltp - dLow) / (dHigh - dLow)) * 100;
-                dPos = Math.max(0, Math.min(100, dPos));
-
-                // 52-Week Metrics
-                const yChange = idx.bs_perChange365d !== null && idx.bs_perChange365d !== '' ? parseFloat(idx.bs_perChange365d) : 0;
-                const yColor = yChange > 0 ? 'var(--success)' : (yChange < 0 ? 'var(--danger)' : 'var(--text-main)');
-                const yChangeText = yChange > 0 ? `+${yChange.toFixed(2)}%` : `${yChange.toFixed(2)}%`;
-                const yHigh = parseFloat(idx.bs_yearHigh || ltp);
-                const yLow = parseFloat(idx.bs_yearLow || ltp);
-                
-                // Calculate 52-Week Triangle Position (0 to 100)
-                let yPos = 50;
-                if (yHigh > yLow) yPos = ((ltp - yLow) / (yHigh - yLow)) * 100;
-                yPos = Math.max(0, Math.min(100, yPos));
-
-                // Symbols
-                let symbolText = idx.bs_indexSymbol || '-';
-                // optional: format symbol name slightly
-                // symbolText = symbolText.replace('NIFTY ', '');
-
-                // Format time string nicely safely
-                let timeStr = '-';
-                const dtStr = idx.bs_created_at || idx.created_at;
-                if (dtStr) {
-                    try {
-                        const dateObj = new Date(dtStr);
-                        if (!isNaN(dateObj.getTime())) {
-                            timeStr = dateObj.toLocaleDateString('en-IN', {day:'2-digit', month:'2-digit', year:'numeric'}) + ' ' + dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute:'2-digit' });
-                        } else {
-                            timeStr = String(dtStr).substring(0, 16).replace('T', ' ');
-                        }
-                    } catch(e) { timeStr = String(dtStr).substring(0, 16); }
-                }
-
-                const createBar = (pos) => `
-                    <div style="position: relative; width: 100%; min-width: 140px; height: 6px; background: linear-gradient(to right, var(--success) ${pos}%, var(--danger) ${pos}%); border-radius: 3px; display: inline-block; vertical-align: middle;">
-                        <div style="position: absolute; top: -8px; left: ${pos}%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #fff;"></div>
-                    </div>
-                `;
-
-                tr.innerHTML = `
-                    <td style="padding: 12px 16px; font-weight: 500; color: var(--text-main); font-size: 13px;">
-                        ${symbolText}
-                        <div style="font-size: 10px; color: var(--text-dim); font-weight: 400; margin-top: 2px;">
-                            ${timeStr}
-                        </div>
-                    </td>
-                    <td style="padding: 12px 16px; text-align: right; width: 80px; color: ${dColor}; font-weight: 600; font-size: 13px;">${dChangeText}</td>
-                    <td style="padding: 12px 16px; text-align: center; width: 250px;">
-                        ${createBar(dPos)}
-                    </td>
-                    <td style="padding: 12px 16px; text-align: right; width: 80px; color: ${yColor}; font-weight: 600; font-size: 13px;">${yChangeText}</td>
-                    <td style="padding: 12px 16px; text-align: center; width: 250px;">
-                        ${createBar(yPos)}
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+            _indicesData = result.data;
+            filterIndices();
         } else {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-dim);">No indices data found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No indices data found.</td></tr>';
         }
     } catch (e) {
         console.error("Failed to fetch indices:", e);
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--danger);">Error loading indices data.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--danger);">Error loading indices data.</td></tr>';
     }
+}
+
+function filterIndices() {
+    const query = (document.getElementById('indices-search')?.value || '').toLowerCase();
+    let filtered = [..._indicesData];
+    
+    if (query) {
+        filtered = filtered.filter(idx => 
+            (idx.bs_indexSymbol || '').toLowerCase().includes(query) || 
+            (idx.bs_index || '').toLowerCase().includes(query)
+        );
+    }
+    
+    // Sorting
+    const key = _indicesSortState.key;
+    const asc = _indicesSortState.asc;
+    
+    filtered.sort((a, b) => {
+        let valA = a[key] ?? 0;
+        let valB = b[key] ?? 0;
+        
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+        
+        if (valA < valB) return asc ? -1 : 1;
+        if (valA > valB) return asc ? 1 : -1;
+        return 0;
+    });
+
+    renderIndicesTable(filtered);
+}
+
+function sortIndices(key) {
+    if (_indicesSortState.key === key) {
+        _indicesSortState.asc = !_indicesSortState.asc;
+    } else {
+        _indicesSortState.key = key;
+        _indicesSortState.asc = true;
+    }
+    filterIndices();
+}
+
+function renderIndicesTable(data) {
+    const tbody = document.getElementById('indices-table-body');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    data.forEach(idx => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border-color)';
+        
+        const ltp = parseFloat(idx.bs_last ?? idx.bs_ltp ?? 0);
+        
+        // Day stats
+        const dChange = parseFloat(idx.bs_percentChange || 0);
+        const dColor = dChange > 0 ? 'var(--success)' : (dChange < 0 ? 'var(--danger)' : 'var(--text-main)');
+        const dVar = parseFloat(idx.bs_variation || 0);
+        const ltpDisplay = ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const dVarLabel = dVar > 0 ? `▲ +${dVar.toFixed(2)}` : (dVar < 0 ? `▼ ${dVar.toFixed(2)}` : `${dVar.toFixed(2)}`);
+        
+        const dHigh = parseFloat(idx.bs_high || ltp);
+        const dLow = parseFloat(idx.bs_low || ltp);
+        let dPos = 50;
+        if (dHigh > dLow) dPos = ((ltp - dLow) / (dHigh - dLow)) * 100;
+        dPos = Math.max(0, Math.min(100, dPos));
+
+        // 52 Week stats
+        const yChange = parseFloat(idx.bs_perChange365d || 0);
+        const yColor = yChange > 0 ? 'var(--success)' : (yChange < 0 ? 'var(--danger)' : 'var(--text-main)');
+        const yHigh = parseFloat(idx.bs_yearHigh || ltp);
+        const yLow = parseFloat(idx.bs_yearLow || ltp);
+        let yPos = 50;
+        if (yHigh > yLow) yPos = ((ltp - yLow) / (yHigh - yLow)) * 100;
+        yPos = Math.max(0, Math.min(100, yPos));
+
+        // Adv/Dec stats
+        const adv = parseInt(idx.bs_advances || 0);
+        const dec = parseInt(idx.bs_declines || 0);
+        const total = adv + dec || 1;
+        const adPos = (adv / total) * 100;
+
+        const createRangeBar = (pos) => `
+            <div style="position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; margin-top: 4px;">
+                <div style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: linear-gradient(90deg, var(--danger), var(--success)); opacity: 0.15; border-radius: 3px;"></div>
+                <div style="position: absolute; top: -4px; left: ${pos}%; transform: translateX(-50%); width: 2px; height: 14px; background: var(--text-dim); border-radius: 1px; z-index: 2;"></div>
+            </div>
+        `;
+
+        const renderChart = (path) => {
+            if (!path) return '-';
+            // Invert(1) makes white bg black. Hue-rotate(180) returns orange inverted blue back to blue.
+            return `<img src="${path}" style="width: 50px; height: 20px; filter: invert(1) hue-rotate(180deg) brightness(1.2) contrast(1.1); pointer-events: none; mix-blend-mode: screen;" alt="chart">`;
+        };
+
+        tr.innerHTML = `
+            <td style="padding: 12px 16px;">
+                <div style="font-weight: 700; color: var(--text-main); font-size: 13px;">${idx.bs_indexSymbol}</div>
+                <div style="font-size: 11px; color: ${dColor}; font-weight: 600;">${ltpDisplay} (${dVarLabel})</div>
+            </td>
+            <td style="padding: 12px 16px; text-align: right; color: ${dColor}; font-weight: 700; font-size: 12px;">
+                ${dChange > 0 ? '+' : ''}${dChange.toFixed(2)}%
+            </td>
+            <td style="padding: 12px 16px; width: 140px;">
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
+                    <span>${dLow.toLocaleString('en-IN')}</span>
+                    <span>${dHigh.toLocaleString('en-IN')}</span>
+                </div>
+                ${createRangeBar(dPos)}
+            </td>
+            <td style="padding: 12px 16px; text-align: right; color: ${yColor}; font-weight: 700; font-size: 12px;">
+                ${yChange > 0 ? '+' : ''}${yChange.toFixed(2)}%
+            </td>
+            <td style="padding: 12px 16px; width: 140px;">
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
+                    <span>${yLow.toLocaleString('en-IN')}</span>
+                    <span>${yHigh.toLocaleString('en-IN')}</span>
+                </div>
+                ${createRangeBar(yPos)}
+            </td>
+            <td style="padding: 12px 16px; width: 140px;">
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
+                    <span style="color: var(--danger); font-weight: 700;">${dec}</span>
+                    <span style="color: var(--success); font-weight: 700;">${adv}</span>
+                </div>
+                ${createRangeBar(adPos)}
+            </td>
+            <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chartTodayPath)}</td>
+            <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart30dPath)}</td>
+            <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart365dPath)}</td>
+            <td style="padding: 12px 16px; text-align: center; color: var(--text-dim); font-size: 11px; font-weight: 600;">
+                ${idx.bs_pe ? `PE ${parseFloat(idx.bs_pe).toFixed(1)}` : '-'}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
 }
 
 
@@ -5785,7 +5857,7 @@ async function sendAIMessage() {
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({messages: aiMessages})
+            body: JSON.stringify({messages: aiMessages, mode: currentMode})
         });
         
         const data = await response.json();
@@ -5871,26 +5943,100 @@ async function fetchAndRenderPortfolio() {
 
 function filterPortfolio() {
     const query = (document.getElementById('portfolio-search')?.value || '').toLowerCase();
-    let filtered = [..._portfolioData];
+    let baseData = [..._portfolioData];
     
     if (query) {
-        filtered = filtered.filter(item => 
+        baseData = baseData.filter(item => 
             (item.code || '').toLowerCase().includes(query) || 
             (item.isin || '').toLowerCase().includes(query) ||
-            (item.app_user_id || '').toLowerCase().includes(query)
+            (item.broker_id || '').toLowerCase().includes(query) ||
+            (item.broker_username || '').toLowerCase().includes(query)
         );
     }
+
+    // Grouping Logic
+    const groups = {};
+    baseData.forEach(item => {
+        const code = item.code || 'UNKNOWN';
+        if (!groups[code]) {
+            groups[code] = {
+                code: code,
+                isin: item.symbol || '-',
+                fullName: item.symbol || '-',
+                isinCode: item.isin || '-',
+                quantity: 0,
+                inv_value: 0,
+                cur_value: 0,
+                pnl: 0,
+                weighted_avg_sum: 0,
+                ltp: parseFloat(item.ltp) || 0,
+                last_sync_at: item.last_sync_at,
+                day_change_pct: parseFloat(item.day_change_pct) || 0,
+                brokerGroups: {} // Sub-grouping for unique broker split
+            };
+        }
+        const g = groups[code];
+        const qty = parseInt(item.quantity) || 0;
+        g.quantity += qty;
+        g.inv_value += parseFloat(item.inv_value) || 0;
+        g.cur_value += parseFloat(item.cur_value) || 0;
+        g.pnl += parseFloat(item.pnl) || 0;
+        g.weighted_avg_sum += (parseFloat(item.avg_price) || 0) * qty;
+        
+        if (!g.last_sync_at || new Date(item.last_sync_at) > new Date(g.last_sync_at)) {
+            g.last_sync_at = item.last_sync_at;
+        }
+
+        // Aggregate unique broker-username split
+        const brokerTag = `${item.broker_id}-${item.broker_username}`;
+        if (!g.brokerGroups[brokerTag]) {
+            g.brokerGroups[brokerTag] = {
+                brokerTag: brokerTag,
+                quantity: 0,
+                inv_value: 0,
+                cur_value: 0,
+                pnl: 0,
+                weighted_avg_sum: 0,
+                ltp: parseFloat(item.ltp) || 0,
+                last_sync_at: item.last_sync_at
+            };
+        }
+        const bg = g.brokerGroups[brokerTag];
+        bg.quantity += qty;
+        bg.inv_value += parseFloat(item.inv_value) || 0;
+        bg.cur_value += parseFloat(item.cur_value) || 0;
+        bg.pnl += parseFloat(item.pnl) || 0;
+        bg.weighted_avg_sum += (parseFloat(item.avg_price) || 0) * qty;
+        if (!bg.last_sync_at || new Date(item.last_sync_at) > new Date(bg.last_sync_at)) {
+            bg.last_sync_at = item.last_sync_at;
+        }
+        // Always update LTP to latest if possible
+        bg.ltp = parseFloat(item.ltp) || bg.ltp;
+    });
+
+    const groupedArray = Object.values(groups).map(g => {
+        g.avg_price = g.quantity > 0 ? g.weighted_avg_sum / g.quantity : 0;
+        g.pnl_pct = g.inv_value > 0 ? (g.pnl / g.inv_value) * 100 : 0;
+        
+        // Convert brokerGroups map to array for rendering
+        g.items = Object.values(g.brokerGroups).map(bg => {
+            bg.avg_price = bg.quantity > 0 ? bg.weighted_avg_sum / bg.quantity : 0;
+            bg.pnl_pct = bg.inv_value > 0 ? (bg.pnl / bg.inv_value) * 100 : 0;
+            return bg;
+        });
+        
+        return g;
+    });
     
-    // Apply sorting
+    // Apply sorting to groups
     const key = _portfolioSortState.key;
     const asc = _portfolioSortState.asc;
     
     if (key) {
-        filtered.sort((a, b) => {
+        groupedArray.sort((a, b) => {
             let valA = a[key];
             let valB = b[key];
             
-            // Handle numeric parsing
             if (['quantity', 'avg_price', 'ltp', 'inv_value', 'cur_value', 'pnl', 'day_change_pct'].includes(key)) {
                 valA = parseFloat(valA) || 0;
                 valB = parseFloat(valB) || 0;
@@ -5905,7 +6051,7 @@ function filterPortfolio() {
         });
     }
     
-    renderPortfolioTable(filtered);
+    renderPortfolioTable(groupedArray);
 }
 
 function sortPortfolio(key) {
@@ -5918,51 +6064,94 @@ function sortPortfolio(key) {
     filterPortfolio();
 }
 
-function renderPortfolioTable(data) {
+function togglePortfolioGroup(code) {
+    const childRows = document.querySelectorAll(`.child-of-${code}`);
+    const icon = document.getElementById(`icon-${code}`);
+    
+    childRows.forEach(row => {
+        row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+    });
+    
+    if (icon) {
+        icon.classList.toggle('expanded');
+    }
+}
+
+function renderPortfolioTable(groups) {
     const tbody = document.getElementById('portfolio-tbody');
     if (!tbody) return;
     
     tbody.innerHTML = '';
     
-    if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-search"></i> No matching results.</td></tr>';
+    if (groups.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-search"></i> No portfolio data found.</td></tr>';
         return;
     }
     
-    data.forEach(item => {
-        const row = document.createElement('tr');
+    groups.forEach(group => {
+        const pnlClass = group.pnl >= 0 ? 'text-success' : 'text-danger';
+        const dayClass = group.day_change_pct >= 0 ? 'text-success' : 'text-danger';
         
-        const pnl = parseFloat(item.pnl) || 0;
-        const pnlPct = parseFloat(item.pnl_pct) || 0;
-        const pnlClass = pnl >= 0 ? 'text-success' : 'text-danger';
+        const mainRow = document.createElement('tr');
+        mainRow.className = 'portfolio-group-row';
+        mainRow.onclick = () => togglePortfolioGroup(group.code);
         
-        const dayChange = parseFloat(item.day_change_pct) || 0;
-        const dayClass = dayChange >= 0 ? 'text-success' : 'text-danger';
-        
-        row.innerHTML = `
-            <td style="font-size: 11px; color: var(--text-dim); font-weight: 600;">${item.app_user_id || '-'}</td>
+        mainRow.innerHTML = `
+            <td style="text-align: center; width: 40px;">
+                <i class="fas fa-chevron-right expand-icon" id="icon-${group.code}"></i>
+            </td>
             <td>
-                <div style="font-weight: 700; font-size: 14px; color: var(--primary);">${item.code || '-'}</div>
-                <div style="font-size: 10px; color: var(--text-dim);">${item.isin || '-'}</div>
+                <div style="font-weight: 700; font-size: 14px; color: var(--primary);">${group.code}</div>
+                <div style="font-size: 10px; color: var(--text-dim);">${group.isinCode}</div>
             </td>
-            <td style="font-weight: 600; text-align: right;">${item.quantity || 0}</td>
-            <td style="text-align: right;">₹${(parseFloat(item.avg_price) || 0).toFixed(2)}</td>
-            <td style="font-weight: 600; text-align: right;">₹${(parseFloat(item.ltp) || 0).toFixed(2)}</td>
+            <td style="font-weight: 600; text-align: right;">${group.quantity}</td>
+            <td style="text-align: right;">₹${group.avg_price.toFixed(2)}</td>
+            <td style="font-weight: 600; text-align: right;">₹${group.ltp.toFixed(2)}</td>
             <td style="text-align: right;">
-                <div class="${dayClass}" style="font-size: 13px; font-weight: 700;">${dayChange > 0 ? '+' : ''}${dayChange.toFixed(2)}%</div>
+                <div class="${dayClass}" style="font-size: 13px; font-weight: 700;">${group.day_change_pct > 0 ? '+' : ''}${group.day_change_pct.toFixed(2)}%</div>
             </td>
-            <td style="text-align: right;">₹${(parseFloat(item.inv_value) || 0).toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
-            <td style="font-weight: 600; text-align: right;">₹${(parseFloat(item.cur_value) || 0).toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+            <td style="text-align: right;">₹${group.inv_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+            <td style="font-weight: 600; text-align: right;">₹${group.cur_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
             <td style="text-align: right;">
-                <div class="${pnlClass}" style="font-weight: 700;">${pnl > 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</div>
-                <div class="${pnlClass}" style="font-size: 11px;">(${pnlPct > 0 ? '+' : ''}${pnlPct.toFixed(2)}%)</div>
+                <div class="${pnlClass}" style="font-weight: 700;">${group.pnl > 0 ? '+' : ''}₹${group.pnl.toLocaleString('en-IN', {maximumFractionDigits: 0})}</div>
+                <div class="${pnlClass}" style="font-size: 11px;">(${group.pnl_pct > 0 ? '+' : ''}${group.pnl_pct.toFixed(2)}%)</div>
             </td>
             <td style="color: var(--text-dim); font-size: 11px; text-align: center;">
-                ${item.last_sync_at ? new Date(item.last_sync_at).toLocaleString('en-IN', {dateStyle: 'short', timeStyle: 'short'}) : '-'}
+                ${group.last_sync_at ? new Date(group.last_sync_at).toLocaleString('en-IN', {dateStyle: 'short', timeStyle: 'short'}) : '-'}
             </td>
         `;
-        
-        tbody.appendChild(row);
+        tbody.appendChild(mainRow);
+
+        // Render Child Rows (Split-up)
+        group.items.forEach(child => {
+            const childRow = document.createElement('tr');
+            childRow.className = `portfolio-child-row child-of-${group.code}`;
+            childRow.style.display = 'none';
+            
+            const itemPnlClass = child.pnl >= 0 ? 'text-success' : 'text-danger';
+
+            childRow.innerHTML = `
+                <td></td>
+                <td>
+                    <span class="broker-pill">${child.brokerTag}</span>
+                </td>
+                <td style="text-align: right;">${child.quantity}</td>
+                <td style="text-align: right;">₹${child.avg_price.toFixed(2)}</td>
+                <td style="text-align: right;">₹${child.ltp.toFixed(2)}</td>
+                <td style="text-align: right;">
+                    <span class="${itemPnlClass}">${child.pnl_pct > 0 ? '+' : ''}${child.pnl_pct.toFixed(2)}%</span>
+                </td>
+                <td style="text-align: right; color: var(--text-dim);">₹${child.inv_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+                <td style="text-align: right; color: var(--text-dim);">₹${child.cur_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+                <td style="text-align: right;">
+                    <div class="${itemPnlClass}">₹${child.pnl.toLocaleString('en-IN', {maximumFractionDigits: 0})}</div>
+                </td>
+                <td style="text-align: center; font-size: 10px; color: var(--text-dim);">
+                    ${child.last_sync_at ? new Date(child.last_sync_at).toLocaleString('en-IN', {dateStyle: 'short', timeStyle: 'short'}) : '-'}
+                </td>
+            `;
+            tbody.appendChild(childRow);
+        });
     });
 }
 

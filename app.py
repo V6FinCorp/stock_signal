@@ -144,6 +144,7 @@ class StrategySave(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list
+    mode: str = "swing"
 
 # --- Auth Endpoints ---
 @app.post("/api/auth/login")
@@ -618,7 +619,7 @@ async def api_chat(req: ChatRequest):
                 "content": "You are a helpful expert stock market analysis assistant integrated into the StockSignal Pro app. Provide concise, clear answers. Focus on the actual data retrieved."
             })
             
-        reply = await chat_with_assistant(messages)
+        reply = await chat_with_assistant(messages, mode=req.mode)
         return {"status": "success", "reply": reply}
     except Exception as e: 
         raise HTTPException(status_code=500, detail=str(e))
