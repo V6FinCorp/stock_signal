@@ -127,6 +127,8 @@ let isSectorBarCollapsed = true;
 let activeTab = localStorage.getItem('activeTab') || 'dashboard';
 let appZoom = 1.0;
 let screenerMasterData = []; // Cache for local screener filtering
+let _portfolioData = []; // Cache for local portfolio filtering
+let _portfolioSortState = { key: 'quantity', asc: false }; // Default sort by quantity desc
 
 let currentEditorMode = 'query';
 let currentStrategyId = null; 
@@ -278,6 +280,7 @@ async function fetchAndRenderSignals(forceFetch = false) {
     // Return instant cached data from memory/local storage if available
     if (!forceFetch && signalCache[cacheKey]) {
         liveSignals = signalCache[cacheKey];
+        holdingsISINs = liveSignals.filter(s => s.is_holding).map(s => s.isin); // Re-sync holdings from cache
         renderSignals();
         // Even if we have cache, if it's the first load, we might want to refresh anyway
         // but not block the UI. So we continue but don't show skeleton.
@@ -310,6 +313,7 @@ async function fetchAndRenderSignals(forceFetch = false) {
 
         if (result.status === 'success') {
             liveSignals = result.data;
+            holdingsISINs = result.data.filter(s => s.is_holding).map(s => s.isin);
             signalCache[cacheKey] = liveSignals; // Save to memory cache
             saveConfigsToLocalStorage(); // Persist to local storage
         } else {
@@ -723,8 +727,8 @@ function renderSignals() {
             <td class="col-rank"><div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score > 0 ? '+' : ''}${score}</div></td>
             <td class="col-symbol">
                 <div style="display: flex; align-items: center;">
-                    <div class="symbol-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${stock.symbol}</div>
-                    ${holdingsISINs.includes(stock.isin) ? '<span class="holdings-badge">HOLDING</span>' : ''}
+                    <div class="symbol-name">${stock.symbol}</div>
+                    ${holdingsISINs.includes(stock.isin) ? '<span title="Portfolio Holding" style="color: var(--primary); font-size: 12px; margin-left: 6px;"><i class="fas fa-briefcase"></i></span>' : ''}
                 </div>
                 <div class="isin-code">${stock.isin}</div>
             </td>
@@ -1231,7 +1235,10 @@ function saveProfileSettings() {
 
 function switchTab(tabId) {
     // Hide all main content views
-    document.querySelectorAll('.main-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.main-content').forEach(el => {
+        el.classList.add('hidden');
+        el.style.display = ''; // Clear inline styles
+    });
 
     // Show target view
     const target = document.getElementById(tabId + '-view');
@@ -1279,24 +1286,7 @@ function switchTab(tabId) {
     } else if (tabId === 'indices') {
         fetchAndRenderIndices();
     } else if (tabId === 'portfolio') {
-        setUniverse('portfolio');
-        // We override the activeTab and manually show dashboard since portfolio uses dashboard layout
-        activeTab = 'dashboard';
-        document.querySelectorAll('.view-section, .main-content').forEach(el => {
-            if (el.id !== 'support-view' && el.id !== 'indices-view') el.style.display = 'none';
-        });
-        document.getElementById('dashboard-view').style.display = 'block';
-        document.getElementById('support-view').classList.add('hidden');
-        document.getElementById('indices-view').classList.add('hidden');
-        
-        // Fix active classes on sidebar
-        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-        const navEl = document.getElementById('nav-portfolio');
-        if (navEl) navEl.classList.add('active');
-        
-        // Trigger render
-        renderSignals();
-        return;
+        fetchAndRenderPortfolio();
     }
 }
 
@@ -5738,3 +5728,241 @@ async function fetchAndRenderIndices() {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--danger);">Error loading indices data.</td></tr>';
     }
 }
+
+
+// --- AI Chatbot Logic ---
+let aiMessages = [];
+
+function toggleAIChat() {
+    const widget = document.getElementById('ai-chat-widget');
+    widget.classList.toggle('collapsed');
+    
+    // If we're collapsing, also remove large state
+    if (widget.classList.contains('collapsed')) {
+        widget.classList.remove('large');
+        const expandBtn = document.getElementById('ai-expand-btn');
+        if (expandBtn) expandBtn.innerHTML = '<i class="fas fa-expand-alt"></i>';
+    }
+
+    if(!widget.classList.contains('collapsed')) {
+        setTimeout(() => document.getElementById('ai-chat-input').focus(), 300);
+    }
+}
+
+function toggleAIExpand() {
+    const widget = document.getElementById('ai-chat-widget');
+    const expandBtn = document.getElementById('ai-expand-btn');
+    
+    widget.classList.toggle('large');
+    
+    if (widget.classList.contains('large')) {
+        expandBtn.innerHTML = '<i class="fas fa-compress-alt"></i>';
+        expandBtn.title = "Shrink Chat";
+    } else {
+        expandBtn.innerHTML = '<i class="fas fa-expand-alt"></i>';
+        expandBtn.title = "Expand Chat";
+    }
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+    
+    input.value = '';
+    
+    // Add user message to UI
+    appendChatMessage('user', text);
+    
+    // Add to history
+    aiMessages.push({role: "user", content: text});
+    
+    // Add loading indicator
+    const loadingId = 'loading-' + Date.now();
+    appendChatMessage('loading', '<i class="fas fa-circle-notch fa-spin"></i> Analyzing data...', loadingId);
+    
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({messages: aiMessages})
+        });
+        
+        const data = await response.json();
+        
+        // Remove loading
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+        
+        if (data.status === 'success') {
+            aiMessages.push({role: "assistant", content: data.reply});
+            // Convert simple markdown/newlines to HTML
+            let formattedReply = data.reply.replace(/\n\n/g, '<br><br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+            appendChatMessage('assistant', formattedReply);
+        } else {
+            appendChatMessage('assistant', `<span style="color:var(--danger)">Error: ${data.detail || data.message || 'Failed to get response'}</span>`);
+        }
+    } catch (e) {
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+        appendChatMessage('assistant', `<span style="color:var(--danger)">Connection Error!</span>`);
+    }
+}
+
+function appendChatMessage(role, content, id=null) {
+    const body = document.getElementById('ai-chat-body');
+    const div = document.createElement('div');
+    div.className = `ai-message ${role === 'user' ? 'ai-user' : 'ai-assistant'}`;
+    if (id) div.id = id;
+    
+    if (role === 'loading') {
+        div.style.opacity = '0.7';
+    }
+    
+    div.innerHTML = content;
+    body.appendChild(div);
+    body.scrollTop = body.scrollHeight; 
+}
+
+async function fetchAndRenderPortfolio() {
+    const tbody = document.getElementById('portfolio-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px;"><i class="fas fa-spinner fa-spin"></i> Loading portfolio...</td></tr>';
+    
+    try {
+        const response = await fetch('/api/portfolio');
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            _portfolioData = result.data; // Store globally
+            filterPortfolio(); // Use filter which calls render
+            
+            // Calculate and render stats dynamically
+            let totalInvested = 0;
+            let totalCurrent = 0;
+            let totalPnl = 0;
+            
+            result.data.forEach(item => {
+                totalInvested += parseFloat(item.inv_value) || 0;
+                totalCurrent += parseFloat(item.cur_value) || 0;
+                totalPnl += parseFloat(item.pnl) || 0;
+            });
+            
+            const overallPnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+            
+            document.getElementById('port-stat-inv').innerText = '₹' + totalInvested.toLocaleString('en-IN', {maximumFractionDigits: 0});
+            document.getElementById('port-stat-cur').innerText = '₹' + totalCurrent.toLocaleString('en-IN', {maximumFractionDigits: 0});
+            
+            const pnlEl = document.getElementById('port-stat-pnl');
+            pnlEl.innerText = (totalPnl > 0 ? '+' : '') + totalPnl.toLocaleString('en-IN', {maximumFractionDigits: 0});
+            pnlEl.className = totalPnl >= 0 ? 'text-success' : 'text-danger';
+            
+            const pctEl = document.getElementById('port-stat-pct');
+            pctEl.innerText = (overallPnlPct > 0 ? '+' : '') + overallPnlPct.toFixed(2) + '%';
+            pctEl.className = overallPnlPct >= 0 ? 'text-success' : 'text-danger';
+            
+        } else {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--danger);">Failed to load portfolio.</td></tr>';
+        }
+    } catch (e) {
+        console.error(e);
+        if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--danger);">Connection error.</td></tr>';
+    }
+}
+
+function filterPortfolio() {
+    const query = (document.getElementById('portfolio-search')?.value || '').toLowerCase();
+    let filtered = [..._portfolioData];
+    
+    if (query) {
+        filtered = filtered.filter(item => 
+            (item.code || '').toLowerCase().includes(query) || 
+            (item.isin || '').toLowerCase().includes(query) ||
+            (item.app_user_id || '').toLowerCase().includes(query)
+        );
+    }
+    
+    // Apply sorting
+    const key = _portfolioSortState.key;
+    const asc = _portfolioSortState.asc;
+    
+    if (key) {
+        filtered.sort((a, b) => {
+            let valA = a[key];
+            let valB = b[key];
+            
+            // Handle numeric parsing
+            if (['quantity', 'avg_price', 'ltp', 'inv_value', 'cur_value', 'pnl', 'day_change_pct'].includes(key)) {
+                valA = parseFloat(valA) || 0;
+                valB = parseFloat(valB) || 0;
+            } else {
+                valA = (valA || '').toString().toLowerCase();
+                valB = (valB || '').toString().toLowerCase();
+            }
+            
+            if (valA < valB) return asc ? -1 : 1;
+            if (valA > valB) return asc ? 1 : -1;
+            return 0;
+        });
+    }
+    
+    renderPortfolioTable(filtered);
+}
+
+function sortPortfolio(key) {
+    if (_portfolioSortState.key === key) {
+        _portfolioSortState.asc = !_portfolioSortState.asc;
+    } else {
+        _portfolioSortState.key = key;
+        _portfolioSortState.asc = true;
+    }
+    filterPortfolio();
+}
+
+function renderPortfolioTable(data) {
+    const tbody = document.getElementById('portfolio-tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-search"></i> No matching results.</td></tr>';
+        return;
+    }
+    
+    data.forEach(item => {
+        const row = document.createElement('tr');
+        
+        const pnl = parseFloat(item.pnl) || 0;
+        const pnlPct = parseFloat(item.pnl_pct) || 0;
+        const pnlClass = pnl >= 0 ? 'text-success' : 'text-danger';
+        
+        const dayChange = parseFloat(item.day_change_pct) || 0;
+        const dayClass = dayChange >= 0 ? 'text-success' : 'text-danger';
+        
+        row.innerHTML = `
+            <td style="font-size: 11px; color: var(--text-dim); font-weight: 600;">${item.app_user_id || '-'}</td>
+            <td>
+                <div style="font-weight: 700; font-size: 14px; color: var(--primary);">${item.code || '-'}</div>
+                <div style="font-size: 10px; color: var(--text-dim);">${item.isin || '-'}</div>
+            </td>
+            <td style="font-weight: 600; text-align: right;">${item.quantity || 0}</td>
+            <td style="text-align: right;">₹${(parseFloat(item.avg_price) || 0).toFixed(2)}</td>
+            <td style="font-weight: 600; text-align: right;">₹${(parseFloat(item.ltp) || 0).toFixed(2)}</td>
+            <td style="text-align: right;">
+                <div class="${dayClass}" style="font-size: 13px; font-weight: 700;">${dayChange > 0 ? '+' : ''}${dayChange.toFixed(2)}%</div>
+            </td>
+            <td style="text-align: right;">₹${(parseFloat(item.inv_value) || 0).toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+            <td style="font-weight: 600; text-align: right;">₹${(parseFloat(item.cur_value) || 0).toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</td>
+            <td style="text-align: right;">
+                <div class="${pnlClass}" style="font-weight: 700;">${pnl > 0 ? '+' : ''}₹${pnl.toLocaleString('en-IN', {minimumFractionDigits: 0, maximumFractionDigits: 0})}</div>
+                <div class="${pnlClass}" style="font-size: 11px;">(${pnlPct > 0 ? '+' : ''}${pnlPct.toFixed(2)}%)</div>
+            </td>
+            <td style="color: var(--text-dim); font-size: 11px; text-align: center;">
+                ${item.last_sync_at ? new Date(item.last_sync_at).toLocaleString('en-IN', {dateStyle: 'short', timeStyle: 'short'}) : '-'}
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
+

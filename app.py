@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from config import Config
 from indicator_engine import process_profile, get_enriched_chart_data
 from scenario_engine import run_scenario_backtest
+from chat_engine import chat_with_assistant
 from pydantic import BaseModel
 import json
 import hashlib
@@ -140,6 +141,9 @@ class StrategySave(BaseModel):
     query: str
     mode: Optional[str] = None
     timeframe: Optional[str] = None
+
+class ChatRequest(BaseModel):
+    messages: list
 
 # --- Auth Endpoints ---
 @app.post("/api/auth/login")
@@ -437,6 +441,34 @@ async def api_indices():
         if 'datamart_pool' in locals(): datamart_pool.close()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/portfolio", dependencies=[Depends(check_auth)])
+async def api_portfolio(token: str = Depends(get_session_token)):
+    try:
+        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+        async with app_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SELECT * FROM tb_app_sf_holdings ORDER BY symbol ASC")
+                rows = await cur.fetchall()
+                
+                formatted_data = []
+                for row in rows:
+                    processed_row = {}
+                    for k, v in row.items():
+                        if isinstance(v, datetime):
+                            processed_row[k] = v.isoformat()
+                        elif v is not None and not isinstance(v, (str, bytes, int, float, bool)):
+                            try:
+                                processed_row[k] = float(v)
+                            except:
+                                processed_row[k] = str(v)
+                        else:
+                            processed_row[k] = v
+                    formatted_data.append(processed_row)
+        app_pool.close()
+        return {"status": "success", "data": formatted_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/status", dependencies=[Depends(check_auth)])
 async def api_status(mode: str = "swing", timeframe: str = None):
     app_pool = None
@@ -575,6 +607,21 @@ async def api_calculate(mode: str, fundamentals: bool = False):
 async def stop_fetch(mode: str):
     fetching_active[mode] = False
     return {"status": "success"}
+
+@app.post("/api/chat", dependencies=[Depends(check_auth)])
+async def api_chat(req: ChatRequest):
+    try:
+        messages = req.messages
+        if not any(m.get("role") == "system" for m in messages):
+            messages.insert(0, {
+                "role": "system", 
+                "content": "You are a helpful expert stock market analysis assistant integrated into the StockSignal Pro app. Provide concise, clear answers. Focus on the actual data retrieved."
+            })
+            
+        reply = await chat_with_assistant(messages)
+        return {"status": "success", "reply": reply}
+    except Exception as e: 
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/stream/fetch-data", dependencies=[Depends(check_auth)])
 async def stream_fetch(mode: str = "swing"):

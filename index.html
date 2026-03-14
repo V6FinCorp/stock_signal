@@ -1641,6 +1641,66 @@
             </div>
         </main>
 
+        <!-- PORTFOLIO VIEW -->
+        <main class="main-content hidden" id="portfolio-view">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1>My Portfolio</h1>
+                    <p class="text-dim">Real-time status of your synchronized holdings.</p>
+                </div>
+                <div class="header-right">
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <div class="search-box" style="margin: 0; width: 250px;">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="portfolio-search" placeholder="Search code/user..." oninput="filterPortfolio()">
+                        </div>
+                        <button class="btn btn-dim" onclick="fetchAndRenderPortfolio()"><i class="fas fa-sync-alt"></i> Refresh Portfolio</button>
+                    </div>
+                </div>
+            </header>
+            
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 24px;">
+                <div class="stat-card">
+                    <div class="stat-title">Invested Amount</div>
+                    <div class="stat-value" id="port-stat-inv">₹0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Current Value</div>
+                    <div class="stat-value" id="port-stat-cur">₹0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">Overall P&L</div>
+                    <div class="stat-value" id="port-stat-pnl">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-title">P&L (%)</div>
+                    <div class="stat-value" id="port-stat-pct">0.00%</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table class="signal-table">
+                    <thead>
+                        <tr>
+                            <th onclick="sortPortfolio('app_user_id')" style="cursor:pointer;">User ID <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('code')" style="cursor:pointer;">Code <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('quantity')" style="cursor:pointer; text-align: right;">Qty <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('avg_price')" style="cursor:pointer; text-align: right;">Avg Price <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('ltp')" style="cursor:pointer; text-align: right;">LTP <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('day_change_pct')" style="cursor:pointer; text-align: right;">Day Chg <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('inv_value')" style="cursor:pointer; text-align: right;">Invested <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('cur_value')" style="cursor:pointer; text-align: right;">Cur Value <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('pnl')" style="cursor:pointer; text-align: right;">Unrealized PNL <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('last_sync_at')" style="cursor:pointer; text-align: center;">Last Sync <i class="fas fa-sort"></i></th>
+                        </tr>
+                    </thead>
+                    <tbody id="portfolio-tbody">
+                        <!-- Rows injected by app.js -->
+                    </tbody>
+                </table>
+            </div>
+        </main>
+
         <!-- SUPPORT & FLOW VIEW -->
         <main class="main-content hidden" id="support-view">
             <header class="top-header">
@@ -1894,8 +1954,31 @@
             </div>
         </div>
     </div>
+    
+    <!-- Chatbot Widget UI -->
+    <div id="ai-chat-widget" class="ai-widget collapsed">
+        <div class="ai-header" onclick="toggleAIChat()">
+            <div class="ai-title">
+                <i class="fas fa-robot"></i> 
+                <span>Signal Assistant</span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="ai-close-btn" id="ai-expand-btn" onclick="event.stopPropagation(); toggleAIExpand()" title="Expand Chat"><i class="fas fa-expand-alt"></i></button>
+                <button class="ai-close-btn" onclick="event.stopPropagation(); toggleAIChat()"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="ai-body" id="ai-chat-body">
+            <div class="ai-message ai-assistant">
+                Hi! I'm your Signal Pro Assistant. Ask me about top signals, stock status, or market sentiment.
+            </div>
+        </div>
+        <div class="ai-footer">
+            <input type="text" id="ai-chat-input" placeholder="Ask something..." onkeyup="if(event.key === 'Enter') sendAIMessage()">
+            <button class="btn btn-primary" style="padding: 0; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 16px;" onclick="sendAIMessage()"><i class="fas fa-arrow-up"></i></button>
+        </div>
+    </div>
 
-    <script src="/static/app.js?v=2" onerror="this.src='app.js?v=2'"></script>
+    <script src="/static/app.js?v=4" onerror="this.src='app.js?v=4'"></script>
     <div id="strat-suggestions"
         style="display:none; position: absolute; z-index: 10000; background: #161b22; border: 1px solid var(--primary); border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); min-width: 250px; max-height: 250px; overflow-y: auto; pointer-events: auto;">
     </div>
