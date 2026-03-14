@@ -77,6 +77,9 @@
                     <i class="fas fa-microchip"></i> <span>Strategy Lab</span></a>
                 <a href="#" class="nav-item" id="nav-history" onclick="switchTab('history')"><i
                         class="fas fa-history"></i> <span>Signal History</span></a>
+                <a href="#" class="nav-item" id="nav-indices" onclick="switchTab('indices')">
+                    <i class="fas fa-chart-pie"></i> <span>Market Indices</span>
+                </a>
                 <a href="#" class="nav-item" id="nav-portfolio" onclick="switchTab('portfolio')">
                     <i class="fas fa-briefcase"></i> <span>My Portfolio</span>
                 </a>
@@ -85,6 +88,9 @@
                 <a href="#" class="nav-item" id="nav-settings" onclick="switchTab('settings')"><i
                         class="fas fa-cog"></i>
                     <span>Settings</span></a>
+                <a href="/static/documentation.html" target="_blank" class="nav-item" id="nav-documentation">
+                    <i class="fas fa-book-open"></i> <span>Documentation</span>
+                </a>
                 <a href="#" class="nav-item" id="nav-support" onclick="switchTab('support')"><i
                         class="fas fa-question-circle"></i>
                     <span>Support & Flow</span></a>
@@ -1643,8 +1649,36 @@
                     <p class="text-dim">Comprehensive guide to StockSignal Pro architecture and features</p>
                 </div>
             </header>
+            
             <div id="support-content" class="support-container">
                 <!-- Content injected via JS -->
+            </div>
+        </main>
+
+        <!-- INDICES VIEW -->
+        <main class="main-content hidden" id="indices-view">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 style="color: var(--text-main); font-weight: 700; display:flex; align-items:center; gap: 12px; margin: 0;">
+                        <i class="fas fa-chart-pie" style="color: var(--primary);"></i> Market Indices
+                    </h1>
+                    <p class="subtitle text-dim" style="font-size: 13px; margin-top: 5px;">Live NSE Broad & Sectoral Index Tracking</p>
+                </div>
+            </header>
+
+            <div class="table-container" style="padding: 20px;">
+                <table class="signals-table" style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-main);">
+                            <th style="text-align: left; padding: 12px 16px;">Indices</th>
+                            <th style="padding: 12px 16px; text-align: right;" colspan="2">Day's Range <i class="fas fa-caret-down"></i></th>
+                            <th style="padding: 12px 16px; text-align: center;" colspan="2">52 Weeks Range</th>
+                        </tr>
+                    </thead>
+                    <tbody id="indices-table-body">
+                        <!-- Populated via Javascript -->
+                    </tbody>
+                </table>
             </div>
         </main>
     </div>

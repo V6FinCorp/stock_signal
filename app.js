@@ -1276,6 +1276,27 @@ function switchTab(tabId) {
         loadSignalHistory();
     } else if (tabId === 'support') {
         renderSupportGuide();
+    } else if (tabId === 'indices') {
+        fetchAndRenderIndices();
+    } else if (tabId === 'portfolio') {
+        setUniverse('portfolio');
+        // We override the activeTab and manually show dashboard since portfolio uses dashboard layout
+        activeTab = 'dashboard';
+        document.querySelectorAll('.view-section, .main-content').forEach(el => {
+            if (el.id !== 'support-view' && el.id !== 'indices-view') el.style.display = 'none';
+        });
+        document.getElementById('dashboard-view').style.display = 'block';
+        document.getElementById('support-view').classList.add('hidden');
+        document.getElementById('indices-view').classList.add('hidden');
+        
+        // Fix active classes on sidebar
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        const navEl = document.getElementById('nav-portfolio');
+        if (navEl) navEl.classList.add('active');
+        
+        // Trigger render
+        renderSignals();
+        return;
     }
 }
 
@@ -5617,5 +5638,103 @@ function scrollToSupport(id) {
     const el = document.getElementById('support-' + id);
     if (el) {
         el.scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+// --- Indices Page Logic ---
+async function fetchAndRenderIndices() {
+    const tbody = document.getElementById('indices-table-body');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;"><i class="fas fa-spinner fa-spin"></i> Loading advanced indices...</td></tr>';
+
+    try {
+        const res = await fetch('/api/indices');
+        const result = await res.json();
+
+        if (result.status === 'success' && result.data && result.data.length > 0) {
+            tbody.innerHTML = '';
+            
+            // Render table rows
+            result.data.forEach(idx => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid var(--border-color)';
+                
+                // Extract metrics
+                const ltp = parseFloat(idx.bs_last ?? idx.bs_ltp ?? 0);
+                
+                // Day metrics
+                const dChange = idx.bs_percentChange !== null && idx.bs_percentChange !== '' ? parseFloat(idx.bs_percentChange) : 0;
+                const dColor = dChange > 0 ? 'var(--success)' : (dChange < 0 ? 'var(--danger)' : 'var(--text-main)');
+                const dChangeText = dChange > 0 ? `+${dChange.toFixed(2)}%` : `${dChange.toFixed(2)}%`;
+                const dHigh = parseFloat(idx.bs_high || ltp);
+                const dLow = parseFloat(idx.bs_low || ltp);
+                
+                // Calculate Day Triangle Position (0 to 100)
+                let dPos = 50;
+                if (dHigh > dLow) dPos = ((ltp - dLow) / (dHigh - dLow)) * 100;
+                dPos = Math.max(0, Math.min(100, dPos));
+
+                // 52-Week Metrics
+                const yChange = idx.bs_perChange365d !== null && idx.bs_perChange365d !== '' ? parseFloat(idx.bs_perChange365d) : 0;
+                const yColor = yChange > 0 ? 'var(--success)' : (yChange < 0 ? 'var(--danger)' : 'var(--text-main)');
+                const yChangeText = yChange > 0 ? `+${yChange.toFixed(2)}%` : `${yChange.toFixed(2)}%`;
+                const yHigh = parseFloat(idx.bs_yearHigh || ltp);
+                const yLow = parseFloat(idx.bs_yearLow || ltp);
+                
+                // Calculate 52-Week Triangle Position (0 to 100)
+                let yPos = 50;
+                if (yHigh > yLow) yPos = ((ltp - yLow) / (yHigh - yLow)) * 100;
+                yPos = Math.max(0, Math.min(100, yPos));
+
+                // Symbols
+                let symbolText = idx.bs_indexSymbol || '-';
+                // optional: format symbol name slightly
+                // symbolText = symbolText.replace('NIFTY ', '');
+
+                // Format time string nicely safely
+                let timeStr = '-';
+                const dtStr = idx.bs_created_at || idx.created_at;
+                if (dtStr) {
+                    try {
+                        const dateObj = new Date(dtStr);
+                        if (!isNaN(dateObj.getTime())) {
+                            timeStr = dateObj.toLocaleDateString('en-IN', {day:'2-digit', month:'2-digit', year:'numeric'}) + ' ' + dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute:'2-digit' });
+                        } else {
+                            timeStr = String(dtStr).substring(0, 16).replace('T', ' ');
+                        }
+                    } catch(e) { timeStr = String(dtStr).substring(0, 16); }
+                }
+
+                const createBar = (pos) => `
+                    <div style="position: relative; width: 100%; min-width: 140px; height: 6px; background: linear-gradient(to right, var(--success) ${pos}%, var(--danger) ${pos}%); border-radius: 3px; display: inline-block; vertical-align: middle;">
+                        <div style="position: absolute; top: -8px; left: ${pos}%; transform: translateX(-50%); width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #fff;"></div>
+                    </div>
+                `;
+
+                tr.innerHTML = `
+                    <td style="padding: 12px 16px; font-weight: 500; color: var(--text-main); font-size: 13px;">
+                        ${symbolText}
+                        <div style="font-size: 10px; color: var(--text-dim); font-weight: 400; margin-top: 2px;">
+                            ${timeStr}
+                        </div>
+                    </td>
+                    <td style="padding: 12px 16px; text-align: right; width: 80px; color: ${dColor}; font-weight: 600; font-size: 13px;">${dChangeText}</td>
+                    <td style="padding: 12px 16px; text-align: center; width: 250px;">
+                        ${createBar(dPos)}
+                    </td>
+                    <td style="padding: 12px 16px; text-align: right; width: 80px; color: ${yColor}; font-weight: 600; font-size: 13px;">${yChangeText}</td>
+                    <td style="padding: 12px 16px; text-align: center; width: 250px;">
+                        ${createBar(yPos)}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-dim);">No indices data found.</td></tr>';
+        }
+    } catch (e) {
+        console.error("Failed to fetch indices:", e);
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px; color:var(--danger);">Error loading indices data.</td></tr>';
     }
 }

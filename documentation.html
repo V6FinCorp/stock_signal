@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockSignal Pro - Technical & Operational Master Guide</title>
+    <!-- Core App Styling Integration -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    
+    <style>
+        :root {
+            --doc-bg: #0F1115;
+            --doc-surface: #1E222D;
+            --doc-surface-alt: #2A2E39;
+            --doc-text: #D1D4DC;
+            --doc-text-muted: #8F98A0;
+            --doc-accent: #2962FF;
+            --doc-accent-glow: rgba(41, 98, 255, 0.2);
+            --doc-border: rgba(255, 255, 255, 0.08);
+            
+            --success: #089981;
+            --danger: #F23645;
+            --warning: #F59E0B;
+        }
+
+        body {
+            background-color: var(--doc-bg);
+            color: var(--doc-text);
+            font-family: 'Inter', -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+
+        /* Fixed Navigation Sidebar for Documentation */
+        .doc-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 250px;
+            height: 100vh;
+            background: var(--doc-surface);
+            border-right: 1px solid var(--doc-border);
+            padding: 24px;
+            overflow-y: auto;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+        
+        .doc-sidebar-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #FFF;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--doc-border);
+        }
+
+        .doc-nav-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .doc-nav-item {
+            margin-bottom: 8px;
+        }
+
+        .doc-nav-link {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            color: var(--doc-text-muted);
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .doc-nav-link:hover {
+            background: rgba(255,255,255,0.05);
+            color: #FFF;
+        }
+        
+        .doc-nav-link.active {
+            background: var(--doc-accent-glow);
+            color: var(--doc-accent);
+            border-left: 3px solid var(--doc-accent);
+            padding-left: 9px;
+        }
+
+        /* Main Content Container */
+        .doc-main {
+            margin-left: 250px;
+            padding: 40px;
+            max-width: 1200px;
+        }
+
+        /* Typography & Layout */
+        .doc-header-1 {
+            font-size: 32px;
+            font-weight: 800;
+            color: #FFF;
+            margin-top: 0;
+            margin-bottom: 16px;
+            letter-spacing: -0.5px;
+        }
+
+        .doc-header-2 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #FFF;
+            margin-top: 48px;
+            margin-bottom: 20px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--doc-border);
+        }
+
+        .doc-header-3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #FFF;
+            margin-top: 32px;
+            margin-bottom: 16px;
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: var(--doc-text);
+        }
+
+        /* Alert/Callout Boxes */
+        .doc-alert {
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-size: 14px;
+            line-height: 1.5;
+            display: flex;
+            gap: 16px;
+        }
+        .doc-alert i { font-size: 20px; margin-top: 2px; }
+        .doc-alert-info { background: rgba(41, 98, 255, 0.1); border-left: 4px solid var(--doc-accent); color: #B0C4DE; }
+        .doc-alert-info i { color: var(--doc-accent); }
+        .doc-alert-warning { background: rgba(245, 158, 11, 0.1); border-left: 4px solid var(--warning); color: #FCE68A; }
+        .doc-alert-warning i { color: var(--warning); }
+        .doc-alert-danger { background: rgba(242, 54, 69, 0.1); border-left: 4px solid var(--danger); color: #FECACA; }
+        .doc-alert-danger i { color: var(--danger); }
+
+        /* Code & Preformatted Text */
+        code {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            background: rgba(0,0,0,0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #E2E8F0;
+            border: 1px solid var(--doc-border);
+        }
+
+        pre {
+            background: #0B0C10;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--doc-border);
+            margin: 20px 0;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+            border: none;
+            color: #A0AEC0;
+        }
+        
+        .code-comment { color: #6B7280; }
+        .code-keyword { color: #C678DD; }
+        .code-string { color: #98C379; }
+        .code-function { color: #61AFEF; }
+        .code-number { color: #D19A66; }
+
+        /* Tables */
+        .doc-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 24px 0;
+            font-size: 14px;
+        }
+        .doc-table th, .doc-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--doc-border);
+        }
+        .doc-table th {
+            font-weight: 600;
+            color: #FFF;
+            background: rgba(255,255,255,0.02);
+        }
+        .doc-table td { color: var(--doc-text-muted); }
+        .doc-table tr:hover td { background: rgba(255,255,255,0.01); }
+
+        /* Part Divider */
+        .part-divider {
+            margin: 80px 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--doc-accent), transparent);
+            opacity: 0.5;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <div class="doc-sidebar">
+        <div class="doc-sidebar-title">
+            <i class="fas fa-book-open" style="color: var(--doc-accent); margin-right: 8px;"></i> SignalPro Docs
+        </div>
+        
+        <div style="font-size: 11px; font-weight: 700; color: #6366F1; text-transform: uppercase; margin: 16px 0 8px; letter-spacing: 1px;">Part 1: The Core Architecture</div>
+        <ul class="doc-nav-list">
+            <li class="doc-nav-item"><a href="#arch-overview" class="doc-nav-link active">System Architecture</a></li>
+            <li class="doc-nav-item"><a href="#arch-db" class="doc-nav-link">Database & Schema Models</a></li>
+            <li class="doc-nav-item"><a href="#arch-calc" class="doc-nav-link">Indicator Engine (Deep Logic)</a></li>
+            <li class="doc-nav-item"><a href="#arch-scenario" class="doc-nav-link">Scenario Engine (Backtesting)</a></li>
+            <li class="doc-nav-item"><a href="#arch-frontend" class="doc-nav-link">Frontend JS Logic & State</a></li>
+        </ul>
+
+        <div style="font-size: 11px; font-weight: 700; color: #10B981; text-transform: uppercase; margin: 32px 0 8px; letter-spacing: 1px;">Part 2: API Integration</div>
+        <ul class="doc-nav-list">
+            <li class="doc-nav-item"><a href="#api-endpoints" class="doc-nav-link">Endpoint Specifications</a></li>
+            <li class="doc-nav-item"><a href="#api-sse" class="doc-nav-link">Streaming (SSE)</a></li>
+        </ul>
+
+        <div style="font-size: 11px; font-weight: 700; color: #F59E0B; text-transform: uppercase; margin: 32px 0 8px; letter-spacing: 1px;">Part 3: End User Guide</div>
+        <ul class="doc-nav-list">
+            <li class="doc-nav-item"><a href="#user-dashboard" class="doc-nav-link">Trading Dashboard</a></li>
+            <li class="doc-nav-item"><a href="#user-screener" class="doc-nav-link">Pro Screener & Blueprints</a></li>
+            <li class="doc-nav-item"><a href="#user-lab" class="doc-nav-link">Strategy Lab PRO</a></li>
+            <li class="doc-nav-item"><a href="#user-backtest" class="doc-nav-link">Scenario Backtester</a></li>
+        </ul>
+        
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--doc-border);">
+            <a href="/" style="color: var(--doc-text-muted); text-decoration: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-arrow-left"></i> Back to Application
+            </a>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="doc-main">
+        <h1 class="doc-header-1">StockSignal Pro - Master Guide</h1>
+        <p style="font-size: 16px; color: var(--doc-text-muted);">
+            An ultra-detailed technical breakdown outlining exact code architectures, mathematical algorithms, database structures, and operational user flows required for 100% precision AI-recreation or manual auditing.
+        </p>
+
+        <div class="doc-alert doc-alert-info">
+            <i class="fas fa-robot"></i>
+            <div>
+                <strong>Zero-Context AI Directive:</strong> Feeding this HTML file to an AI Pair Programmer provides the exhaustive parameter set, schema relationships, mathematical weighting algorithms, and JS state dependencies needed to rebuild the full stack from absolute zero without iterative prompting.
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PART 1: THE CORE ARCHITECTURE              -->
+        <!-- ========================================== -->
+
+        <h2 id="arch-overview" class="doc-header-2">1. System Architecture Overview</h2>
+        <p>The system is an asynchronous high-performance calculation engine for algorithmic stock screening and backtesting.</p>
+        
+        <table class="doc-table">
+            <tr>
+                <th style="width: 25%;">Layer</th>
+                <th>Technology Stack & Specifications</th>
+            </tr>
+            <tr>
+                <td><strong>Backend HTTP API</strong></td>
+                <td><code>FastAPI</code> (Python 3.10+). Runs asynchronously on Uvicorn. Routes mounted strictly for JSON APIs and Static asset delivery. Multi-process load balancing via Gunicorn allowed.</td>
+            </tr>
+            <tr>
+                <td><strong>Data Calculation Engine</strong></td>
+                <td><code>pandas_ta</code> and <code>numpy</code>. Extensive DataFrame matrix calculations relying on vectorized shifting.</td>
+            </tr>
+            <tr>
+                <td><strong>Databases (MySQL)</strong></td>
+                <td><strong>Primary App Connection Pool:</strong> Local App State. Handles logic (signals, profiles, user data).<br><strong>Secondary Datamart Pool:</strong> View schemas for read-only Universe sets, financial parameters, and indices.</td>
+            </tr>
+            <tr>
+                <td><strong>Asynchronous DB Connector</strong></td>
+                <td><code>aiomysql</code> pool managing concurrent execution loops per symbol map. Strict locking on scenario engine bounds.</td>
+            </tr>
+            <tr>
+                <td><strong>Frontend Framework</strong></td>
+                <td>Strictly decoupled constraints: <strong>0% JS Frameworks</strong> (No React/Vue). Pure Vanilla JS State implementation. 100% custom SVG rendering engine built into `app.js`. CSS Grid + Flexbox based theming.</td>
+            </tr>
+        </table>
+
+
+        <h2 id="arch-db" class="doc-header-2">2. Database & Schema Models</h2>
+        <p>The exact SQL structure mappings required for the Application Schema (App Pool). Note the precise <code>DECIMAL</code> precision bounds.</p>
+
+<pre><span class="code-comment">-- The primary signal output matrix derived via Vectorized Engine</span>
+<span class="code-keyword">CREATE TABLE</span> <span class="code-function">app_sg_calculated_signals</span> (
+    <span class="code-string">isin</span> <span class="code-keyword">VARCHAR</span>(20) <span class="code-keyword">NOT NULL</span>,
+    <span class="code-string">profile_id</span> <span class="code-keyword">VARCHAR</span>(20) <span class="code-keyword">NOT NULL</span> <span class="code-comment">-- 'intraday' | 'swing'</span>,
+    <span class="code-string">timeframe</span> <span class="code-keyword">VARCHAR</span>(10) <span class="code-keyword">NOT NULL</span> <span class="code-comment">-- '5m', '15m', '1d', '1w', '1mo'</span>,
+    
+    <span class="code-comment">-- Market Data</span>
+    <span class="code-string">timestamp</span> <span class="code-keyword">DATETIME NOT NULL</span>,
+    <span class="code-string">ltp</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    
+    <span class="code-comment">-- Indicators State</span>
+    <span class="code-string">rsi</span> <span class="code-keyword">DECIMAL</span>(8, 4),
+    <span class="code-string">rsi_day_high</span> <span class="code-keyword">DECIMAL</span>(8, 4),
+    <span class="code-string">rsi_day_low</span> <span class="code-keyword">DECIMAL</span>(8, 4),
+    <span class="code-string">ema_signal</span> <span class="code-keyword">VARCHAR</span>(10) <span class="code-comment">-- 'BUY' | 'SELL'</span>,
+    <span class="code-string">ema_fast</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">ema_slow</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">volume_signal</span> <span class="code-keyword">VARCHAR</span>(20) <span class="code-comment">-- 'NORMAL' | 'BULL_SPIKE' | 'BEAR_SPIKE'</span>,
+    <span class="code-string">volume_ratio</span> <span class="code-keyword">DECIMAL</span>(10, 4),
+    <span class="code-string">supertrend_dir</span> <span class="code-keyword">VARCHAR</span>(10),
+    <span class="code-string">supertrend_value</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">dma_data</span> <span class="code-keyword">JSON</span> <span class="code-comment">-- Strict Key Value structure: {"SMA_10": float, "SMA_200": float}</span>,
+    
+    <span class="code-comment">-- Trade Mathematical Matrix</span>
+    <span class="code-string">confluence_rank</span> <span class="code-keyword">INT DEFAULT</span> 0,
+    <span class="code-string">target</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">sl</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">trade_strategy</span> <span class="code-keyword">VARCHAR</span>(50) <span class="code-comment">-- e.g., 'PERFECT_BUY', 'DMA_BOUNCE'</span>,
+    
+    <span class="code-comment">-- Visual UI Memory Mappings </span>
+    <span class="code-string">candlestick_pattern</span> <span class="code-keyword">VARCHAR</span>(100),
+    <span class="code-string">pattern_score</span> <span class="code-keyword">INT DEFAULT</span> 0,
+    <span class="code-string">last_5_candles</span> <span class="code-keyword">JSON</span>, <span class="code-comment">-- Format: [{"t":"...", "o": 100, "h": 102, "l": 99, "c": 101}, ...]</span>
+    
+    <span class="code-comment">-- Denormalized Fundamental Metadata (From Datamart Join)</span>
+    <span class="code-string">sector</span> <span class="code-keyword">VARCHAR</span>(100),
+    <span class="code-string">industry</span> <span class="code-keyword">VARCHAR</span>(100),
+    <span class="code-string">pe</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">pb</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">roe</span> <span class="code-keyword">DECIMAL</span>(12, 4),
+    <span class="code-string">is_fav</span> <span class="code-keyword">BOOLEAN DEFAULT FALSE</span>,
+    <span class="code-string">is_holding</span> <span class="code-keyword">BOOLEAN DEFAULT FALSE</span>,
+
+    <span class="code-keyword">PRIMARY KEY</span> (isin, profile_id, timeframe)
+);</pre>
+
+        <h2 id="arch-calc" class="doc-header-2">3. Indicator Engine: Mathematical Logic</h2>
+        <p>The engine resides in <code>indicator_engine.py</code>. It manages <code>process_profile(pool, datamart_pool, profile_id, timeframe)</code> mathematically mapping Pandas vectors.</p>
+        
+        <h3 class="doc-header-3">Exact Indicator Constraints</h3>
+        <ul>
+            <li><strong>Intraday Setup:</strong> RSI(14) with OB/OS bounds at 80/20. EMA (Fast=9, Slow=21). Supertrend (Len=10, Mult=2.5). Volume Period=20, Spike Ratio=1.5x.</li>
+            <li><strong>Swing Setup:</strong> RSI(14) with OB/OS bounds at 70/30. EMA (Fast=9, Slow=20). Supertrend (Len=10, Mult=3.0). Volume Period=20, Spike Ratio=2.0x.</li>
+            <li><strong>DMA Anchoring:</strong> Simple Moving Averages (10, 20, 50, 200) are explicitly anchored to the <strong>1D timeframe</strong> regardless of what intraday subset is executed. The engine uses memory caching <code>shared_cache</code> to stop identical pandas recalculation loops against 1D base data.</li>
+        </ul>
+
+        <h3 class="doc-header-3">Resampling Data Injection ("Live Candle Synthesis")</h3>
+        <div class="doc-alert doc-alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <div>
+                <strong>Critical Architectural Detail:</strong> The 1 Day (1d) timeframe data is historically static till End-Of-Day. To bypass this limitation, <code>synthesize_live_candle()</code> takes the MAX(timestamp) from the <code>app_sg_ohlcv_prices WHERE timeframe='5m'</code> table. If the day matches the current day, it explicitly constructs a 1-day candle (Open = First 5m Open, High = Max(5m Highs), Low = Min(5m Lows), Close = Last 5m Close, Volume = Sum(5m Volumes)) and prepends this to the Historical dataset.
+            </div>
+        </div>
+
+        <h3 class="doc-header-3">Confluence Weighting Matrix Algorithm</h3>
+        <p>An aggregate integer score dynamically determining multi-factor signal strength. Values sum up to rank between <code>-5</code> and <code>+5</code>.</p>
+<pre><span class="code-comment"># Strict Integer Algorithm</span>
+rank = 0
+<span class="code-keyword">if</span> ema_signal == <span class="code-string">'BUY'</span>: rank += 1 <span class="code-keyword">elif</span> ema_signal == <span class="code-string">'SELL'</span>: rank -= 1
+<span class="code-keyword">if</span> st_dir == <span class="code-string">'BUY'</span>: rank += 1 <span class="code-keyword">elif</span> st_dir == <span class="code-string">'SELL'</span>: rank -= 1
+<span class="code-keyword">if</span> rsi_val > 50: rank += 1 <span class="code-keyword">elif</span> rsi_val < 50: rank -= 1
+<span class="code-keyword">if</span> ltp > dma_data.get(<span class="code-string">'SMA_20'</span>): rank += 1  <span class="code-keyword">else</span>: rank -= 1
+<span class="code-keyword">if</span> vol_signal == <span class="code-string">'BULL_SPIKE'</span>: rank += 1 <span class="code-keyword">elif</span> vol_signal == <span class="code-string">'BEAR_SPIKE'</span>: rank -= 1
+
+<span class="code-comment"># Strict "PERFECT" Qualification Rule</span>
+<span class="code-keyword">if</span> rank >= 4 <span class="code-keyword">and</span> vol_signal == <span class="code-string">'BULL_SPIKE'</span> <span class="code-keyword">and</span> ema_signal == <span class="code-string">'BUY'</span> <span class="code-keyword">and</span> st_dir == <span class="code-string">'BUY'</span>:
+    trade_strategy = <span class="code-string">"PERFECT_BUY"</span>
+</pre>
+
+        <h3 class="doc-header-3">Candlestick Pattern AI Weight Map</h3>
+        <p>Recognized patterns mapped exactly to standard <code>TA-Lib / pandas_ta CDL_*</code> names.</p>
+        <table class="doc-table">
+            <tr><th>Weight</th><th>Bullish Triggers</th><th>Bearish Triggers</th></tr>
+            <tr><td><strong>Weight ±3</strong></td><td>MORNINGSTAR, 3WHITESOLDIERS, MORNINGDOJISTAR, 3INSIDE, 3OUTSIDE</td><td>EVENINGSTAR, 3BLACKCROWS, EVENINGDOJISTAR</td></tr>
+            <tr><td><strong>Weight ±2</strong></td><td>ENGULFING, PIERCING</td><td>DARKCLOUDCOVER</td></tr>
+            <tr><td><strong>Weight ±1</strong></td><td>HAMMER, DRAGONFLYDOJI, DOJI</td><td>SHOOTINGSTAR, GRAVESTONEDOJI, INVERTEDHAMMER</td></tr>
+        </table>
+        
+
+        <h2 id="arch-scenario" class="doc-header-2">4. Scenario Engine (Backtesting)</h2>
+        <p>Managed in <code>scenario_engine.py</code>. This handles temporal merging of varying time constraints (e.g. 5m execution triggered by 15m structural breaks).</p>
+
+        <h3 class="doc-header-3">Look-Ahead Bias Protection Mechanism</h3>
+        <p>When aggregating Multi-Timeframe Data points, the mathematical merging algorithm applies a strict lag vector index to guarantee the high-scale bar actually "closed" prior to evaluating its value against the low scale base execution.</p>
+<pre><span class="code-comment"># Merging Math applied over DataFrame 'df_primary_subset' derived initially from TF=15m and applied over Base tf=5m:</span>
+df_primary_subset[[<span class="code-string">'RSI'</span>, <span class="code-string">'ST_primary_dir'</span>, <span class="code-string">'ST_primary_val'</span>]] = df_primary_subset[[<span class="code-string">'RSI'</span>, <span class="code-string">'ST_primary_dir'</span>, <span class="code-string">'ST_primary_val'</span>]].<span class="code-function">shift(1)</span>
+
+df_combined = pd.<span class="code-function">merge_asof</span>(
+    df_base, 
+    df_primary_subset, 
+    on=<span class="code-string">'timestamp'</span>, 
+    direction=<span class="code-string">'backward'</span>
+)
+</pre>
+
+        <h3 class="doc-header-3">Tranche Loading Algorithms</h3>
+        <p>Backtest algorithm permits user scaling. Exact array mapping used internally in simulation bounds:</p>
+        <ul>
+            <li><strong>Entry Scaling:</strong> Controlled by array `tr_weights = [W1, W2, W3]` matching Array Drop `tr_prices=[P1, P2]`. E.g: Weight 50%,25%,25% dropping 1%,2%.</li>
+            <li><strong>Averaging Math:</strong> <code>Avg_Entry = ((entry1 * w1) + (entry2 * w2) + (entry3 * w3)) / (w1+w2+w3)</code></li>
+            <li><strong>Exit Targets:</strong> `t1_weight` vs `t2_weight`. The engine will sequentially strip off percentage weights upon target triggers or structurally on upper-level SuperTrend breaches. P&L calculates the % against the current weight subset only.</li>
+        </ul>
+
+
+        <h2 id="arch-frontend" class="doc-header-2">5. Frontend JavaScript System (app.js)</h2>
+        <p>The state memory architecture dictates explicit memory bounds defined via globally structured map contexts inside the Vanilla JS runtime.</p>
+        
+        <h3 class="doc-header-3">Global State Reference Types</h3>
+        <p>No framework allows us rapid mutation. 100% of internal state relies on the structural configuration variables mapping global memory:</p>
+<pre><span class="code-comment">// Core Global State Dictionaries</span>
+<span class="code-keyword">const</span> MODES = {
+    swing: { defaultTF: <span class="code-string">"Daily"</span>, timeframes: [<span class="code-string">"Daily"</span>, <span class="code-string">"Weekly"</span>, <span class="code-string">"Monthly"</span>] },
+    intraday: { defaultTF: <span class="code-string">"5m"</span>, timeframes: [<span class="code-string">"5m"</span>, <span class="code-string">"15m"</span>, <span class="code-string">"30m"</span>, <span class="code-string">"60m"</span>] }
+};
+
+<span class="code-comment">// Local Storage API Syncer cache limits</span>
+<span class="code-keyword">let</span> signalCache = {};
+<span class="code-keyword">let</span> liveSignals = []; <span class="code-comment">// Working Set rendered to DOM via DataMap Loop</span>
+<span class="code-keyword">let</span> screenerMasterData = []; <span class="code-comment">// Independent 10-timeframe lookup structure.</span>
+<span class="code-keyword">let</span> activeTab = <span class="code-string">'dashboard'</span>;  <span class="code-comment">// 'dashboard' || 'pro-screener' || 'strategy-lab' || 'settings'</span>
+</pre>
+
+        <h3 class="doc-header-3">Fetch/Calc Mutex Control (HUD_STATES)</h3>
+        <p>Operations mapped to <code>HUD_STATES</code> prevent the system from parallel DDOSing the server instance.</p>
+<pre><span class="code-keyword">let</span> HUD_STATES = {
+    swing: { active: <span class="code-keyword">false</span>, expanded: <span class="code-keyword">false</span>, operation: <span class="code-string">null</span> }, <span class="code-comment">// operation = 'fetch' | 'calculate'</span>
+    intraday: { active: <span class="code-keyword">false</span>, expanded: <span class="code-keyword">false</span>, operation: <span class="code-string">null</span> }
+};</pre>
+        <p>If <code>active === true</code>, the <code>setMode()</code> boundary logic immediately disables action buttons for that specific context, replacing SVG nodes visually with spinner structures.</p>
+
+
+
+        <div class="part-divider"></div>
+
+        <!-- ========================================== -->
+        <!-- PART 2: API Integration & Networks         -->
+        <!-- ========================================== -->
+
+        <h2 id="api-endpoints" class="doc-header-2">6. API Endpoint Specifications</h2>
+        
+        <h3 class="doc-header-3">Query Parameters & Models</h3>
+        
+        <table class="doc-table">
+            <tr><th>Endpoint</th><th>Method</th><th>Parameters</th><th>Response Payload Structure</th></tr>
+            <tr>
+                <td><code>/api/signals</code></td>
+                <td>GET</td>
+                <td><code>mode=swing/intraday</code><br><code>timeframe=1d/5m etc</code></td>
+                <td><code>{ status: "success", data: [ {isin, ltp, target, rsi...} ] }</code> (Direct SQL return of <code>app_sg_calculated_signals</code>).</td>
+            </tr>
+            <tr>
+                <td><code>/api/check-progress</code></td>
+                <td>GET</td>
+                <td><code>mode=swing/intraday</code><br><code>type=fetch/calc</code></td>
+                <td><code>{ is_running: true/false }</code> Monitors <code>sync_locks</code> variable map stored Server-Side inside Uvicorn Instance memory state.</td>
+            </tr>
+            <tr>
+                <td><code>/api/screener/master</code></td>
+                <td>GET</td>
+                <td>None</td>
+                <td><code>{ status: "success", data: [...] }</code> Large JSON Payload cross-joining EVERY timeframe on EVERY active symbol into a monolithic dictionary arrays specifically formatted for dynamic UI token filtering.</td>
+            </tr>
+        </table>
+        
+        <h3 id="api-sse" class="doc-header-3">Server-Sent Events (SSE) Streaming</h3>
+        <p>During live long-polling calculation runs, standard HTTP calls timeout. The infrastructure explicitly mounts <code>/api/stream/fetch-data</code> utilizing FastAPI's <code>StreamingResponse(event_generator, media_type="text/event-stream")</code> construct. </p>
+        <p>The Python event stream yields chunks in format: <code>yield f"data: {json_string}\n\n"</code> while generating. The frontend intercepts these chunks instantly utilizing <code>fetchEvtSource = new EventSource(...)</code> to immediately manipulate the DOM's progress bar (<code>document.getElementById('sys-prog-bar-(swing/intraday)')</code>) sequentially from 0% to 100%.</p>
+
+
+        <div class="part-divider"></div>
+
+        <!-- ========================================== -->
+        <!-- PART 3: User Operations & UX Guidelines    -->
+        <!-- ========================================== -->
+
+        <h2 id="user-dashboard" class="doc-header-2">7. Using the Trading Dashboard</h2>
+        <p>The Dashboard handles high-speed sorting and algorithmic evaluation.</p>
+        <ol>
+            <li><strong>Select the Mode Map:</strong> Click Intraday (top left) for purely momentum-weighted operations, relying on 5m, 15m intervals OR click Swing for Daily-oriented positions. The entire mathematical UI recalibrates accordingly.</li>
+            <li><strong>Contextual Filtering:</strong> Click the "Bullish Only" or "High Confluence" Header cards to instantly cull the dataset down via Javascript memory mappings array. Set the Universe switch to purely view elements residing inside your actual Demat Holdings configuration constraint.</li>
+            <li><strong>Visualizing Strategy Output:</strong> Open any stock to observe the SVGs render. Valid signals return exact structural triggers. E.g: <code>PERFECT_BUY</code> denotes the convergence of Confluence >= 4, Bull Spike, EMA Crossover, AND SuperTrend verification. <code>DMA_BOUNCE</code> isolates instances directly resting ±1.5% from 50/200 DMA support lines.</li>
+        </ol>
+
+        <h2 id="user-screener" class="doc-header-2">8. Pro Screener & Blueprints</h2>
+        <p>Allows absolute infinite customization of conditional structures dynamically evaluating Javascript arrays locally to prevent server loads.</p>
+        <ol>
+            <li>Navigate to Pro Screener Menu Item.</li>
+            <li>Either write logic manually or use a Blueprint to instantly auto-load structural requirements (e.g. Setting Timeframe filter = "30m" -> Logic "RSI_30m > 50 && ST_value_30m < ltp").</li>
+            <li>Hit Run Filter to locally subset <code>screenerMasterData</code> JSON tree in sub-millisecond speeds.</li>
+        </ol>
+
+        <h2 id="user-lab" class="doc-header-2">9. Strategy Lab PRO</h2>
+        <p>Save user-parameterized custom Blueprints utilizing Dual-Interface operations.</p>
+        <ul>
+            <li><strong>Visual Builder:</strong> Drag and drop variables specifying target logic. Example: Click Group 1: Timeframe -> `[Daily]`, Entity -> `[Supertrend]`, Logic -> `==`, Value -> `Bullish`.</li>
+            <li><strong>Parser Structure System:</strong> Automatically parses UI clicks into strict token formats string logic (e.g. <code>[Daily].RSI &gt; 50</code>).</li>
+            <li>Save the profile to commit variables physically into the <code>app_sg_custom_strategies</code> backend schema repository allowing the Pro Screener structural lookup function to access the defined constraints infinitely.</li>
+        </ul>
+
+        <h2 id="user-backtest" class="doc-header-2">10. Scenario Backtester</h2>
+        <p>Allows the rigorous evaluation of logic prior to deploying constraints across live accounts against 5+ years of daily lookup logic.</p>
+        <ul>
+            <li>Define the Universe Target: Supply purely one target (e.g., RELIANCE) to speed up algorithm, or leave blank to process across the active mapping definitions.</li>
+            <li>Setup the scaling structures: Weight entry via Tranche subsets (50% upfront, Scale 25% if dropped entirely by 1.5%).</li>
+            <li>Setup target scaling constraints: Exit Target 1 at 50% structural weighting returning +1.5% profit parameters.</li>
+            <li>Monitor execution simulation. Outputs mapped linearly plotting Win Rate matrices and absolute Max Drawdown values over total positional structures.</li>
+        </ul>
+
+    </div>
+
+</body>
+</html>

@@ -405,6 +405,38 @@ async def execute_strategy(payload: dict):
         return {"status": "success", "message": "Backend execution ready."}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/indices", dependencies=[Depends(check_auth)])
+async def api_indices():
+    try:
+        datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
+        async with datamart_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SELECT * FROM e_bs_indices_nse WHERE bs_key IN ('INDICES ELIGIBLE IN DERIVATIVES','SECTORAL INDICES') ORDER BY bs_key, bs_indexSymbol")
+                rows = await cur.fetchall()
+                
+                formatted_data = []
+                for row in rows:
+                    processed_row = {}
+                    for k, v in row.items():
+                        if isinstance(v, datetime):
+                            processed_row[k] = v.isoformat()
+                        elif hasattr(v, 'isoformat'): # Handle date objects
+                            processed_row[k] = v.isoformat()
+                        elif v is not None and not isinstance(v, (str, bytes, int, float, bool)):
+                            try:
+                                processed_row[k] = float(v)
+                            except:
+                                processed_row[k] = str(v)
+                        else:
+                            processed_row[k] = v
+                    formatted_data.append(processed_row)
+                    
+        datamart_pool.close()
+        return {"status": "success", "data": formatted_data}
+    except Exception as e: 
+        if 'datamart_pool' in locals(): datamart_pool.close()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/status", dependencies=[Depends(check_auth)])
 async def api_status(mode: str = "swing", timeframe: str = None):
     app_pool = None
