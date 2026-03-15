@@ -5914,7 +5914,7 @@ function appendChatMessage(role, content, id = null) {
 
 async function fetchAndRenderPortfolio() {
     const tbody = document.getElementById('portfolio-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px;"><i class="fas fa-spinner fa-spin"></i> Loading portfolio...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px;"><i class="fas fa-spinner fa-spin"></i> Loading portfolio...</td></tr>';
 
     try {
         const response = await fetch('/api/portfolio');
@@ -5941,7 +5941,7 @@ async function fetchAndRenderPortfolio() {
             document.getElementById('port-stat-cur').innerText = '₹' + totalCurrent.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
             const pnlEl = document.getElementById('port-stat-pnl');
-            pnlEl.innerText = (totalPnl > 0 ? '+' : '') + totalPnl.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+            pnlEl.innerText = (totalPnl > 0 ? '+' : (totalPnl < 0 ? '-' : '')) + '₹' + Math.abs(totalPnl).toLocaleString('en-IN', { maximumFractionDigits: 0 });
             pnlEl.className = totalPnl >= 0 ? 'text-success' : 'text-danger';
 
             const pctEl = document.getElementById('port-stat-pct');
@@ -5949,11 +5949,11 @@ async function fetchAndRenderPortfolio() {
             pctEl.className = overallPnlPct >= 0 ? 'text-success' : 'text-danger';
 
         } else {
-            if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--danger);">Failed to load portfolio.</td></tr>';
+            if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: var(--danger);">Failed to load portfolio.</td></tr>';
         }
     } catch (e) {
         console.error(e);
-        if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--danger);">Connection error.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: var(--danger);">Connection error.</td></tr>';
     }
 }
 
@@ -6100,7 +6100,7 @@ function renderPortfolioTable(groups) {
     tbody.innerHTML = '';
 
     if (groups.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-search"></i> No portfolio data found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-search"></i> No portfolio data found.</td></tr>';
         return;
     }
 
@@ -6121,16 +6121,18 @@ function renderPortfolioTable(groups) {
                 <div style="font-size: 10px; color: var(--text-dim);">${group.isinCode}</div>
             </td>
             <td style="font-weight: 600; text-align: right;">${group.quantity}</td>
-            <td style="text-align: right;">₹${group.avg_price.toFixed(2)}</td>
-            <td style="font-weight: 600; text-align: right;">₹${group.ltp.toFixed(2)}</td>
+            <td style="text-align: right;">${group.avg_price.toFixed(2)}</td>
+            <td style="font-weight: 600; text-align: right;">${group.ltp.toFixed(2)}</td>
             <td style="text-align: right;">
                 <div class="${dayClass}" style="font-size: 13px; font-weight: 700;">${group.day_change_pct > 0 ? '+' : ''}${group.day_change_pct.toFixed(2)}%</div>
             </td>
-            <td style="text-align: right;">₹${group.inv_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-            <td style="font-weight: 600; text-align: right;">₹${group.cur_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+            <td style="text-align: right;">${group.inv_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+            <td style="font-weight: 600; text-align: right;">${group.cur_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
             <td style="text-align: right;">
-                <div class="${pnlClass}" style="font-weight: 700;">${group.pnl > 0 ? '+' : ''}₹${group.pnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-                <div class="${pnlClass}" style="font-size: 11px;">(${group.pnl_pct > 0 ? '+' : ''}${group.pnl_pct.toFixed(2)}%)</div>
+                <div class="${pnlClass}" style="font-weight: 700;">${group.pnl > 0 ? '+' : ''}${group.pnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+            </td>
+            <td style="text-align: right;">
+                <div class="${pnlClass}" style="font-size: 13px; font-weight: 700;">${group.pnl_pct > 0 ? '+' : ''}${group.pnl_pct.toFixed(2)}%</div>
             </td>
             <td style="color: var(--text-dim); font-size: 11px; text-align: center;">
                 ${group.last_sync_at ? new Date(group.last_sync_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
@@ -6152,15 +6154,18 @@ function renderPortfolioTable(groups) {
                     <span class="broker-pill">${child.brokerTag}</span>
                 </td>
                 <td style="text-align: right;">${child.quantity}</td>
-                <td style="text-align: right;">₹${child.avg_price.toFixed(2)}</td>
-                <td style="text-align: right;">₹${child.ltp.toFixed(2)}</td>
+                <td style="text-align: right;">${child.avg_price.toFixed(2)}</td>
+                <td style="text-align: right;">${child.ltp.toFixed(2)}</td>
                 <td style="text-align: right;">
-                    <span class="${itemPnlClass}">${child.pnl_pct > 0 ? '+' : ''}${child.pnl_pct.toFixed(2)}%</span>
+                    <span style="color: var(--text-dim);">-</span>
                 </td>
-                <td style="text-align: right; color: var(--text-dim);">₹${child.inv_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
-                <td style="text-align: right; color: var(--text-dim);">₹${child.cur_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                <td style="text-align: right; color: var(--text-dim);">${child.inv_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                <td style="text-align: right; color: var(--text-dim);">${child.cur_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                 <td style="text-align: right;">
-                    <div class="${itemPnlClass}">₹${child.pnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                    <div class="${itemPnlClass}">${child.pnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                </td>
+                <td style="text-align: right;">
+                    <div class="${itemPnlClass}" style="font-weight: 600;">${child.pnl_pct > 0 ? '+' : ''}${child.pnl_pct.toFixed(2)}%</div>
                 </td>
                 <td style="text-align: center; font-size: 10px; color: var(--text-dim);">
                     ${child.last_sync_at ? new Date(child.last_sync_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
