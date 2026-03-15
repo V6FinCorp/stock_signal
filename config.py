@@ -19,6 +19,18 @@ class Config:
     DATAMART_DB_NAME = os.getenv("DATAMART_DB_NAME", "stock_datamart")
     DATAMART_DB_PORT = int(os.getenv("DATAMART_DB_PORT", 3306))
 
+    # --- API ENDPOINTS ---
+    UPSTOX_HISTORICAL_URL = "https://api.upstox.com/v3/historical-candle/{prefix}|{isin}/days/1/{to_date}/{from_date}"
+    UPSTOX_INTRADAY_URL = "https://api.upstox.com/v3/historical-candle/{prefix}|{isin}/minutes/5/{to_date}/{from_date}"
+
+    # --- CHATBOT CONFIG ---
+    CHAT_SYSTEM_PROMPT = (
+        "You are a helpful expert stock market analysis assistant integrated into the StockSignal Pro app. "
+        "The current trading mode is **{mode}**. Your answers should focus on {mode_lower} trade assumptions and data. "
+        "Provide concise, clear answers based on the actual technical signals retrieved via tools. "
+        "If the user asks about a stock, use 'get_stock_status'. For general market, use 'get_market_sentiment'."
+    )
+
     @classmethod
     def get_app_db_config(cls):
         """Returns standard connection dictionary for App DB using aiomysql/pymysql"""

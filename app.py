@@ -416,7 +416,7 @@ async def api_indices():
         datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
         async with datamart_pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute("SELECT * FROM e_bs_indices_nse WHERE bs_key IN ('INDICES ELIGIBLE IN DERIVATIVES','SECTORAL INDICES') ORDER BY bs_key, bs_indexSymbol")
+                await cur.execute("SELECT * FROM e_bs_indices_nse WHERE bs_key IN ('BROAD MARKET INDICES', 'INDICES ELIGIBLE IN DERIVATIVES', 'SECTORAL INDICES') ORDER BY bs_key, bs_indexSymbol")
                 rows = await cur.fetchall()
                 
                 formatted_data = []
@@ -687,11 +687,16 @@ async def stream_fetch(mode: str = "swing"):
                         # Select correct prefix based on exchange availability
                         prefix = "BSE_EQ" if comp.get('exchange') == 'BSE' else "NSE_EQ"
                         
+                        today_str = datetime.now().strftime('%Y-%m-%d')
+                        # 7-day lookback for intraday to cover weekends and ensure Friday data is captured even on Sundays
+                        lookback_str = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+                        
                         if mode == "swing":
-                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/{prefix}|{isin}/days/1/{datetime.now().strftime('%Y-%m-%d')}/2023-01-01", 'tf': '1d'})
-                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/{prefix}|{isin}/minutes/5", 'tf': '5m'})
+                            fetch_configs.append({'url': Config.UPSTOX_HISTORICAL_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date="2023-01-01"), 'tf': '1d'})
+                            fetch_configs.append({'url': Config.UPSTOX_INTRADAY_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date=lookback_str), 'tf': '5m'})
                         else:
-                            fetch_configs.append({'url': f"https://api.upstox.com/v3/historical-candle/intraday/{prefix}|{isin}/minutes/5", 'tf': '5m'})
+                            # Use historical endpoint even for "intraday" mode to be robust against weekend gaps
+                            fetch_configs.append({'url': Config.UPSTOX_INTRADAY_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date=lookback_str), 'tf': '5m'})
                             
                         for cfg in fetch_configs:
                             url = cfg['url']

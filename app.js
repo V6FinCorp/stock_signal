@@ -148,6 +148,18 @@ let screenerBlueprints = [];
 let screenerTfDataMap = {}; // Shared cache for MTF data in Screener
 let _indicesData = []; // Cache for local indices filtering
 let _indicesSortState = { key: 'bs_indexSymbol', asc: true };
+let _indicesCollapsedSections = {}; // Track collapsed state of sections
+
+const SECTION_ORDER = {
+    'INDICES ELIGIBLE IN DERIVATIVES': 1,
+    'SECTORAL INDICES': 2,
+    'BROAD MARKET INDICES': 3
+};
+
+function toggleIndicesSection(key) {
+    _indicesCollapsedSections[key] = !_indicesCollapsedSections[key];
+    renderIndicesTable(null, true); // Use cached data
+}
 
 // --- Authentication & Session ---
 async function verifySession() {
@@ -5698,6 +5710,12 @@ function filterIndices() {
     const asc = _indicesSortState.asc;
 
     filtered.sort((a, b) => {
+        // 1. Primary Sort: Section Order
+        const orderA = SECTION_ORDER[a.bs_key] || 99;
+        const orderB = SECTION_ORDER[b.bs_key] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+
+        // 2. Secondary Sort: User Selected Key (Within Section)
         let valA = a[key] ?? 0;
         let valB = b[key] ?? 0;
 
@@ -5709,8 +5727,11 @@ function filterIndices() {
         return 0;
     });
 
+    _lastFilteredIndices = filtered; // Cache for UI toggles
     renderIndicesTable(filtered);
 }
+
+let _lastFilteredIndices = [];
 
 function sortIndices(key) {
     if (_indicesSortState.key === key) {
@@ -5722,98 +5743,137 @@ function sortIndices(key) {
     filterIndices();
 }
 
-function renderIndicesTable(data) {
+function renderIndicesTable(data, fromCache = false) {
+    if (fromCache) data = _lastFilteredIndices;
     const tbody = document.getElementById('indices-table-body');
     if (!tbody) return;
 
     tbody.innerHTML = '';
 
+    if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px; color: var(--text-dim);">No indices found.</td></tr>';
+        return;
+    }
+
+    // Grouping by bs_key (Data is already sorted by filterIndices)
+    const groups = {};
+    const groupOrder = []; 
     data.forEach(idx => {
-        const tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid var(--border-color)';
+        const key = idx.bs_key || 'OTHER';
+        if (!groups[key]) {
+            groups[key] = [];
+            groupOrder.push(key);
+        }
+        groups[key].push(idx);
+    });
 
-        const ltp = parseFloat(idx.bs_last ?? idx.bs_ltp ?? 0);
+    // Render each group
+    groupOrder.forEach(key => {
+        const isCollapsed = !!_indicesCollapsedSections[key];
 
-        // Day stats
-        const dChange = parseFloat(idx.bs_percentChange || 0);
-        const dColor = dChange > 0 ? 'var(--success)' : (dChange < 0 ? 'var(--danger)' : 'var(--text-main)');
-        const dVar = parseFloat(idx.bs_variation || 0);
-        const ltpDisplay = ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const dVarLabel = dVar > 0 ? `▲ +${dVar.toFixed(2)}` : (dVar < 0 ? `▼ ${dVar.toFixed(2)}` : `${dVar.toFixed(2)}`);
-
-        const dHigh = parseFloat(idx.bs_high || ltp);
-        const dLow = parseFloat(idx.bs_low || ltp);
-        let dPos = 50;
-        if (dHigh > dLow) dPos = ((ltp - dLow) / (dHigh - dLow)) * 100;
-        dPos = Math.max(0, Math.min(100, dPos));
-
-        // 52 Week stats
-        const yChange = parseFloat(idx.bs_perChange365d || 0);
-        const yColor = yChange > 0 ? 'var(--success)' : (yChange < 0 ? 'var(--danger)' : 'var(--text-main)');
-        const yHigh = parseFloat(idx.bs_yearHigh || ltp);
-        const yLow = parseFloat(idx.bs_yearLow || ltp);
-        let yPos = 50;
-        if (yHigh > yLow) yPos = ((ltp - yLow) / (yHigh - yLow)) * 100;
-        yPos = Math.max(0, Math.min(100, yPos));
-
-        // Adv/Dec stats
-        const adv = parseInt(idx.bs_advances || 0);
-        const dec = parseInt(idx.bs_declines || 0);
-        const total = adv + dec || 1;
-        const adPos = (adv / total) * 100;
-
-        const createRangeBar = (pos) => `
-            <div style="position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; margin-top: 4px;">
-                <div style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: linear-gradient(90deg, var(--danger), var(--success)); opacity: 0.15; border-radius: 3px;"></div>
-                <div style="position: absolute; top: -4px; left: ${pos}%; transform: translateX(-50%); width: 2px; height: 14px; background: var(--text-dim); border-radius: 1px; z-index: 2;"></div>
-            </div>
-        `;
-
-        const renderChart = (path) => {
-            if (!path) return '-';
-            // Invert(1) makes white bg black. Hue-rotate(180) returns orange inverted blue back to blue.
-            return `<img src="${path}" style="width: 50px; height: 20px; filter: invert(1) hue-rotate(180deg) brightness(1.2) contrast(1.1); pointer-events: none; mix-blend-mode: screen;" alt="chart">`;
-        };
-
-        tr.innerHTML = `
-            <td style="padding: 12px 16px;">
-                <div style="font-weight: 700; color: var(--text-main); font-size: 13px;">${idx.bs_indexSymbol}</div>
-                <div style="font-size: 11px; color: ${dColor};">${ltpDisplay} (${dVarLabel})</div>
-            </td>
-            <td style="padding: 12px 16px; text-align: right; color: ${dColor}; font-weight: 700; font-size: 12px;">
-                ${dChange > 0 ? '+' : ''}${dChange.toFixed(2)}%
-            </td>
-            <td style="padding: 12px 16px; width: 140px;">
-                <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
-                    <span>${dLow.toLocaleString('en-IN')}</span>
-                    <span>${dHigh.toLocaleString('en-IN')}</span>
+        // Section Header Row
+        const headerRow = document.createElement('tr');
+        headerRow.style.background = 'rgba(255, 255, 255, 0.05)';
+        headerRow.style.cursor = 'pointer';
+        headerRow.onclick = () => toggleIndicesSection(key);
+        headerRow.innerHTML = `
+            <td colspan="9" style="padding: 10px 16px; font-weight: 800; font-size: 11px; text-transform: uppercase; color: var(--primary); letter-spacing: 1px; border-bottom: 1px solid var(--border-color);">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div><i class="fas fa-layer-group" style="margin-right: 8px; opacity: 0.7;"></i> ${key}</div>
+                    <i class="fas ${isCollapsed ? 'fa-chevron-down' : 'fa-chevron-up'}" style="font-size: 10px; opacity: 0.5;"></i>
                 </div>
-                ${createRangeBar(dPos)}
-            </td>
-            <td style="padding: 12px 16px; text-align: right; color: ${yColor}; font-weight: 700; font-size: 12px;">
-                ${yChange > 0 ? '+' : ''}${yChange.toFixed(2)}%
-            </td>
-            <td style="padding: 12px 16px; width: 140px;">
-                <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
-                    <span>${yLow.toLocaleString('en-IN')}</span>
-                    <span>${yHigh.toLocaleString('en-IN')}</span>
-                </div>
-                ${createRangeBar(yPos)}
-            </td>
-            <td style="padding: 12px 16px; width: 140px;">
-                <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
-                    <span style="color: var(--danger); font-weight: 700;">${dec}</span>
-                    <span style="color: var(--success); font-weight: 700;">${adv}</span>
-                </div>
-                ${createRangeBar(adPos)}
-            </td>
-            <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart30dPath)}</td>
-            <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart365dPath)}</td>
-            <td style="padding: 12px 16px; text-align: center; color: var(--text-dim); font-size: 11px; font-weight: 600;">
-                ${idx.bs_pe ? `PE ${parseFloat(idx.bs_pe).toFixed(1)}` : '-'}
             </td>
         `;
-        tbody.appendChild(tr);
+        tbody.appendChild(headerRow);
+
+        if (!isCollapsed) {
+            groups[key].forEach(idx => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border-color)';
+
+            const ltp = parseFloat(idx.bs_last ?? idx.bs_ltp ?? 0);
+
+            // Day stats
+            const dChange = parseFloat(idx.bs_percentChange || 0);
+            const dColor = dChange > 0 ? 'var(--success)' : (dChange < 0 ? 'var(--danger)' : 'var(--text-main)');
+            const dVar = parseFloat(idx.bs_variation || 0);
+            const ltpDisplay = ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const dVarLabel = dVar > 0 ? `▲ +${dVar.toFixed(2)}` : (dVar < 0 ? `▼ ${dVar.toFixed(2)}` : `${dVar.toFixed(2)}`);
+
+            const dHigh = parseFloat(idx.bs_high || ltp);
+            const dLow = parseFloat(idx.bs_low || ltp);
+            let dPos = 50;
+            if (dHigh > dLow) dPos = ((ltp - dLow) / (dHigh - dLow)) * 100;
+            dPos = Math.max(0, Math.min(100, dPos));
+
+            // 52 Week stats
+            const yChange = parseFloat(idx.bs_perChange365d || 0);
+            const yColor = yChange > 0 ? 'var(--success)' : (yChange < 0 ? 'var(--danger)' : 'var(--text-main)');
+            const yHigh = parseFloat(idx.bs_yearHigh || ltp);
+            const yLow = parseFloat(idx.bs_yearLow || ltp);
+            let yPos = 50;
+            if (yHigh > yLow) yPos = ((ltp - yLow) / (yHigh - yLow)) * 100;
+            yPos = Math.max(0, Math.min(100, yPos));
+
+            // Adv/Dec stats
+            const adv = parseInt(idx.bs_advances || 0);
+            const dec = parseInt(idx.bs_declines || 0);
+            const total = adv + dec || 1;
+            const adPos = (adv / total) * 100;
+
+            const createRangeBar = (pos) => `
+                <div style="position: relative; width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; margin-top: 4px;">
+                    <div style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: linear-gradient(90deg, var(--danger), var(--success)); opacity: 0.15; border-radius: 3px;"></div>
+                    <div style="position: absolute; top: -4px; left: ${pos}%; transform: translateX(-50%); width: 2px; height: 14px; background: var(--text-dim); border-radius: 1px; z-index: 2;"></div>
+                </div>
+            `;
+
+            const renderChart = (path) => {
+                if (!path) return '-';
+                return `<img src="${path}" style="width: 50px; height: 20px; filter: invert(1) hue-rotate(180deg) brightness(1.2) contrast(1.1); pointer-events: none; mix-blend-mode: screen;" alt="chart">`;
+            };
+
+            tr.innerHTML = `
+                <td style="padding: 12px 16px;">
+                    <div style="font-weight: 700; color: var(--text-main); font-size: 13px;">${idx.bs_index}</div>
+                    <div style="font-size: 11px; color: ${dColor};">${ltpDisplay} (${dVarLabel})</div>
+                </td>
+                <td style="padding: 12px 16px; text-align: right; color: ${dColor}; font-weight: 700; font-size: 12px;">
+                    ${dChange > 0 ? '+' : ''}${dChange.toFixed(2)}%
+                </td>
+                <td style="padding: 12px 16px; width: 140px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
+                        <span>${dLow.toLocaleString('en-IN')}</span>
+                        <span>${dHigh.toLocaleString('en-IN')}</span>
+                    </div>
+                    ${createRangeBar(dPos)}
+                </td>
+                <td style="padding: 12px 16px; text-align: right; color: ${yColor}; font-weight: 700; font-size: 12px;">
+                    ${yChange > 0 ? '+' : ''}${yChange.toFixed(2)}%
+                </td>
+                <td style="padding: 12px 16px; width: 140px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
+                        <span>${yLow.toLocaleString('en-IN')}</span>
+                        <span>${yHigh.toLocaleString('en-IN')}</span>
+                    </div>
+                    ${createRangeBar(yPos)}
+                </td>
+                <td style="padding: 12px 16px; width: 140px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: var(--text-dim);">
+                        <span style="color: var(--danger); font-weight: 700;">${dec}</span>
+                        <span style="color: var(--success); font-weight: 700;">${adv}</span>
+                    </div>
+                    ${createRangeBar(adPos)}
+                </td>
+                <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart30dPath)}</td>
+                <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart365dPath)}</td>
+                <td style="padding: 12px 16px; text-align: center; color: var(--text-dim); font-size: 11px; font-weight: 600;">
+                    ${idx.bs_pe ? `PE ${parseFloat(idx.bs_pe).toFixed(1)}` : '-'}
+                </td>
+            `;
+            tbody.appendChild(tr);
+            });
+        }
     });
 }
 

@@ -108,11 +108,9 @@ import httpx
 async def chat_with_assistant(messages, mode='swing'):
     client = openai.AsyncOpenAI(http_client=httpx.AsyncClient())
     
-    system_instruction = (
-        f"You are a helpful expert stock market analysis assistant integrated into the StockSignal Pro app. "
-        f"The current trading mode is **{mode.upper()}**. Your answers should focus on {mode} trade assumptions and data. "
-        "Provide concise, clear answers based on the actual technical signals retrieved via tools. "
-        "If the user asks about a stock, use 'get_stock_status'. For general market, use 'get_market_sentiment'."
+    system_instruction = Config.CHAT_SYSTEM_PROMPT.format(
+        mode=mode.upper(),
+        mode_lower=mode.lower()
     )
     
     # Update or insert system message to include mode context

@@ -9,8 +9,8 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Endpoints as discovered & outlined in IMPLEMENTATION_PLAN.md
-URL_DAILY = "https://api.upstox.com/v3/historical-candle/NSE_EQ|{isin}/days/1/{to_date}/{from_date}"
-URL_INTRADAY = "https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|{isin}/minutes/5"
+URL_DAILY = Config.UPSTOX_HISTORICAL_URL
+URL_INTRADAY = Config.UPSTOX_INTRADAY_URL
 
 async def fetch_data(client, url):
     """Fetch JSON data from Upstox endpoint natively."""
@@ -44,8 +44,10 @@ async def cleanup_old_data(app_pool):
     except Exception as e:
         logging.error(f"Cleanup failed: {e}")
 
-async def process_company(app_pool, client, isin, symbol, fetch_swing=True, fetch_intraday=False, current_idx=1, total_stocks=1):
+async def process_company(app_pool, client, isin, symbol, exchange='NSE', fetch_swing=True, fetch_intraday=False, current_idx=1, total_stocks=1):
     logging.info(f"Currently processing {current_idx}/{total_stocks}: {symbol}")
+    
+    prefix = "BSE_EQ" if exchange == 'BSE' else "NSE_EQ"
     
     to_date = datetime.now().strftime("%Y-%m-%d")
     from_date = "2022-01-01"
@@ -83,13 +85,13 @@ async def process_company(app_pool, client, isin, symbol, fetch_swing=True, fetc
 
     daily_candles = []
     if fetch_swing:
-        daily_url = URL_DAILY.format(isin=isin, to_date=to_date, from_date=from_date)
+        daily_url = URL_DAILY.format(prefix=prefix, isin=isin, to_date=to_date, from_date=from_date)
         # Upstox candle format: [timestamp, open, high, low, close, volume, open_interest]
         daily_candles = await fetch_data(client, daily_url)
     
     intraday_candles = []
     if fetch_intraday:
-        intraday_url = URL_INTRADAY.format(isin=isin)
+        intraday_url = URL_INTRADAY.format(prefix=prefix, isin=isin, to_date=to_date, from_date=from_date_intraday)
         intraday_candles = await fetch_data(client, intraday_url)
     
     # Write OHLCV data to APP DATABASE
@@ -169,7 +171,7 @@ async def main():
             # Fetch all Active companies
             try:
                 await cur.execute("""
-                    SELECT c.bs_ISIN as isin, c.bs_SYMBOL as symbol, f.dim_favourites
+                    SELECT c.bs_ISIN as isin, c.bs_SYMBOL as symbol, c.bs_Available_ON as exchange, f.dim_favourites
                     FROM vw_e_bs_companies_all c
                     LEFT JOIN vw_e_bs_companies_favourite_indices f ON c.bs_SYMBOL = f.bs_symbol
                     WHERE BINARY c.bs_Status = 'Active'
@@ -226,6 +228,7 @@ async def main():
                     client, 
                     comp["isin"], 
                     comp["symbol"], 
+                    exchange=comp.get("exchange", "NSE"),
                     fetch_swing=fetch_swing,
                     fetch_intraday=fetch_intraday,
                     current_idx=idx,

@@ -2196,8 +2196,8 @@
                 </div>
             </div>
             <div class="ai-footer">
-                <input type="text" id="ai-chat-input" placeholder="Ask something..."
-                    onkeyup="if(event.key === 'Enter') sendAIMessage()">
+                <textarea id="ai-chat-input" placeholder="Ask something..."
+                    onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendAIMessage(); }"></textarea>
                 <button class="btn btn-primary"
                     style="padding: 0; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 16px;"
                     onclick="sendAIMessage()"><i class="fas fa-arrow-up"></i></button>

@@ -215,7 +215,6 @@ body.dark-theme {
 }
 
 h1 {
-    font-family: 'Outfit', sans-serif;
     font-size: 28px;
     margin-bottom: 4px;
 }
@@ -1963,17 +1962,23 @@ input:checked+.slider:before {
     background: rgba(0, 0, 0, 0.1);
 }
 
-.ai-footer input {
+.ai-footer textarea {
     flex: 1;
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--border-color);
     padding: 10px 15px;
-    border-radius: 20px;
+    border-radius: 12px;
     color: white;
     outline: none;
+    resize: none;
+    height: 40px;
+    max-height: 120px;
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color 0.2s;
 }
 
-.ai-footer input:focus {
+.ai-footer textarea:focus {
     border-color: var(--primary);
 }
 
