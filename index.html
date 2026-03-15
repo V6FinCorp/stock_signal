@@ -17,25 +17,33 @@
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
         @keyframes skeleton-pulse {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
         }
+
         .skeleton-box {
             height: 14px;
-            background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.05) 75%);
             background-size: 200% 100%;
             animation: skeleton-pulse 1.5s infinite linear;
             border-radius: 4px;
             width: 100%;
         }
+
         .skeleton-row td {
             padding: 16px 12px !important;
         }
+
         .skeleton-circle {
             width: 24px;
             height: 24px;
             border-radius: 50%;
-            background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.05) 75%);
             background-size: 200% 100%;
             animation: skeleton-pulse 1.5s infinite linear;
         }
@@ -132,10 +140,11 @@
                 <div class="header-left">
                     <div style="display: flex; align-items: center; gap: 24px;">
                         <h1 id="page-title" style="margin-bottom: 0;">Intraday Momentum</h1>
-                        
+
                         <div class="universe-selector" id="universe-nav" style="margin-right: 0;">
                             <div class="universe-slider" id="uni-slider"></div>
-                            <div class="universe-option active" onclick="setUniverse('default')" title="Standard watchlist">
+                            <div class="universe-option active" onclick="setUniverse('default')"
+                                title="Standard watchlist">
                                 <i class="fas fa-check-circle"></i> Default
                             </div>
                             <div class="universe-option" onclick="setUniverse('all')" title="All market stocks">
@@ -153,19 +162,29 @@
                         <div
                             style="display: flex; gap: 15px; border-left: 1px solid var(--border-color); padding-left: 20px;">
                             <div><i class="fas fa-history"></i> Fetch: <span id="last-fetch-time"
-                                    style="color:var(--text);font-weight:600;"><div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div></span></div>
+                                    style="color:var(--text);font-weight:600;">
+                                    <div class="skeleton-box" style="width:60px;display:inline-block;height:10px;">
+                                    </div>
+                                </span></div>
                             <div><i class="fas fa-bolt"></i> Calc: <span id="last-calc-time"
-                                    style="color:var(--text);font-weight:600;"><div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div></span></div>
+                                    style="color:var(--text);font-weight:600;">
+                                    <div class="skeleton-box" style="width:60px;display:inline-block;height:10px;">
+                                    </div>
+                                </span></div>
                             <div><i class="fas fa-clock"></i> OHLC: <span id="latest-ohlc-time"
-                                    style="color:var(--text);font-weight:600;"><div class="skeleton-box" style="width:60px;display:inline-block;height:10px;"></div></span></div>
+                                    style="color:var(--text);font-weight:600;">
+                                    <div class="skeleton-box" style="width:60px;display:inline-block;height:10px;">
+                                    </div>
+                                </span></div>
                         </div>
                     </div>
                 </div>
-                <div class="header-right" style="display: flex; gap: 12px; align-items: center; align-self: flex-start;">
+                <div class="header-right"
+                    style="display: flex; gap: 12px; align-items: center; align-self: flex-start;">
                     <div class="auto-sync-toggle"
-                         style="display: flex; align-items: center; gap: 8px; margin-right: 15px;">
+                        style="display: flex; align-items: center; gap: 8px; margin-right: 15px;">
                         <span class="text-dim" style="font-size: 13px; font-weight: 600;"
-                              id="auto-sync-label">Auto-Sync</span>
+                            id="auto-sync-label">Auto-Sync</span>
                         <label class="switch" style="margin: 0;">
                             <input type="checkbox" id="auto-sync-switch" onchange="toggleAutoSync()">
                             <span class="slider round"></span>
@@ -191,28 +210,36 @@
                     <div class="stat-icon bg-blue-trans"><i class="fas fa-list-ul"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Total Watchlist</span>
-                        <span class="stat-value" id="stat-total"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
+                        <span class="stat-value" id="stat-total">
+                            <div class="skeleton-box" style="width:40px;height:16px;"></div>
+                        </span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-bullish" onclick="setStatFilter('bullish')">
                     <div class="stat-icon bg-success-trans"><i class="fas fa-arrow-up"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Bullish Signals</span>
-                        <span class="stat-value" id="stat-bullish"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
+                        <span class="stat-value" id="stat-bullish">
+                            <div class="skeleton-box" style="width:40px;height:16px;"></div>
+                        </span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-bearish" onclick="setStatFilter('bearish')">
                     <div class="stat-icon bg-danger-trans"><i class="fas fa-arrow-down"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Bearish Signals</span>
-                        <span class="stat-value" id="stat-bearish"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
+                        <span class="stat-value" id="stat-bearish">
+                            <div class="skeleton-box" style="width:40px;height:16px;"></div>
+                        </span>
                     </div>
                 </div>
                 <div class="stat-card" id="card-confluence" onclick="setStatFilter('confluence')">
                     <div class="stat-icon bg-amber-trans"><i class="fas fa-bolt"></i></div>
                     <div class="stat-info">
                         <span class="stat-label">Top Confluence</span>
-                        <span class="stat-value" id="stat-confluence"><div class="skeleton-box" style="width:40px;height:16px;"></div></span>
+                        <span class="stat-value" id="stat-confluence">
+                            <div class="skeleton-box" style="width:40px;height:16px;"></div>
+                        </span>
                     </div>
                 </div>
             </section>
@@ -945,7 +972,8 @@
                                 <i class="fas fa-chevron-up text-dim" id="icon-segment-explainer"></i>
                             </div>
 
-                            <div id="content-segment-explainer" class="segment-content" style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 40px;">
+                            <div id="content-segment-explainer" class="segment-content"
+                                style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 40px;">
                                 <!-- Left: Plain English Explainer -->
                                 <div id="strat-explainer-text"
                                     style="font-size: 14px; line-height: 2; color: var(--text-main);">
@@ -1006,7 +1034,8 @@
                     </div>
 
                     <!-- Right Column: Sidebar -->
-                    <div id="strategy-sidebar" style="display: flex; flex-direction: column; gap: 24px; transition: all 0.3s ease; min-width: 0; overflow: hidden;">
+                    <div id="strategy-sidebar"
+                        style="display: flex; flex-direction: column; gap: 24px; transition: all 0.3s ease; min-width: 0; overflow: hidden;">
 
                         <!-- Sample Query Panel -->
                         <div class="bg-card"
@@ -1015,12 +1044,14 @@
                                 style="position: absolute; top: -15px; right: -15px; opacity: 0.1; transform: rotate(15deg);">
                                 <i class="fas fa-lightbulb fa-6x"></i>
                             </div>
-                            <div class="segment-header" onclick="toggleStrategySegment('library')" style="margin-bottom: 20px;">
+                            <div class="segment-header" onclick="toggleStrategySegment('library')"
+                                style="margin-bottom: 20px;">
                                 <h3 style="font-size: 15px; font-weight: 700; margin: 0;">Library Samples</h3>
                                 <i class="fas fa-chevron-up text-dim" id="icon-segment-library"></i>
                             </div>
 
-                            <div id="content-segment-library" class="segment-content" style="display: flex; flex-direction: column; gap: 12px;">
+                            <div id="content-segment-library" class="segment-content"
+                                style="display: flex; flex-direction: column; gap: 12px;">
                                 <div class="sample-chip" onclick="loadSampleQuery('bullish_dip')"
                                     style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: all 0.2s;">
                                     <div
@@ -1652,13 +1683,15 @@
                     <div style="display: flex; gap: 12px; align-items: center;">
                         <div class="search-box" style="margin: 0; width: 250px;">
                             <i class="fas fa-search"></i>
-                            <input type="text" id="portfolio-search" placeholder="Search code/user..." oninput="filterPortfolio()">
+                            <input type="text" id="portfolio-search" placeholder="Search code/user..."
+                                oninput="filterPortfolio()">
                         </div>
-                        <button class="btn btn-dim" onclick="fetchAndRenderPortfolio()"><i class="fas fa-sync-alt"></i> Refresh Portfolio</button>
+                        <button class="btn btn-dim" onclick="fetchAndRenderPortfolio()"><i class="fas fa-sync-alt"></i>
+                            Refresh Portfolio</button>
                     </div>
                 </div>
             </header>
-            
+
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 24px;">
                 <div class="stat-card">
                     <div class="stat-title">Invested Amount</div>
@@ -1683,15 +1716,26 @@
                     <thead>
                         <tr>
                             <th style="width: 40px;"></th>
-                            <th onclick="sortPortfolio('code')" style="cursor:pointer;">Instrument <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('quantity')" style="cursor:pointer; text-align: right;">Qty <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('avg_price')" style="cursor:pointer; text-align: right;">Avg Price <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('ltp')" style="cursor:pointer; text-align: right;">LTP <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('day_change_pct')" style="cursor:pointer; text-align: right;">Day Chg <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('inv_value')" style="cursor:pointer; text-align: right;">Invested <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('cur_value')" style="cursor:pointer; text-align: right;">Cur Value <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('pnl')" style="cursor:pointer; text-align: right;">Unrealized PNL <i class="fas fa-sort"></i></th>
-                            <th onclick="sortPortfolio('last_sync_at')" style="cursor:pointer; text-align: center;">Last Sync <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('code')" style="cursor:pointer;">Instrument <i
+                                    class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('quantity')" style="cursor:pointer; text-align: right;">Qty <i
+                                    class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('avg_price')" style="cursor:pointer; text-align: right;">Avg
+                                Price <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('ltp')" style="cursor:pointer; text-align: right;">LTP <i
+                                    class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('day_change_pct')" style="cursor:pointer; text-align: right;">Day
+                                Chg <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('inv_value')" style="cursor:pointer; text-align: right;">Invested
+                                <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortPortfolio('cur_value')" style="cursor:pointer; text-align: right;">Cur
+                                Value <i class="fas fa-sort"></i></th>
+                            <th onclick="sortPortfolio('pnl')" style="cursor:pointer; text-align: right;">Unrealized PNL
+                                <i class="fas fa-sort"></i>
+                            </th>
+                            <th onclick="sortPortfolio('last_sync_at')" style="cursor:pointer; text-align: center;">Last
+                                Sync <i class="fas fa-sort"></i></th>
                         </tr>
                     </thead>
                     <tbody id="portfolio-tbody">
@@ -1709,7 +1753,7 @@
                     <p class="text-dim">Comprehensive guide to StockSignal Pro architecture and features</p>
                 </div>
             </header>
-            
+
             <div id="support-content" class="support-container">
                 <!-- Content injected via JS -->
             </div>
@@ -1719,18 +1763,22 @@
         <main class="main-content hidden" id="indices-view">
             <header class="top-header">
                 <div class="header-left">
-                    <h1 style="color: var(--text-main); font-weight: 700; display:flex; align-items:center; gap: 12px; margin: 0;">
+                    <h1
+                        style="color: var(--text-main); font-weight: 700; display:flex; align-items:center; gap: 12px; margin: 0;">
                         <i class="fas fa-chart-pie" style="color: var(--primary);"></i> Market Indices
                     </h1>
-                    <p class="subtitle text-dim" style="font-size: 13px; margin-top: 5px;">Broad & Sectoral Index Tracking</p>
+                    <p class="subtitle text-dim" style="font-size: 13px; margin-top: 5px;" id="indices-subtitle">Broad & Sectoral Index Tracking</p>
                 </div>
                 <div class="header-right" style="display: flex; gap: 15px; align-items: center;">
                     <div class="search-box" style="width: 280px; position: relative;">
-                        <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim);"></i>
-                        <input type="text" id="indices-search" placeholder="Search Index Name..." oninput="filterIndices()" 
-                               style="width: 100%; padding: 10px 10px 10px 38px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 13px; outline: none;">
+                        <i class="fas fa-search"
+                            style="position: absolute; left: 36px; top: 50%; transform: translateY(-50%); color: var(--text-dim);"></i>
+                        <input type="text" id="indices-search" placeholder="Search Index Name..."
+                            oninput="filterIndices()"
+                            style="width: 100%; padding: 10px 10px 10px 38px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 13px; outline: none;">
                     </div>
-                    <button class="btn btn-secondary" onclick="fetchAndRenderIndices()" style="padding: 10px 18px; display: flex; align-items: center; gap: 8px;">
+                    <button class="btn btn-secondary" onclick="fetchAndRenderIndices()"
+                        style="padding: 10px 18px; display: flex; align-items: center; gap: 8px;">
                         <i class="fas fa-sync-alt"></i> Refresh
                     </button>
                 </div>
@@ -1739,17 +1787,22 @@
             <div class="table-container" style="padding: 20px;">
                 <table class="signals-table" style="width: 100%; border-collapse: collapse;">
                     <thead>
-                        <tr style="border-bottom: 2px solid var(--border-color); color: var(--text-main); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">
-                            <th style="text-align: left; padding: 12px 16px; cursor: pointer; width: 200px;" onclick="sortIndices('bs_indexSymbol')">Indices <i class="fas fa-sort"></i></th>
-                            <th style="padding: 12px 16px; text-align: right; cursor: pointer; width: 70px;" onclick="sortIndices('bs_percentChange')">1D % <i class="fas fa-sort"></i></th>
+                        <tr
+                            style="border-bottom: 2px solid var(--border-color); color: var(--text-main); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">
+                            <th style="text-align: left; padding: 12px 16px; cursor: pointer; width: 140px;"
+                                onclick="sortIndices('bs_indexSymbol')">Indices <i class="fas fa-sort"></i></th>
+                            <th style="padding: 12px 16px; text-align: right; cursor: pointer; width: 70px;"
+                                onclick="sortIndices('bs_percentChange')">1D % <i class="fas fa-sort"></i></th>
                             <th style="padding: 12px 16px; text-align: center; width: 140px;">Day's Range</th>
-                            <th style="padding: 12px 16px; text-align: right; cursor: pointer; width: 80px;" onclick="sortIndices('bs_perChange365d')">52W % <i class="fas fa-sort"></i></th>
+                            <th style="padding: 12px 16px; text-align: right; cursor: pointer; width: 80px;"
+                                onclick="sortIndices('bs_perChange365d')">52W % <i class="fas fa-sort"></i></th>
                             <th style="padding: 12px 16px; text-align: center; width: 140px;">52W Range</th>
                             <th style="padding: 12px 16px; text-align: center; width: 140px;">Advance / Decline</th>
-                            <th style="padding: 12px 12px; text-align: center; width: 60px;">Today</th>
+
                             <th style="padding: 12px 12px; text-align: center; width: 60px;">30D</th>
                             <th style="padding: 12px 12px; text-align: center; width: 60px;">365D</th>
-                            <th style="padding: 12px 16px; text-align: center; cursor: pointer; width: 85px;" onclick="sortIndices('bs_pe')">Valuation <i class="fas fa-sort"></i></th>
+                            <th style="padding: 12px 16px; text-align: center; cursor: pointer; width: 85px;"
+                                onclick="sortIndices('bs_pe')">Valuation <i class="fas fa-sort"></i></th>
                         </tr>
                     </thead>
                     <tbody id="indices-table-body">
@@ -1794,69 +1847,132 @@
                 </h2>
                 <button class="close-modal" onclick="closeStrategyHelp()">&times;</button>
             </div>
-            <div class="modal-body" id="strategy-help-modal-body" style="padding: 0; max-height: 85vh; overflow-y: auto; background: #0d1117;">
+            <div class="modal-body" id="strategy-help-modal-body"
+                style="padding: 0; max-height: 85vh; overflow-y: auto; background: #0d1117;">
                 <!-- Internal Modal Tabs -->
-                <div style="display: flex; background: rgba(0,0,0,0.4); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100;">
-                    <button class="help-tab-btn active" onclick="switchHelpTab('indicators')" style="flex: 1; padding: 15px; background: none; border: none; color: var(--primary); font-weight: 800; font-size: 11px; cursor: pointer; border-bottom: 2px solid var(--primary); text-transform: uppercase; letter-spacing: 1px;">Indicators</button>
-                    <button class="help-tab-btn" onclick="switchHelpTab('logic')" style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Logic & Math</button>
-                    <button class="help-tab-btn" onclick="switchHelpTab('mtf')" style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Timeframes</button>
-                    <button class="help-tab-btn" onclick="switchHelpTab('fundamentals')" style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Fundamentals</button>
-                    <button class="help-tab-btn" onclick="switchHelpTab('recipes')" style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Recipes</button>
+                <div
+                    style="display: flex; background: rgba(0,0,0,0.4); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 100;">
+                    <button class="help-tab-btn active" onclick="switchHelpTab('indicators')"
+                        style="flex: 1; padding: 15px; background: none; border: none; color: var(--primary); font-weight: 800; font-size: 11px; cursor: pointer; border-bottom: 2px solid var(--primary); text-transform: uppercase; letter-spacing: 1px;">Indicators</button>
+                    <button class="help-tab-btn" onclick="switchHelpTab('logic')"
+                        style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Logic
+                        & Math</button>
+                    <button class="help-tab-btn" onclick="switchHelpTab('mtf')"
+                        style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Timeframes</button>
+                    <button class="help-tab-btn" onclick="switchHelpTab('fundamentals')"
+                        style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Fundamentals</button>
+                    <button class="help-tab-btn" onclick="switchHelpTab('recipes')"
+                        style="flex: 1; padding: 15px; background: none; border: none; color: var(--text-dim); font-weight: 800; font-size: 11px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;">Recipes</button>
                 </div>
 
                 <!-- Tab 1: Indicators -->
                 <div id="help-indicators" class="help-tab-content" style="padding: 30px;">
-                    <h3 style="font-size: 18px; color: var(--primary); margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                    <h3
+                        style="font-size: 18px; color: var(--primary); margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
                         <i class="fas fa-microchip"></i> Indicator Reference
                     </h3>
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                         <thead style="background: rgba(255,255,255,0.03);">
                             <tr>
-                                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Token / Alias</th>
-                                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Type</th>
-                                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Usage Example</th>
+                                <th
+                                    style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">
+                                    Token / Alias</th>
+                                <th
+                                    style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">
+                                    Type</th>
+                                <th
+                                    style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">
+                                    Usage Example</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Price</code>, <code>LTP</code>, <code>CMP</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">Numeric</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">Price > [Daily].High</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>Price</code>, <code>LTP</code>, <code>CMP</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">
+                                    Numeric</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    Price > [Daily].High</td>
                             </tr>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>RSI</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">Numeric</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">RSI < 30 OR [1h].RSI > 60</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>RSI</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">
+                                    Numeric</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    RSI < 30 OR [1h].RSI> 60</td>
                             </tr>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Trend</code>, <code>ST</code>, <code>SuperTrend</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--success);">Sentiment</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">Trend == 'Bullish'</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>Trend</code>, <code>ST</code>, <code>SuperTrend</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--success);">
+                                    Sentiment</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    Trend == 'Bullish'</td>
                             </tr>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>ST_V</code>, <code>STV</code>, <code>ST_Value</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">Numeric</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">LTP > ST_V + 0.5%</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>ST_V</code>, <code>STV</code>, <code>ST_Value</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">
+                                    Numeric</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    LTP > ST_V + 0.5%</td>
                             </tr>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Pattern</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--success);">Sentiment</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">Pattern == 'Bullish'</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>Pattern</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--success);">
+                                    Sentiment</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    Pattern == 'Bullish'</td>
                             </tr>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>PatternScore</code>, <code>PScan</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">Numeric</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">PatternScore >= 3</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>PatternScore</code>, <code>PScan</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">
+                                    Numeric</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    PatternScore >= 3</td>
                             </tr>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>EMA_F</code>, <code>EMA_S</code>, <code>EMA_C</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--success);">Mixed</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">EMA_C == 'Bullish'</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>EMA_F</code>, <code>EMA_S</code>, <code>EMA_C</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--success);">
+                                    Mixed</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    EMA_C == 'Bullish'</td>
                             </tr>
                             <tr>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Vol</code>, <code>VOL_R</code>, <code>VolumeRatio</code></td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">Numeric</td>
-                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">VOL_R > 2.5</td>
+                                <td style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <code>Vol</code>, <code>VOL_R</code>, <code>VolumeRatio</code>
+                                </td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--amber);">
+                                    Numeric</td>
+                                <td
+                                    style="padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: monospace;">
+                                    VOL_R > 2.5</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1866,139 +1982,229 @@
                 <div id="help-logic" class="help-tab-content hidden" style="padding: 30px;">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
                         <div>
-                            <h3 style="font-size: 18px; color: var(--amber); margin-bottom: 20px;"><i class="fas fa-balance-scale"></i> Operators</h3>
-                            <ul style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 15px; font-size: 13px;">
-                                <li><code style="color:var(--primary)">AND</code> / <code style="color:var(--primary)">OR</code> / <code style="color:var(--primary)">NOT</code> - Logical gates.</li>
-                                <li><code style="color:var(--success)">==</code> / <code style="color:var(--success)">!=</code> - Equality (use single quotes for strings).</li>
-                                <li><code style="color:var(--success)">></code> / <code style="color:var(--success)">>=</code> / <code style="color:var(--success)"><</code> / <code style="color:var(--success)"><=</code> - Numeric range.</li>
+                            <h3 style="font-size: 18px; color: var(--amber); margin-bottom: 20px;"><i
+                                    class="fas fa-balance-scale"></i> Operators</h3>
+                            <ul
+                                style="list-style: none; padding: 0; display: flex; flex-direction: column; gap: 15px; font-size: 13px;">
+                                <li><code style="color:var(--primary)">AND</code> / <code
+                                        style="color:var(--primary)">OR</code> / <code
+                                        style="color:var(--primary)">NOT</code> - Logical gates.</li>
+                                <li><code style="color:var(--success)">==</code> / <code
+                                        style="color:var(--success)">!=</code> - Equality (use single quotes for
+                                    strings).</li>
+                                <li><code style="color:var(--success)">></code> / <code
+                                        style="color:var(--success)">>=</code> / <code
+                                        style="color:var(--success)"><</code> / <code
+                                        style="color:var(--success)"><=</code> - Numeric range.</li>
                             </ul>
                         </div>
                         <div>
-                            <h3 style="font-size: 18px; color: var(--primary); margin-bottom: 20px;"><i class="fas fa-percent"></i> Percentage Engine</h3>
+                            <h3 style="font-size: 18px; color: var(--primary); margin-bottom: 20px;"><i
+                                    class="fas fa-percent"></i> Percentage Engine</h3>
                             <p style="font-size: 13px; color: var(--text-dim); line-height: 1.6;">
-                                Apply offsets directly to any price-based token. This is used for "buffer" zones or trailing targets.
+                                Apply offsets directly to any price-based token. This is used for "buffer" zones or
+                                trailing targets.
                             </p>
-                            <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-top: 15px; font-family: monospace; font-size: 13px;">
+                            <div
+                                style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-top: 15px; font-family: monospace; font-size: 13px;">
                                 LTP > ST_V + 0.5% <br>
                                 High - 1.25% <br>
-                                LTP < [1h].EMA_S - 2%
+                                LTP < [1h].EMA_S - 2% </div>
+                            </div>
+                        </div>
+                        <div
+                            style="margin-top: 30px; padding: 20px; background: rgba(var(--primary-rgb), 0.1); border-radius: 12px; border: 1px solid var(--primary);">
+                            <strong style="color: var(--primary); display: block; margin-bottom: 5px;">Special Logic:
+                                Target & Stop-Loss</strong>
+                            <p style="font-size: 11px; margin-bottom: 10px;">In Target/SL fields, if you leave them
+                                empty, the system defaults to 1.5% profit and 1.5% loss based on LTP. You can use tokens
+                                for dynamic exits:</p>
+                            <div style="display: flex; gap: 20px; font-size: 12px; font-family: monospace;">
+                                Target: [Daily].High <br>
+                                Stop Loss: ST_V - 0.25%
+                            </div>
+                        </div>
+                        <div
+                            style="margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--border-color);">
+                            <strong style="color: var(--primary); display: block; margin-bottom: 5px;">Shorthand Power
+                                Tokens</strong>
+                            <div style="display: flex; gap: 20px; font-size: 13px;">
+                                <code>@High</code> &rarr; Previous Candle High <br>
+                                <code>@Low</code> &rarr; Previous Candle Low
                             </div>
                         </div>
                     </div>
-                    <div style="margin-top: 30px; padding: 20px; background: rgba(var(--primary-rgb), 0.1); border-radius: 12px; border: 1px solid var(--primary);">
-                        <strong style="color: var(--primary); display: block; margin-bottom: 5px;">Special Logic: Target & Stop-Loss</strong>
-                        <p style="font-size: 11px; margin-bottom: 10px;">In Target/SL fields, if you leave them empty, the system defaults to 1.5% profit and 1.5% loss based on LTP. You can use tokens for dynamic exits:</p>
-                        <div style="display: flex; gap: 20px; font-size: 12px; font-family: monospace;">
-                            Target: [Daily].High <br>
-                            Stop Loss: ST_V - 0.25%
-                        </div>
-                    </div>
-                    <div style="margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px solid var(--border-color);">
-                        <strong style="color: var(--primary); display: block; margin-bottom: 5px;">Shorthand Power Tokens</strong>
-                        <div style="display: flex; gap: 20px; font-size: 13px;">
-                            <code>@High</code> &rarr; Previous Candle High <br>
-                            <code>@Low</code> &rarr; Previous Candle Low
-                        </div>
-                    </div>
-                </div>
 
-                <!-- Tab 3: MTF -->
-                <div id="help-mtf" class="help-tab-content hidden" style="padding: 30px;">
-                    <h3 style="font-size: 18px; color: var(--primary); margin-bottom: 20px;"><i class="fas fa-layer-group"></i> Timeframe Wrappers</h3>
-                    <p style="font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 20px;">
-                        The power of Confluence Lab lies in checking multiple timeframes simultaneously. Wrap any token in brackets <code>[TF]</code> to jump contexts.
-                    </p>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-bottom: 30px;">
-                        <code style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[5m]</code>
-                        <code style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[15m]</code>
-                        <code style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[1h]</code>
-                        <code style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[60m]</code>
-                        <code style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[Daily]</code>
-                        <code style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[Weekly]</code>
-                        <code style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[Current]</code>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px;">
-                        <h4 style="margin-bottom: 15px; color: var(--primary);">Standard Confluence Pattern</h4>
-                        <code style="background: #000; padding: 15px; border-radius: 8px; display: block; font-size: 13px; line-height: 1.8; color: var(--success);">
+                    <!-- Tab 3: MTF -->
+                    <div id="help-mtf" class="help-tab-content hidden" style="padding: 30px;">
+                        <h3 style="font-size: 18px; color: var(--primary); margin-bottom: 20px;"><i
+                                class="fas fa-layer-group"></i> Timeframe Wrappers</h3>
+                        <p style="font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 20px;">
+                            The power of Confluence Lab lies in checking multiple timeframes simultaneously. Wrap any
+                            token in brackets <code>[TF]</code> to jump contexts.
+                        </p>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-bottom: 30px;">
+                            <code
+                                style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[5m]</code>
+                            <code
+                                style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[15m]</code>
+                            <code
+                                style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[1h]</code>
+                            <code
+                                style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[60m]</code>
+                            <code
+                                style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[Daily]</code>
+                            <code
+                                style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[Weekly]</code>
+                            <code
+                                style="background: rgba(255,255,255,0.05); padding: 8px; text-align: center; border-radius: 4px;">[Current]</code>
+                        </div>
+                        <div
+                            style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px;">
+                            <h4 style="margin-bottom: 15px; color: var(--primary);">Standard Confluence Pattern</h4>
+                            <code
+                                style="background: #000; padding: 15px; border-radius: 8px; display: block; font-size: 13px; line-height: 1.8; color: var(--success);">
                             [Daily].Trend == 'Bullish' AND <br>
                             [1h].RSI > 50 AND <br>
                             LTP > ST_V
                         </code>
-                        <div style="margin-top: 15px; font-size: 12px; color: var(--text-dim);">Checks Daily Trend + 1H Momentum + Intraday Price Support.</div>
-                    </div>
-                </div>
-
-                <!-- Tab 4: Fundamentals -->
-                <div id="help-fundamentals" class="help-tab-content hidden" style="padding: 30px;">
-                    <h3 style="font-size: 18px; color: var(--amber); margin-bottom: 20px;"><i class="fas fa-landmark"></i> Corporate Fundamentals</h3>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                        <thead style="background: rgba(255,255,255,0.03);">
-                            <tr>
-                                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Token</th>
-                                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Value</th>
-                                <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Ex: High ROE Scan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>ROE</code></td><td>Return on Equity</td><td>ROE > 20</td></tr>
-                            <tr><td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>PE</code></td><td>P/E Ratio</td><td>PE < 15</td></tr>
-                            <tr><td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>PB</code></td><td>Price to Book Value</td><td>PB < 3</td></tr>
-                            <tr><td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>EPS</code></td><td>Earnings Per Share</td><td>EPS > 50</td></tr>
-                            <tr><td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>OPM</code>, <code>NPM</code></td><td>Operating/Net Margin %</td><td>OPM > 25 AND NPM > 15</td></tr>
-                            <tr><td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Market_Cap</code></td><td>MCap (Crores)</td><td>Market_Cap > 50000</td></tr>
-                            <tr><td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);"><code>Sector</code>, <code>Industry</code></td><td>Classification</td><td>Industry == 'Software'</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Tab 5: Recipes -->
-                <div id="help-recipes" class="help-tab-content hidden" style="padding: 30px;">
-                    <h3 style="font-size: 18px; color: var(--primary); margin-bottom: 25px;"><i class="fas fa-book-open"></i> Full Engine Examples</h3>
-                    <div style="display: grid; gap: 20px;">
-                        <div class="help-box" style="padding: 20px; border-left: 4px solid var(--success);">
-                            <h4 style="color: var(--success); margin-bottom: 10px;">Golden Cross Screener</h4>
-                            <code style="font-size: 12px; display: block; background: #000; padding: 10px; border-radius: 6px;">[Daily].EMA_F > [Daily].EMA_S AND [Weekly].EMA_F > [Weekly].EMA_S</code>
-                        </div>
-                        <div class="help-box" style="padding: 20px; border-left: 4px solid var(--amber);">
-                            <h4 style="color: var(--amber); margin-bottom: 10px;">Bullish Reversal Detection</h4>
-                            <code style="font-size: 12px; display: block; background: #000; padding: 10px; border-radius: 6px;">PatternScore >= 3 AND RSI < 40 AND LTP > @Low</code>
+                            <div style="margin-top: 15px; font-size: 12px; color: var(--text-dim);">Checks Daily Trend +
+                                1H Momentum + Intraday Price Support.</div>
                         </div>
                     </div>
+
+                    <!-- Tab 4: Fundamentals -->
+                    <div id="help-fundamentals" class="help-tab-content hidden" style="padding: 30px;">
+                        <h3 style="font-size: 18px; color: var(--amber); margin-bottom: 20px;"><i
+                                class="fas fa-landmark"></i> Corporate Fundamentals</h3>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead style="background: rgba(255,255,255,0.03);">
+                                <tr>
+                                    <th
+                                        style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">
+                                        Token</th>
+                                    <th
+                                        style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">
+                                        Value</th>
+                                    <th
+                                        style="padding: 12px; text-align: left; border-bottom: 1px solid var(--border-color);">
+                                        Ex: High ROE Scan</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <code>ROE</code>
+                                    </td>
+                                    <td>Return on Equity</td>
+                                    <td>ROE > 20</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <code>PE</code>
+                                    </td>
+                                    <td>P/E Ratio</td>
+                                    <td>PE < 15</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <code>PB</code>
+                                    </td>
+                                    <td>Price to Book Value</td>
+                                    <td>PB < 3</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <code>EPS</code>
+                                    </td>
+                                    <td>Earnings Per Share</td>
+                                    <td>EPS > 50</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <code>OPM</code>, <code>NPM</code>
+                                    </td>
+                                    <td>Operating/Net Margin %</td>
+                                    <td>OPM > 25 AND NPM > 15</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <code>Market_Cap</code>
+                                    </td>
+                                    <td>MCap (Crores)</td>
+                                    <td>Market_Cap > 50000</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        <code>Sector</code>, <code>Industry</code>
+                                    </td>
+                                    <td>Classification</td>
+                                    <td>Industry == 'Software'</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Tab 5: Recipes -->
+                    <div id="help-recipes" class="help-tab-content hidden" style="padding: 30px;">
+                        <h3 style="font-size: 18px; color: var(--primary); margin-bottom: 25px;"><i
+                                class="fas fa-book-open"></i> Full Engine Examples</h3>
+                        <div style="display: grid; gap: 20px;">
+                            <div class="help-box" style="padding: 20px; border-left: 4px solid var(--success);">
+                                <h4 style="color: var(--success); margin-bottom: 10px;">Golden Cross Screener</h4>
+                                <code
+                                    style="font-size: 12px; display: block; background: #000; padding: 10px; border-radius: 6px;">[Daily].EMA_F > [Daily].EMA_S AND [Weekly].EMA_F > [Weekly].EMA_S</code>
+                            </div>
+                            <div class="help-box" style="padding: 20px; border-left: 4px solid var(--amber);">
+                                <h4 style="color: var(--amber); margin-bottom: 10px;">Bullish Reversal Detection</h4>
+                                <code
+                                    style="font-size: 12px; display: block; background: #000; padding: 10px; border-radius: 6px;">PatternScore >= 3 AND RSI < 40 AND LTP > @Low</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer"
+                    style="padding: 15px 30px; background: rgba(0,0,0,0.2); border-top: 1px solid var(--border-color);">
+                    <button class="btn btn-primary" onclick="closeStrategyHelp()"
+                        style="width: 100%; padding: 12px; font-weight: 800; border-radius: 8px;">GOT IT, START
+                        BUILDING</button>
                 </div>
             </div>
-            <div class="modal-footer" style="padding: 15px 30px; background: rgba(0,0,0,0.2); border-top: 1px solid var(--border-color);">
-                <button class="btn btn-primary" onclick="closeStrategyHelp()" style="width: 100%; padding: 12px; font-weight: 800; border-radius: 8px;">GOT IT, START BUILDING</button>
-            </div>
         </div>
-    </div>
-    
-    <!-- Chatbot Widget UI -->
-    <div id="ai-chat-widget" class="ai-widget collapsed">
-        <div class="ai-header" onclick="toggleAIChat()">
-            <div class="ai-title">
-                <i class="fas fa-robot"></i> 
-                <span>Signal Assistant</span>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <button class="ai-close-btn" id="ai-expand-btn" onclick="event.stopPropagation(); toggleAIExpand()" title="Expand Chat"><i class="fas fa-expand-alt"></i></button>
-                <button class="ai-close-btn" onclick="event.stopPropagation(); toggleAIChat()"><i class="fas fa-times"></i></button>
-            </div>
-        </div>
-        <div class="ai-body" id="ai-chat-body">
-            <div class="ai-message ai-assistant">
-                Hi! I'm your Signal Pro Assistant. Ask me about top signals, stock status, or market sentiment.
-            </div>
-        </div>
-        <div class="ai-footer">
-            <input type="text" id="ai-chat-input" placeholder="Ask something..." onkeyup="if(event.key === 'Enter') sendAIMessage()">
-            <button class="btn btn-primary" style="padding: 0; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 16px;" onclick="sendAIMessage()"><i class="fas fa-arrow-up"></i></button>
-        </div>
-    </div>
 
-    <script src="/static/app.js?v=12" onerror="this.src='app.js?v=12'"></script>
-    <div id="strat-suggestions"
-        style="display:none; position: absolute; z-index: 10000; background: #161b22; border: 1px solid var(--primary); border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); min-width: 250px; max-height: 250px; overflow-y: auto; pointer-events: auto;">
-    </div>
+        <!-- Chatbot Widget UI -->
+        <div id="ai-chat-widget" class="ai-widget collapsed">
+            <div class="ai-header" onclick="toggleAIChat()">
+                <div class="ai-title">
+                    <i class="fas fa-robot"></i>
+                    <span>Signal Assistant</span>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="ai-close-btn" id="ai-expand-btn" onclick="event.stopPropagation(); toggleAIExpand()"
+                        title="Expand Chat"><i class="fas fa-expand-alt"></i></button>
+                    <button class="ai-close-btn" onclick="event.stopPropagation(); toggleAIChat()"><i
+                            class="fas fa-times"></i></button>
+                </div>
+            </div>
+            <div class="ai-body" id="ai-chat-body">
+                <div class="ai-message ai-assistant">
+                    Hi! I'm your Signal Pro Assistant. Ask me about top signals, stock status, or market sentiment.
+                </div>
+            </div>
+            <div class="ai-footer">
+                <input type="text" id="ai-chat-input" placeholder="Ask something..."
+                    onkeyup="if(event.key === 'Enter') sendAIMessage()">
+                <button class="btn btn-primary"
+                    style="padding: 0; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 16px;"
+                    onclick="sendAIMessage()"><i class="fas fa-arrow-up"></i></button>
+            </div>
+        </div>
+
+        <script src="/static/app.js?v=12" onerror="this.src='app.js?v=12'"></script>
+        <div id="strat-suggestions"
+            style="display:none; position: absolute; z-index: 10000; background: #161b22; border: 1px solid var(--primary); border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); min-width: 250px; max-height: 250px; overflow-y: auto; pointer-events: auto;">
+        </div>
 </body>
 
 </html>

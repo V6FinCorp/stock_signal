@@ -34,7 +34,7 @@ const tableControllers = {
 function showTableSkeleton(tbodyId, columns = 0, rows = 10) {
     const tbody = document.getElementById(tbodyId);
     if (!tbody) return;
-    
+
     // Auto-detect columns from thead if available for better alignment
     let colToRender = columns;
     if (colToRender === 0) {
@@ -49,7 +49,7 @@ function showTableSkeleton(tbodyId, columns = 0, rows = 10) {
         }
     }
     if (colToRender === 0) colToRender = 8; // Fallback
-    
+
     let html = '';
     for (let i = 0; i < rows; i++) {
         let cells = '';
@@ -131,7 +131,7 @@ let _portfolioData = []; // Cache for local portfolio filtering
 let _portfolioSortState = { key: 'quantity', asc: false }; // Default sort by quantity desc
 
 let currentEditorMode = 'query';
-let currentStrategyId = null; 
+let currentStrategyId = null;
 let HUD_STATES = {
     swing: { active: false, expanded: false, operation: null },
     intraday: { active: false, expanded: false, operation: null }
@@ -240,7 +240,7 @@ function setUniverse(univ) {
     const nav = document.getElementById('universe-nav');
     const slider = document.getElementById('uni-slider');
     const options = nav.querySelectorAll('.universe-option');
-    
+
     // Clear classes
     nav.classList.remove('uni-state-all', 'uni-state-portfolio');
     options.forEach(opt => opt.classList.remove('active'));
@@ -261,11 +261,11 @@ function setUniverse(univ) {
 
     // Body class for CSS overrides
     document.body.classList.toggle('portfolio-mode-active', isPortfolioModeActive);
-    
+
     // Refresh current view
     if (activeTab === 'dashboard') renderSignals();
     else if (activeTab === 'pro-screener') applyScreenerFilters();
-    
+
     showToast(`Universe: ${univ.toUpperCase()}`, "info");
 }
 
@@ -288,7 +288,7 @@ async function fetchAndRenderSignals(forceFetch = false) {
         // but not block the UI. So we continue but don't show skeleton.
     } else {
         const tbody = document.getElementById('signal-tbody');
-        showTableSkeleton('signal-tbody'); 
+        showTableSkeleton('signal-tbody');
     }
 
     // Clear stats and header times during load to prevent stale data
@@ -380,7 +380,7 @@ function setMode(mode, skipFetch = false) {
     }
 
     // --- Mode-Specific UI Sync ---
-    
+
     // 1. Auto-Sync Toggle Position
     const autoSyncSwitch = document.getElementById('auto-sync-switch');
     if (autoSyncSwitch) {
@@ -396,7 +396,7 @@ function setMode(mode, skipFetch = false) {
     // 3. Button Status Sync (Fetch / Calc)
     const fetchBtn = document.getElementById('fetch-data-btn');
     const calcBtn = document.getElementById('calc-signals-btn');
-    
+
     // Reset buttons to default first
     if (fetchBtn) {
         fetchBtn.disabled = false;
@@ -418,7 +418,7 @@ function setMode(mode, skipFetch = false) {
                 fetchBtn.classList.add('btn-disabled');
             }
         } else if (HUD_STATES[mode].operation === 'calculate') {
-             if (calcBtn) {
+            if (calcBtn) {
                 calcBtn.disabled = true;
                 calcBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
                 calcBtn.classList.add('btn-disabled');
@@ -433,7 +433,7 @@ function setMode(mode, skipFetch = false) {
     if (activeTab === 'dashboard') {
         renderTimeframes();
         updateTableHeader();
-        if (!skipFetch) fetchAndRenderSignals(true); 
+        if (!skipFetch) fetchAndRenderSignals(true);
     } else if (activeTab === 'pro-screener') {
         renderProScreener();
     } else if (activeTab === 'settings') {
@@ -1543,7 +1543,7 @@ function runAutoSyncLoop(mode) {
         const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
         const istDate = new Date(utc + (3600000 * 5.5));
 
-        const day = istDate.getDay(); 
+        const day = istDate.getDay();
         const hours = istDate.getHours();
         const minutes = istDate.getMinutes();
 
@@ -1553,8 +1553,8 @@ function runAutoSyncLoop(mode) {
         }
 
         const timeInMinutes = (hours * 60) + minutes;
-        const marketOpen = (9 * 60) + 15; 
-        const marketClose = (15 * 60) + 30; 
+        const marketOpen = (9 * 60) + 15;
+        const marketClose = (15 * 60) + 30;
 
         if (timeInMinutes < marketOpen || timeInMinutes > marketClose) {
             console.log(`Auto-Sync [${targetMode}] skipped: Outside of market hours.`);
@@ -1592,7 +1592,7 @@ async function triggerBackgroundFetch(mode) {
     // Simplified fetch without EventSource if it's in the background, 
     // or just use the same logic but don't update current active buttons.
     // Actually, fetchMarketData already takes 'mode' as a parameter (from line 1500).
-    fetchMarketData(mode); 
+    fetchMarketData(mode);
 }
 
 async function triggerBackgroundCalc(mode) {
@@ -1738,11 +1738,11 @@ async function refreshSignals() {
 
     try {
         const mode = currentMode;
-        
+
         // Track calculation state for UI isolation
         HUD_STATES[mode].active = true;
         HUD_STATES[mode].operation = 'calculate';
-        
+
         const fundamentals = (CONFIGS[mode] && CONFIGS[mode].fundamentals && CONFIGS[mode].fundamentals.enabled) || false;
 
         const res = await fetch(`/api/calculate?mode=${mode}&fundamentals=${fundamentals}`, { method: 'POST' });
@@ -2286,11 +2286,11 @@ async function showCandlesPopup(isin, symbol, ltp = 0, patternName = '', fallbac
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0;">
                 <div style="display: flex; gap: 6px; flex-wrap: wrap;" id="modal-tf-buttons">
                     ${allTfs.map(tf => {
-                        const isActive = modalTfState.activeTfs.includes(tf);
-                        return `<button onclick="handleModalTfClick('${tf}')" 
+        const isActive = modalTfState.activeTfs.includes(tf);
+        return `<button onclick="handleModalTfClick('${tf}')" 
                                 class="tf-btn ${isActive ? 'active' : ''}"
                                 style="font-size: 11px; padding: 4px 10px; min-width: 50px;">${tf}</button>`;
-                    }).join('')}
+    }).join('')}
                 </div>
                 <div id="modal-split-toggle" onclick="toggleModalSplitMode()" title="Split View (Max 4)" style="cursor: pointer; padding: 6px 10px; border-radius: 8px; background: ${modalTfState.isSplit ? 'var(--primary)' : 'rgba(255,255,255,0.05)'}; border: 1px solid ${modalTfState.isSplit ? 'var(--primary)' : 'var(--border-color)'}; color: ${modalTfState.isSplit ? '#fff' : 'var(--text-dim)'}; transition: all 0.2s; font-size: 0.7rem;">
                     <i class="fas fa-th-large"></i> Split View
@@ -2819,23 +2819,23 @@ function renderEnrichedChart(chartInput, symbol, opts, tfDisplay, overrides = {}
 // --- App Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     console.log("App Initializing...");
-    
+
     // 1. Load everything from LocalStorage FIRST (Fastest)
     loadConfigsFromLocalStorage();
-    
+
     // 2. Immediate UI Setup (No waiting for API)
-    setupRSISlider(); 
-    applyZoom(); 
+    setupRSISlider();
+    applyZoom();
     switchTab(activeTab);
     setMode(currentMode, true); // skipFetch=true to use ONLY cache for now
     updateHoldingsCount();
-    
+
     // 3. Background Verification & ONE Fresh Data Fetch
     verifySession().then(() => {
         console.log("Session verified.");
         // Fresh fetch if we're on dashboard
         if (activeTab === 'dashboard') {
-            fetchAndRenderSignals(true); 
+            fetchAndRenderSignals(true);
         }
     });
 
@@ -2955,7 +2955,7 @@ function applyScreenerFilters() {
         // 6. Target/SL % filters
         const score = s.confluence_rank || 0;
         const price = s.ltp || s.close || 0;
-        
+
         let tVal = s.target;
         let sVal = s.sl;
 
@@ -3034,13 +3034,13 @@ function applyScreenerFilters() {
             strategy = activeScreenerBlueprint.name;
             const b = activeScreenerBlueprint.originalData;
             const bSide = (b.side || "BUY").toUpperCase();
-            
+
             targets = resolveMultiTarget(b.target || "", 'TP', price, bSide, s, screenerTfDataMap);
             stopLosses = resolveMultiTarget(b.sl || "", 'SL', price, bSide, s, screenerTfDataMap);
             accumulations = resolveMultiTarget(b.accum || "", 'ACCUM', price, bSide, s, screenerTfDataMap);
-            
+
             // If the blueprint matched, ensure we show some positive score indicator if not present
-            if (displayScore === 0) displayScore = 5; 
+            if (displayScore === 0) displayScore = 5;
         } else {
             targets = [{ label: 'T1', price: (isBullish ? price * 1.05 : price * 0.95) }];
             stopLosses = [{ label: 'SL', price: (isBullish ? price * 0.97 : price * 1.03) }];
@@ -3144,11 +3144,11 @@ function applyScreenerFilters() {
             const minT = targets[0].price;
             const maxT = targets[targets.length - 1].price;
             const sl = stopLosses[0].price;
-            
+
             const risk = Math.max(0.1, Math.abs(price - sl));
             const rewMin = Math.abs(minT - price);
             const rewMax = Math.abs(maxT - price);
-            
+
             const rrMin = (rewMin / risk).toFixed(1);
             const rrMax = (rewMax / risk).toFixed(1);
             rrDisplay = (rrMin === rrMax) ? `1:${rrMin}` : `1:${rrMin} \u279E ${rrMax}`;
@@ -3372,9 +3372,9 @@ function toggleStrategyForm() {
 function toggleStrategySidebar() {
     const container = document.getElementById('strategy-editor-container');
     if (!container) return;
-    
+
     const isCollapsed = container.classList.toggle('sidebar-collapsed');
-    
+
     // Optional: update a button icon if I add one
     const btn = document.getElementById('toggle-sidebar-btn');
     if (btn) {
@@ -3928,7 +3928,7 @@ async function saveCurrentStrategy(updateExisting = false) {
 
     const side = document.getElementById('strat-side').value;
     const tf = document.getElementById('strat-timeframe').value;
-    const universe = currentMode; 
+    const universe = currentMode;
 
     if (!entry) return alert("Please enter Entry Criteria.");
 
@@ -3939,7 +3939,7 @@ async function saveCurrentStrategy(updateExisting = false) {
     const finalId = updateExisting ? currentStrategyId : null;
 
     const payload = {
-        id: finalId, 
+        id: finalId,
         name,
         query: JSON.stringify(structuredData),
         mode: universe,
@@ -3955,7 +3955,7 @@ async function saveCurrentStrategy(updateExisting = false) {
         const json = await res.json();
         if (json.status === 'success') {
             showToast(finalId ? `Profile '${name}' Updated.` : "New Strategy Profile Saved.", "success");
-            renderSavedStrategies(); 
+            renderSavedStrategies();
         } else {
             showToast("Failed to save strategy.", "error");
         }
@@ -4173,7 +4173,7 @@ async function runStrategyScan() {
             neededTfs.push(m[1]);
         }
     });
-    
+
     const uniqueTfs = [...new Set(neededTfs)].filter(t => t.toLowerCase() !== 'current');
     if (uniqueTfs.length > 1 || (uniqueTfs.length === 1 && uniqueTfs[0] !== currentTimeframe)) {
         if (statusEl) statusEl.innerHTML = `<i class="fas fa-sync fa-spin"></i> Syncing Market Data (${uniqueTfs.join(', ')})...`;
@@ -4317,14 +4317,14 @@ async function runStrategyScan() {
 
                 const key = indMap[token.attr] || token.attr;
                 let val = s[key];
-                
+
                 // --- DMA/SMA Lookup Fix (also handle lowercase fallbacks) ---
                 // --- Start Improved Literal Parsing ---
                 if (val === undefined || val === null) {
                     const lowerSearch = token.attr.toLowerCase();
                     const directMatch = Object.keys(s).find(k => k.toLowerCase() === lowerSearch);
                     if (directMatch) val = s[directMatch];
-                    
+
                     if (val === undefined || val === null) {
                         const noUnderscoreSearch = lowerSearch.replace(/_/g, '');
                         const fuzzyMatch = Object.keys(s).find(k => k.toLowerCase().replace(/_/g, '') === noUnderscoreSearch);
@@ -4371,7 +4371,7 @@ async function runStrategyScan() {
                 if (masterList.indexOf(stock) === 0) {
                     console.log(`[Lab Eval] ${stock.symbol} | Code: ${evalStr} | Result: ${isMatch}`);
                 }
-                
+
                 if (isMatch) {
                     const levels = calculateStaticLevels(stock, tfDataMap);
                     matches.push({ ...stock, levels, side: side, isMatch: true });
@@ -4419,7 +4419,7 @@ function calculateStaticLevels(stock, tfDataMap) {
 
 function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime, tf) {
     if (isNaN(targetRSI) || isNaN(currentRSI) || isNaN(currentPrice)) return currentPrice;
-    
+
     // 1. Map Volatility per Timeframe (Percentage of Price)
     const volMap = {
         '5m': 0.003, '15m': 0.005, '30m': 0.007, '60m': 0.01,
@@ -4427,7 +4427,7 @@ function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime, tf
     };
     const tfKey = (tf || '1d').toLowerCase();
     const volatilityFactor = volMap[tfKey] || volMap['1d'];
-    const estimatedVolatility = currentPrice * volatilityFactor; 
+    const estimatedVolatility = currentPrice * volatilityFactor;
 
     // 2. Estimate current AvgGain and AvgLoss using current RSI (normalized to volatility)
     // RS = AvgGain / AvgLoss
@@ -4435,7 +4435,7 @@ function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime, tf
     // AvgGain + AvgLoss = estimatedVolatility
     const K = currentRSI / (100 - currentRSI); // Current RS
     const T = targetRSI / (100 - targetRSI);   // Target RS
-    
+
     const avgLoss = estimatedVolatility / (K + 1);
     const avgGain = estimatedVolatility - avgLoss;
 
@@ -4451,7 +4451,7 @@ function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime, tf
         nextMove = T * (avgLoss * n) - (avgGain * n);
     } else {
         // Solving for L (Gain is 0)
-        nextMove = ( (avgGain * n) / T ) - (avgLoss * n);
+        nextMove = ((avgGain * n) / T) - (avgLoss * n);
         nextMove = -nextMove; // Negative move
     }
 
@@ -4464,7 +4464,7 @@ function forecastPriceFromRSI(targetRSI, currentPrice, currentRSI, isBuyTime, tf
 function resolveMultiTarget(query, type, ltp, side, stock, tfDataMap) {
     const raw = (query || "").trim();
     if (!raw) return [{ label: type === 'TP' ? 'T1' : 'SL', price: resolveLevelQuery("", type, ltp, side, stock, tfDataMap) }];
-    
+
     const parts = raw.split(/\|| OR /i);
     const isBuy = (side || "BUY").toUpperCase() === 'BUY';
 
@@ -4511,10 +4511,10 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
     // Handle @High, @Low shorthands
     q = q.replace(/@High/gi, `[Current].Prev_High`);
     q = q.replace(/@Low/gi, `[Current].Prev_Low`);
-    
+
     // Auto-bracket indicators that are sitting alone
     // e.g. "RSI + 2%" -> "[Current].RSI + 2%"
-    Object.keys(STRAT_ALIASES).sort((a,b)=>b.length-a.length).forEach(alias => {
+    Object.keys(STRAT_ALIASES).sort((a, b) => b.length - a.length).forEach(alias => {
         const regex = new RegExp(`(?<!\\[|\\.)\\b${alias}\\b`, 'gi');
         if (q.match(regex) && !q.includes('[')) {
             q = q.replace(regex, `[Current].${alias}`);
@@ -4525,7 +4525,7 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
     // Pattern: [Timeframe].Indicator or {Timeframe}.Indicator
     const tokenRegex = /[\[\{\(](.*?)[\]\}\)]\s*\.\s*(\w+)/i;
     const tokenMatch = q.match(tokenRegex);
-    
+
     if (tokenMatch) {
         let tfKey = tokenMatch[1].trim();
         if (tfKey.toLowerCase() === 'current') {
@@ -4536,11 +4536,11 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
 
         const indicatorInput = tokenMatch[2].trim();
         const indicatorKey = STRAT_ALIASES[indicatorInput] || indicatorInput.toUpperCase();
-        
+
         // Lookup data in map, trying both normalized and raw names
         const normalizedTf = Object.keys(TF_MAP).find(k => k.toLowerCase() === tfKey.toLowerCase());
         const apiTf = normalizedTf ? TF_MAP[normalizedTf] : tfKey;
-        
+
         // Search in the map using any possible key
         const tfData = tfDataMap[tfKey] || tfDataMap[apiTf] || tfDataMap[normalizedTf] || [];
         const s = tfData.find(item => item.isin === stock.isin);
@@ -4584,10 +4584,10 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
         const pct = parseFloat(purePctMatch[2]) / 100;
         const op = purePctMatch[1] || ""; // Handle "+5%" or "-5%"
         const isBuy = side.toUpperCase() === 'BUY';
-        
+
         if (op === "+") return ltp * (1 + pct);
         if (op === "-") return ltp * (1 - pct);
-        
+
         // Context-aware fallback if no sign provided
         if (type === 'TP') return isBuy ? ltp * (1 + pct) : ltp * (1 - pct);
         if (type === 'SL') return isBuy ? ltp * (1 - pct) : ltp * (1 + pct);
@@ -4612,7 +4612,7 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
         const momentumInds = ['RSI', 'PE', 'ROE', 'PB', 'NPM', 'OPM'];
         const indName = q.split('.').pop().toUpperCase();
         if (momentumInds.includes(indName) && !q.includes('RSI')) {
-             return ltp; // Ignore raw score as price
+            return ltp; // Ignore raw score as price
         }
     }
 
@@ -5067,11 +5067,11 @@ function syncVisualToQuery(section) {
             let part = `${tf}.${ind}`;
             // If operator is == and value is 0, it might be a standalone indicator like [1d].High
             if (op === '==' && val === '0') {
-               // part = part (no change)
+                // part = part (no change)
             } else if (ind === 'LTP' && op === '==' && val.includes('%')) {
-               part = val; // Standalone percentage like 1.5%
+                part = val; // Standalone percentage like 1.5%
             } else {
-               part = `${tf}.${ind} ${op} ${val}`;
+                part = `${tf}.${ind} ${op} ${val}`;
             }
 
             if (logic) {
@@ -5125,7 +5125,7 @@ function syncQueryToVisual(section) {
             };
             addVisualRule(section, data);
             currentLogic = null;
-        } 
+        }
         // 2. Standalone Value or Token Sync: [TF].IND or 1.5%
         else {
             const tokenMatch = p.match(/(\[[^\]]+\]\.)?([^\s]+)/);
@@ -5138,17 +5138,17 @@ function syncQueryToVisual(section) {
                     op: "==",
                     val: tokenMatch[2].includes('.') ? "0" : tokenMatch[2] // If it was just 1.5%, put it in val
                 };
-                
+
                 // Adjustment for standalone indicator like [1h].High
                 if (tokenMatch[2].includes('.') || (tokenMatch[1] && !tokenMatch[2].includes('%'))) {
-                     data.ind = tokenMatch[2];
-                     data.op = "==";
-                     data.val = "0";
+                    data.ind = tokenMatch[2];
+                    data.op = "==";
+                    data.val = "0";
                 } else if (tokenMatch[2].match(/^[\d\.]+%?$/)) {
-                     // Standalone percentage/number
-                     data.ind = "LTP";
-                     data.op = "==";
-                     data.val = tokenMatch[2];
+                    // Standalone percentage/number
+                    data.ind = "LTP";
+                    data.op = "==";
+                    data.val = tokenMatch[2];
                 }
 
                 addVisualRule(section, data);
@@ -5422,7 +5422,7 @@ async function onScreenerCustomStrategyChange() {
     try {
         const data = JSON.parse(strat.query);
         const translated = translateUserQuery(data.entry, data.side, data.tf);
-        
+
         // Always include the profile's base timeframe in the fetch list
         const usedTfs = [translated.primaryTf || data.tf];
 
@@ -5529,7 +5529,7 @@ function evaluateBlueprintMatch(stock, blueprint) {
 
         let val = null;
         let lookupTf = tf;
-        
+
         // Internal mapping: Ensure Daily/Weekly/Monthly are checked in the right universe
         const swingTfs = ['Daily', 'Weekly', 'Monthly', '1d', '1w', '1mo'];
         const isSwingReq = swingTfs.some(stf => stf.toLowerCase() === tf.toLowerCase());
@@ -5558,15 +5558,15 @@ function evaluateBlueprintMatch(stock, blueprint) {
 
             if (attrKey === 'Pattern') {
                 let lookupObj = (screenerTfDataMap[tf]) ? screenerTfDataMap[tf].find(s => s.isin === stock.isin) : (tf === stock.timeframe ? stock : null);
-                const pScore = (lookupObj ? lookupObj.pattern_score : (stock.mtf_data ? stock.mtf_data[tf+'_score'] : 0)) || 0;
+                const pScore = (lookupObj ? lookupObj.pattern_score : (stock.mtf_data ? stock.mtf_data[tf + '_score'] : 0)) || 0;
                 if (pScore > 0) val = "Bullish";
                 else if (pScore < 0) val = "Bearish";
                 else val = "None";
             } else {
                 val = isBullish ? "Bullish" : (isBearish ? "Bearish" : "None");
             }
-        } 
-        
+        }
+
         if (val === undefined || val === null) return "undefined";
         if (typeof val === 'string') return `'${val}'`;
         return val;
@@ -5596,7 +5596,7 @@ function toggleStrategySegment(segmentId) {
     if (!content) return;
 
     const isCollapsed = content.classList.toggle('collapsed');
-    
+
     if (icon) {
         icon.className = isCollapsed ? 'fas fa-chevron-down text-dim' : 'fas fa-chevron-up text-dim';
     }
@@ -5619,7 +5619,7 @@ function toggleStrategySegment(segmentId) {
 function initStrategyLabSegments() {
     const savedStates = JSON.parse(localStorage.getItem('strat_segments') || '{}');
     const segments = ['entry', 'target', 'exit', 'sl', 'accum', 'explainer', 'library'];
-    
+
     segments.forEach(s => {
         const content = document.getElementById(`content-segment-${s}`);
         const icon = document.getElementById(`icon-segment-${s}`);
@@ -5655,6 +5655,21 @@ async function fetchAndRenderIndices() {
 
         if (result.status === 'success' && result.data && result.data.length > 0) {
             _indicesData = result.data;
+
+            // Update subtitle with latest sync time from bs_created_at or created_at
+            const lastUpdated = result.data.reduce((max, curr) => {
+                const ts = curr.bs_created_at || curr.created_at;
+                if (!ts) return max;
+                const currTime = new Date(ts).getTime();
+                return (!isNaN(currTime) && currTime > max) ? currTime : max;
+            }, 0);
+
+            if (lastUpdated > 0) {
+                const timeStr = new Date(lastUpdated).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+                const sub = document.getElementById('indices-subtitle');
+                if (sub) sub.innerText = `Broad & Sectoral Index Tracking • Last Updated: ${timeStr}`;
+            }
+
             filterIndices();
         } else {
             tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text-dim);">No indices data found.</td></tr>';
@@ -5668,25 +5683,25 @@ async function fetchAndRenderIndices() {
 function filterIndices() {
     const query = (document.getElementById('indices-search')?.value || '').toLowerCase();
     let filtered = [..._indicesData];
-    
+
     if (query) {
-        filtered = filtered.filter(idx => 
-            (idx.bs_indexSymbol || '').toLowerCase().includes(query) || 
+        filtered = filtered.filter(idx =>
+            (idx.bs_indexSymbol || '').toLowerCase().includes(query) ||
             (idx.bs_index || '').toLowerCase().includes(query)
         );
     }
-    
+
     // Sorting
     const key = _indicesSortState.key;
     const asc = _indicesSortState.asc;
-    
+
     filtered.sort((a, b) => {
         let valA = a[key] ?? 0;
         let valB = b[key] ?? 0;
-        
+
         if (typeof valA === 'string') valA = valA.toLowerCase();
         if (typeof valB === 'string') valB = valB.toLowerCase();
-        
+
         if (valA < valB) return asc ? -1 : 1;
         if (valA > valB) return asc ? 1 : -1;
         return 0;
@@ -5708,22 +5723,22 @@ function sortIndices(key) {
 function renderIndicesTable(data) {
     const tbody = document.getElementById('indices-table-body');
     if (!tbody) return;
-    
+
     tbody.innerHTML = '';
-    
+
     data.forEach(idx => {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid var(--border-color)';
-        
+
         const ltp = parseFloat(idx.bs_last ?? idx.bs_ltp ?? 0);
-        
+
         // Day stats
         const dChange = parseFloat(idx.bs_percentChange || 0);
         const dColor = dChange > 0 ? 'var(--success)' : (dChange < 0 ? 'var(--danger)' : 'var(--text-main)');
         const dVar = parseFloat(idx.bs_variation || 0);
-        const ltpDisplay = ltp.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const ltpDisplay = ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const dVarLabel = dVar > 0 ? `▲ +${dVar.toFixed(2)}` : (dVar < 0 ? `▼ ${dVar.toFixed(2)}` : `${dVar.toFixed(2)}`);
-        
+
         const dHigh = parseFloat(idx.bs_high || ltp);
         const dLow = parseFloat(idx.bs_low || ltp);
         let dPos = 50;
@@ -5761,7 +5776,7 @@ function renderIndicesTable(data) {
         tr.innerHTML = `
             <td style="padding: 12px 16px;">
                 <div style="font-weight: 700; color: var(--text-main); font-size: 13px;">${idx.bs_indexSymbol}</div>
-                <div style="font-size: 11px; color: ${dColor}; font-weight: 600;">${ltpDisplay} (${dVarLabel})</div>
+                <div style="font-size: 11px; color: ${dColor};">${ltpDisplay} (${dVarLabel})</div>
             </td>
             <td style="padding: 12px 16px; text-align: right; color: ${dColor}; font-weight: 700; font-size: 12px;">
                 ${dChange > 0 ? '+' : ''}${dChange.toFixed(2)}%
@@ -5790,7 +5805,6 @@ function renderIndicesTable(data) {
                 </div>
                 ${createRangeBar(adPos)}
             </td>
-            <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chartTodayPath)}</td>
             <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart30dPath)}</td>
             <td style="padding: 8px; text-align: center;">${renderChart(idx.bs_chart365dPath)}</td>
             <td style="padding: 12px 16px; text-align: center; color: var(--text-dim); font-size: 11px; font-weight: 600;">
@@ -5808,7 +5822,7 @@ let aiMessages = [];
 function toggleAIChat() {
     const widget = document.getElementById('ai-chat-widget');
     widget.classList.toggle('collapsed');
-    
+
     // If we're collapsing, also remove large state
     if (widget.classList.contains('collapsed')) {
         widget.classList.remove('large');
@@ -5816,7 +5830,7 @@ function toggleAIChat() {
         if (expandBtn) expandBtn.innerHTML = '<i class="fas fa-expand-alt"></i>';
     }
 
-    if(!widget.classList.contains('collapsed')) {
+    if (!widget.classList.contains('collapsed')) {
         setTimeout(() => document.getElementById('ai-chat-input').focus(), 300);
     }
 }
@@ -5824,9 +5838,9 @@ function toggleAIChat() {
 function toggleAIExpand() {
     const widget = document.getElementById('ai-chat-widget');
     const expandBtn = document.getElementById('ai-expand-btn');
-    
+
     widget.classList.toggle('large');
-    
+
     if (widget.classList.contains('large')) {
         expandBtn.innerHTML = '<i class="fas fa-compress-alt"></i>';
         expandBtn.title = "Shrink Chat";
@@ -5840,34 +5854,34 @@ async function sendAIMessage() {
     const input = document.getElementById('ai-chat-input');
     const text = input.value.trim();
     if (!text) return;
-    
+
     input.value = '';
-    
+
     // Add user message to UI
     appendChatMessage('user', text);
-    
+
     // Add to history
-    aiMessages.push({role: "user", content: text});
-    
+    aiMessages.push({ role: "user", content: text });
+
     // Add loading indicator
     const loadingId = 'loading-' + Date.now();
     appendChatMessage('loading', '<i class="fas fa-circle-notch fa-spin"></i> Analyzing data...', loadingId);
-    
+
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({messages: aiMessages, mode: currentMode})
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: aiMessages, mode: currentMode })
         });
-        
+
         const data = await response.json();
-        
+
         // Remove loading
         const loadingEl = document.getElementById(loadingId);
         if (loadingEl) loadingEl.remove();
-        
+
         if (data.status === 'success') {
-            aiMessages.push({role: "assistant", content: data.reply});
+            aiMessages.push({ role: "assistant", content: data.reply });
             // Convert simple markdown/newlines to HTML
             let formattedReply = data.reply.replace(/\n\n/g, '<br><br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
             appendChatMessage('assistant', formattedReply);
@@ -5881,57 +5895,57 @@ async function sendAIMessage() {
     }
 }
 
-function appendChatMessage(role, content, id=null) {
+function appendChatMessage(role, content, id = null) {
     const body = document.getElementById('ai-chat-body');
     const div = document.createElement('div');
     div.className = `ai-message ${role === 'user' ? 'ai-user' : 'ai-assistant'}`;
     if (id) div.id = id;
-    
+
     if (role === 'loading') {
         div.style.opacity = '0.7';
     }
-    
+
     div.innerHTML = content;
     body.appendChild(div);
-    body.scrollTop = body.scrollHeight; 
+    body.scrollTop = body.scrollHeight;
 }
 
 async function fetchAndRenderPortfolio() {
     const tbody = document.getElementById('portfolio-tbody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px;"><i class="fas fa-spinner fa-spin"></i> Loading portfolio...</td></tr>';
-    
+
     try {
         const response = await fetch('/api/portfolio');
         const result = await response.json();
-        
+
         if (result.status === 'success') {
             _portfolioData = result.data; // Store globally
             filterPortfolio(); // Use filter which calls render
-            
+
             // Calculate and render stats dynamically
             let totalInvested = 0;
             let totalCurrent = 0;
             let totalPnl = 0;
-            
+
             result.data.forEach(item => {
                 totalInvested += parseFloat(item.inv_value) || 0;
                 totalCurrent += parseFloat(item.cur_value) || 0;
                 totalPnl += parseFloat(item.pnl) || 0;
             });
-            
+
             const overallPnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
-            
-            document.getElementById('port-stat-inv').innerText = '₹' + totalInvested.toLocaleString('en-IN', {maximumFractionDigits: 0});
-            document.getElementById('port-stat-cur').innerText = '₹' + totalCurrent.toLocaleString('en-IN', {maximumFractionDigits: 0});
-            
+
+            document.getElementById('port-stat-inv').innerText = '₹' + totalInvested.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+            document.getElementById('port-stat-cur').innerText = '₹' + totalCurrent.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
             const pnlEl = document.getElementById('port-stat-pnl');
-            pnlEl.innerText = (totalPnl > 0 ? '+' : '') + totalPnl.toLocaleString('en-IN', {maximumFractionDigits: 0});
+            pnlEl.innerText = (totalPnl > 0 ? '+' : '') + totalPnl.toLocaleString('en-IN', { maximumFractionDigits: 0 });
             pnlEl.className = totalPnl >= 0 ? 'text-success' : 'text-danger';
-            
+
             const pctEl = document.getElementById('port-stat-pct');
             pctEl.innerText = (overallPnlPct > 0 ? '+' : '') + overallPnlPct.toFixed(2) + '%';
             pctEl.className = overallPnlPct >= 0 ? 'text-success' : 'text-danger';
-            
+
         } else {
             if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--danger);">Failed to load portfolio.</td></tr>';
         }
@@ -5944,10 +5958,10 @@ async function fetchAndRenderPortfolio() {
 function filterPortfolio() {
     const query = (document.getElementById('portfolio-search')?.value || '').toLowerCase();
     let baseData = [..._portfolioData];
-    
+
     if (query) {
-        baseData = baseData.filter(item => 
-            (item.code || '').toLowerCase().includes(query) || 
+        baseData = baseData.filter(item =>
+            (item.code || '').toLowerCase().includes(query) ||
             (item.isin || '').toLowerCase().includes(query) ||
             (item.broker_id || '').toLowerCase().includes(query) ||
             (item.broker_username || '').toLowerCase().includes(query)
@@ -5982,7 +5996,7 @@ function filterPortfolio() {
         g.cur_value += parseFloat(item.cur_value) || 0;
         g.pnl += parseFloat(item.pnl) || 0;
         g.weighted_avg_sum += (parseFloat(item.avg_price) || 0) * qty;
-        
+
         if (!g.last_sync_at || new Date(item.last_sync_at) > new Date(g.last_sync_at)) {
             g.last_sync_at = item.last_sync_at;
         }
@@ -6017,26 +6031,26 @@ function filterPortfolio() {
     const groupedArray = Object.values(groups).map(g => {
         g.avg_price = g.quantity > 0 ? g.weighted_avg_sum / g.quantity : 0;
         g.pnl_pct = g.inv_value > 0 ? (g.pnl / g.inv_value) * 100 : 0;
-        
+
         // Convert brokerGroups map to array for rendering
         g.items = Object.values(g.brokerGroups).map(bg => {
             bg.avg_price = bg.quantity > 0 ? bg.weighted_avg_sum / bg.quantity : 0;
             bg.pnl_pct = bg.inv_value > 0 ? (bg.pnl / bg.inv_value) * 100 : 0;
             return bg;
         });
-        
+
         return g;
     });
-    
+
     // Apply sorting to groups
     const key = _portfolioSortState.key;
     const asc = _portfolioSortState.asc;
-    
+
     if (key) {
         groupedArray.sort((a, b) => {
             let valA = a[key];
             let valB = b[key];
-            
+
             if (['quantity', 'avg_price', 'ltp', 'inv_value', 'cur_value', 'pnl', 'day_change_pct'].includes(key)) {
                 valA = parseFloat(valA) || 0;
                 valB = parseFloat(valB) || 0;
@@ -6044,13 +6058,13 @@ function filterPortfolio() {
                 valA = (valA || '').toString().toLowerCase();
                 valB = (valB || '').toString().toLowerCase();
             }
-            
+
             if (valA < valB) return asc ? -1 : 1;
             if (valA > valB) return asc ? 1 : -1;
             return 0;
         });
     }
-    
+
     renderPortfolioTable(groupedArray);
 }
 
@@ -6067,11 +6081,11 @@ function sortPortfolio(key) {
 function togglePortfolioGroup(code) {
     const childRows = document.querySelectorAll(`.child-of-${code}`);
     const icon = document.getElementById(`icon-${code}`);
-    
+
     childRows.forEach(row => {
         row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
     });
-    
+
     if (icon) {
         icon.classList.toggle('expanded');
     }
@@ -6080,22 +6094,22 @@ function togglePortfolioGroup(code) {
 function renderPortfolioTable(groups) {
     const tbody = document.getElementById('portfolio-tbody');
     if (!tbody) return;
-    
+
     tbody.innerHTML = '';
-    
+
     if (groups.length === 0) {
         tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px; color: var(--text-dim);"><i class="fas fa-search"></i> No portfolio data found.</td></tr>';
         return;
     }
-    
+
     groups.forEach(group => {
         const pnlClass = group.pnl >= 0 ? 'text-success' : 'text-danger';
         const dayClass = group.day_change_pct >= 0 ? 'text-success' : 'text-danger';
-        
+
         const mainRow = document.createElement('tr');
         mainRow.className = 'portfolio-group-row';
         mainRow.onclick = () => togglePortfolioGroup(group.code);
-        
+
         mainRow.innerHTML = `
             <td style="text-align: center; width: 40px;">
                 <i class="fas fa-chevron-right expand-icon" id="icon-${group.code}"></i>
@@ -6110,14 +6124,14 @@ function renderPortfolioTable(groups) {
             <td style="text-align: right;">
                 <div class="${dayClass}" style="font-size: 13px; font-weight: 700;">${group.day_change_pct > 0 ? '+' : ''}${group.day_change_pct.toFixed(2)}%</div>
             </td>
-            <td style="text-align: right;">₹${group.inv_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
-            <td style="font-weight: 600; text-align: right;">₹${group.cur_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+            <td style="text-align: right;">₹${group.inv_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+            <td style="font-weight: 600; text-align: right;">₹${group.cur_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
             <td style="text-align: right;">
-                <div class="${pnlClass}" style="font-weight: 700;">${group.pnl > 0 ? '+' : ''}₹${group.pnl.toLocaleString('en-IN', {maximumFractionDigits: 0})}</div>
+                <div class="${pnlClass}" style="font-weight: 700;">${group.pnl > 0 ? '+' : ''}₹${group.pnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
                 <div class="${pnlClass}" style="font-size: 11px;">(${group.pnl_pct > 0 ? '+' : ''}${group.pnl_pct.toFixed(2)}%)</div>
             </td>
             <td style="color: var(--text-dim); font-size: 11px; text-align: center;">
-                ${group.last_sync_at ? new Date(group.last_sync_at).toLocaleString('en-IN', {dateStyle: 'short', timeStyle: 'short'}) : '-'}
+                ${group.last_sync_at ? new Date(group.last_sync_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
             </td>
         `;
         tbody.appendChild(mainRow);
@@ -6127,7 +6141,7 @@ function renderPortfolioTable(groups) {
             const childRow = document.createElement('tr');
             childRow.className = `portfolio-child-row child-of-${group.code}`;
             childRow.style.display = 'none';
-            
+
             const itemPnlClass = child.pnl >= 0 ? 'text-success' : 'text-danger';
 
             childRow.innerHTML = `
@@ -6141,13 +6155,13 @@ function renderPortfolioTable(groups) {
                 <td style="text-align: right;">
                     <span class="${itemPnlClass}">${child.pnl_pct > 0 ? '+' : ''}${child.pnl_pct.toFixed(2)}%</span>
                 </td>
-                <td style="text-align: right; color: var(--text-dim);">₹${child.inv_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
-                <td style="text-align: right; color: var(--text-dim);">₹${child.cur_value.toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+                <td style="text-align: right; color: var(--text-dim);">₹${child.inv_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
+                <td style="text-align: right; color: var(--text-dim);">₹${child.cur_value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                 <td style="text-align: right;">
-                    <div class="${itemPnlClass}">₹${child.pnl.toLocaleString('en-IN', {maximumFractionDigits: 0})}</div>
+                    <div class="${itemPnlClass}">₹${child.pnl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
                 </td>
                 <td style="text-align: center; font-size: 10px; color: var(--text-dim);">
-                    ${child.last_sync_at ? new Date(child.last_sync_at).toLocaleString('en-IN', {dateStyle: 'short', timeStyle: 'short'}) : '-'}
+                    ${child.last_sync_at ? new Date(child.last_sync_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : '-'}
                 </td>
             `;
             tbody.appendChild(childRow);
