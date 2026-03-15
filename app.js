@@ -263,7 +263,7 @@ function setUniverse(univ) {
     document.body.classList.toggle('portfolio-mode-active', isPortfolioModeActive);
 
     // Refresh current view
-    if (activeTab === 'dashboard') renderSignals();
+    if (activeTab === 'dashboard' && liveSignals.length > 0) renderSignals();
     else if (activeTab === 'pro-screener') applyScreenerFilters();
 
     showToast(`Universe: ${univ.toUpperCase()}`, "info");
@@ -1266,7 +1266,9 @@ function switchTab(tabId) {
         navItem.classList.add('active');
     }
 
-    if (tabId === 'settings') {
+    if (tabId === 'dashboard') {
+        fetchAndRenderSignals();
+    } else if (tabId === 'settings') {
         loadProfileSettings();
     } else if (tabId === 'db-manager') {
         fetchDbStats();
@@ -2826,14 +2828,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Immediate UI Setup (No waiting for API)
     setupRSISlider();
     applyZoom();
+    
+    setMode(currentMode, true); 
     switchTab(activeTab);
-    setMode(currentMode, true); // skipFetch=true to use ONLY cache for now
     updateHoldingsCount();
-
-    // 3. Background Verification & ONE Fresh Data Fetch
+    
+    // 3. Background Verification 
     verifySession().then(() => {
         console.log("Session verified.");
-        // Fresh fetch if we're on dashboard
         if (activeTab === 'dashboard') {
             fetchAndRenderSignals(true);
         }
