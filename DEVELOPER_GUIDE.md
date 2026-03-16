@@ -16,6 +16,9 @@ The system uses the Upstox API. There is a critical distinction between "Histori
 Indicator calculations must never happen on "Stale" daily data alone.
 
 *   **Live Synthesis:** If the Daily (1d) data is older than the 5m data, the engine MUST synthesize a "Live Candle" from today's 5m bars before running indicators.
+*   **Progress & Timing Integrity:** Long-running operations (Data Fetching and Indicator Calculation) MUST use streaming responses (SSE).
+    *   **Per-Timeframe Timing:** Every timeframe calculation must report exactly how many seconds it took.
+    *   **Blocking UI:** The UI must remain in a "Busy" state (spinning/loading) until the final `[DONE]` signal is received to ensure user visibility of the full pipeline.
 *   **Vectorized Math:** All technical indicators must be calculated using `pandas-ta` on the full dataframe to ensure warm-up periods (like 200 EMA) are mathematically accurate.
 *   **MTF Agreement:** Multi-timeframe agreement is calculated by checking the `supertrend_dir` across mapped timeframes in the `app_sg_calculated_signals` table.
 

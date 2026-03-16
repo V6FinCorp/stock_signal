@@ -1920,6 +1920,17 @@ input:checked+.slider:before {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary-trans) transparent;
+}
+
+.ai-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+.ai-body::-webkit-scrollbar-thumb {
+    background: var(--primary-trans);
+    border-radius: 10px;
 }
 
 .ai-widget.collapsed .ai-body,
@@ -1955,27 +1966,31 @@ input:checked+.slider:before {
 }
 
 .ai-footer {
-    padding: 15px;
+    padding: 12px 16px;
     border-top: 1px solid var(--border-color);
     display: flex;
-    gap: 10px;
-    background: rgba(0, 0, 0, 0.1);
+    align-items: flex-end;
+    gap: 12px;
+    background: rgba(15, 23, 42, 0.4);
 }
 
 .ai-footer textarea {
     flex: 1;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--border-color);
-    padding: 10px 15px;
+    padding: 10px 14px;
     border-radius: 12px;
     color: white;
     outline: none;
     resize: none;
     height: 40px;
-    max-height: 120px;
+    min-height: 40px;
+    max-height: 150px;
     font-size: 14px;
     font-family: inherit;
-    transition: border-color 0.2s;
+    line-height: 1.5;
+    transition: border-color 0.2s, height 0.1s;
+    overflow-y: auto;
 }
 
 .ai-footer textarea:focus {

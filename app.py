@@ -14,6 +14,7 @@ import hashlib
 from datetime import datetime, timedelta
 import httpx
 import asyncio
+import time
 
 app = FastAPI(title="StockSignal Pro API")
 fetching_active = {"swing": True, "intraday": True}
@@ -576,33 +577,51 @@ async def api_chart_details(isin: str, timeframe: str, profile: str = "swing", b
         app_pool.close()
         return {"status": "success", "data": data}
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
-@app.post("/api/calculate", dependencies=[Depends(check_auth)])
-async def api_calculate(mode: str, fundamentals: bool = False):
-    try:
-        app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
-        datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
+@app.get("/api/stream/calculate", dependencies=[Depends(check_auth)])
+async def stream_calculate(mode: str, fundamentals: bool = False):
+    async def event_generator():
+        yield f"data: ⚙️ Starting Signal Calculation for {mode.upper()} mode...\n\n"
+        global_start = time.perf_counter()
         
-        # Determine timeframes based on mode
-        tfs = ['1d', '1w', '1mo'] if mode == 'swing' else ['5m', '15m', '30m', '60m']
-        
-        shared_cache = {}
-        for tf in tfs:
-            await process_profile(app_pool, datamart_pool, mode, tf, shared_cache=shared_cache, use_fundamentals=fundamentals)
+        try:
+            app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
+            datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
             
-        # Update system status with IST time
-        async with app_pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-                await cur.execute("UPDATE app_sg_system_status SET last_calc_run = %s WHERE mode = %s", (ist_now, mode))
-                await conn.commit()
+            # Determine timeframes based on mode
+            tfs = ['1d', '1w', '1mo'] if mode == 'swing' else ['5m', '15m', '30m', '60m']
+            
+            shared_cache = {}
+            for tf in tfs:
+                yield f"data: 🔄 Calculating {tf} indicators...\n\n"
+                tf_start = time.perf_counter()
                 
-        app_pool.close()
-        datamart_pool.close()
-        return {"status": "success"}
-    except Exception as e:
-        if 'app_pool' in locals(): app_pool.close()
-        if 'datamart_pool' in locals(): datamart_pool.close()
-        raise HTTPException(status_code=500, detail=str(e))
+                count = await process_profile(app_pool, datamart_pool, mode, tf, shared_cache=shared_cache, use_fundamentals=fundamentals)
+                
+                tf_duration = time.perf_counter() - tf_start
+                yield f"data: ✅ {tf} completed: {count} stocks processed in {tf_duration:.2f}s.\n\n"
+                await asyncio.sleep(0.1)
+                
+            # Update system status with IST time
+            async with app_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+                    await cur.execute("UPDATE app_sg_system_status SET last_calc_run = %s WHERE mode = %s", (ist_now, mode))
+                    await conn.commit()
+                    
+            global_duration = time.perf_counter() - global_start
+            yield f"data: 🏁 Calculation Complete! Total Time: {global_duration:.2f}s\n\n"
+            yield "data: [DONE]\n\n"
+            
+            app_pool.close()
+            datamart_pool.close()
+            
+        except Exception as e:
+            yield f"data: 💥 Error during calculation: {str(e)}\n\n"
+            if 'app_pool' in locals(): app_pool.close()
+            if 'datamart_pool' in locals(): datamart_pool.close()
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.post("/api/stop-fetch", dependencies=[Depends(check_auth)])
 async def stop_fetch(mode: str):
@@ -627,6 +646,7 @@ async def api_chat(req: ChatRequest):
 @app.get("/api/stream/fetch-data", dependencies=[Depends(check_auth)])
 async def stream_fetch(mode: str = "swing"):
     async def event_generator():
+        global_start = time.perf_counter()
         fetching_active[mode] = True
         yield "data: 🚀 Starting Market Data Fetch ({})\n\n".format(mode.upper())
         
@@ -634,7 +654,7 @@ async def stream_fetch(mode: str = "swing"):
             app_pool = await aiomysql.create_pool(**Config.get_app_db_config())
             datamart_pool = await aiomysql.create_pool(**Config.get_datamart_db_config())
             
-            # Get Holdings ISINs for Integrity Check
+            # ... (holdings fetching) ...
             holdings_isins = set()
             try:
                 async with app_pool.acquire() as conn:
@@ -649,8 +669,6 @@ async def stream_fetch(mode: str = "swing"):
                 async with conn.cursor(aiomysql.DictCursor) as cur:
                     target_dim = 1 if mode == 'intraday' else 2
                     
-                    # Merge Logic: Get Favourites + Get info for any ISIN in holdings
-                    # We use a broad union query
                     await cur.execute("""
                         SELECT DISTINCT c.bs_ISIN as isin, c.bs_SYMBOL as symbol, c.bs_Available_ON as exchange
                         FROM vw_e_bs_companies_all c
@@ -676,34 +694,28 @@ async def stream_fetch(mode: str = "swing"):
                         yield "data: 🛑 Fetch interrupted by user.\n\n"
                         break
                     
+                    stock_start = time.perf_counter()
                     isin = comp['isin']
                     symbol = comp['symbol']
                     
                     yield "data: Processing {}/{} - {}...\n\n".format(i, total, symbol)
                     
-                    # Fetch Logic (Dual fetch for Swing to support live synthesis)
+                    # Fetch Logic
                     try:
                         fetch_configs = []
-                        # Select correct prefix based on exchange availability
                         prefix = "BSE_EQ" if comp.get('exchange') == 'BSE' else "NSE_EQ"
-                        
                         today_str = datetime.now().strftime('%Y-%m-%d')
-                        # 7-day lookback for intraday to cover weekends and ensure Friday data is captured even on Sundays
                         lookback_str = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
                         
                         if mode == "swing":
-                            # Historical Daily for long-term charts
                             fetch_configs.append({'url': Config.UPSTOX_HISTORICAL_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date="2023-01-01"), 'tf': '1d'})
-                            # Dedicated Intraday for the latest moving session data (Today)
                             fetch_configs.append({'url': Config.UPSTOX_LATEST_INTRADAY_URL.format(prefix=prefix, isin=isin), 'tf': '5m'})
-                            # Also keep a lookback historical fetch for "Self-Healing" (catches Friday PM gaps on Monday AM)
                             fetch_configs.append({'url': Config.UPSTOX_INTRADAY_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date=lookback_str), 'tf': '5m'})
                         else:
-                            # Intraday mode: Primary focus is live data
                             fetch_configs.append({'url': Config.UPSTOX_LATEST_INTRADAY_URL.format(prefix=prefix, isin=isin), 'tf': '5m'})
-                            # Self-healing lookback
                             fetch_configs.append({'url': Config.UPSTOX_INTRADAY_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date=lookback_str), 'tf': '5m'})
                             
+                        total_candles = 0
                         for cfg in fetch_configs:
                             url = cfg['url']
                             tf_key = cfg['tf']
@@ -712,6 +724,7 @@ async def stream_fetch(mode: str = "swing"):
                                 data = res.json()
                                 if data.get("status") == "success":
                                     candles = data["data"]["candles"]
+                                    total_candles += len(candles)
                                     async with app_pool.acquire() as conn:
                                         async with conn.cursor() as cur:
                                             rows = []
@@ -724,20 +737,23 @@ async def stream_fetch(mode: str = "swing"):
                                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                                                     ON DUPLICATE KEY UPDATE open=VALUES(open), high=VALUES(high), low=VALUES(low), close=VALUES(close), volume=VALUES(volume)
                                                 """, rows)
-                                    # yield "data: ✅ {} - {} candles updated ({tf}).\n\n".format(symbol, len(candles), tf=tf_key)
-                                yield "data: ✅ {} - {} candles updated.\n\n".format(symbol, len(candles))
+                        
+                        stock_duration = time.perf_counter() - stock_start
+                        yield "data: ✅ {} - {} candles updated (took {:.2f}s).\n\n".format(symbol, total_candles, stock_duration)
                     except Exception as e:
                         yield "data: ❌ Error fetching {}: {}\n\n".format(symbol, str(e))
                     
-                    await asyncio.sleep(0.1) # Small delay for UI smoothness
+                    await asyncio.sleep(0.05) 
 
-            # Update system status on success with IST time
+            # Update system status
             async with app_pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
                     await cur.execute("UPDATE app_sg_system_status SET last_fetch_run = %s WHERE mode = %s", (ist_now, mode))
                     await conn.commit()
 
+            total_duration = time.perf_counter() - global_start
+            yield "data: 🏁 Fetch Complete! Total Time: {:.2f}s\n\n".format(total_duration)
             yield "data: [DONE]\n\n"
             app_pool.close(); datamart_pool.close()
             

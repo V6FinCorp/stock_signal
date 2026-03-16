@@ -4,6 +4,7 @@ import openai
 import aiomysql
 from dotenv import load_dotenv
 from config import Config
+from datetime import datetime, timezone, timedelta
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -22,17 +23,35 @@ async def get_top_signals(mode: str = 'swing', limit: int = 5):
         async with app_pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(
-                    "SELECT isin, timeframe, ltp, rsi, ema_signal, supertrend_dir, confluence_rank, trade_strategy "
+                    "SELECT isin, timeframe, ltp, rsi, ema_signal, supertrend_dir, confluence_rank, trade_strategy, sl, target "
                     "FROM app_sg_calculated_signals "
-                    "WHERE profile_id = %s "
+                    "WHERE profile_id = %s AND confluence_rank > 0 "
                     "ORDER BY confluence_rank DESC LIMIT %s", 
                     (mode, limit)
                 )
                 rows = await cur.fetchall()
                 for r in rows:
                     r['symbol'] = symbols_map.get(r['isin'], r['isin'])
-                    if hasattr(r['ltp'], 'to_eng_string'): r['ltp'] = float(r['ltp'])
-                    if hasattr(r['rsi'], 'to_eng_string'): r['rsi'] = float(r['rsi'])
+                    ltp = float(r['ltp']) if r['ltp'] else 0
+                    target = float(r['target']) if r['target'] else 0
+                    sl = float(r['sl']) if r['sl'] else 0
+                    
+                    r['ltp'] = ltp
+                    r['target'] = target
+                    r['sl'] = sl
+                    r['rsi'] = float(r['rsi']) if r['rsi'] else 0
+                    
+                    # Add calculations for AI
+                    if ltp > 0:
+                        r['potential_return_pct'] = round(((target - ltp) / ltp) * 100, 2)
+                        risk = abs(ltp - sl)
+                        reward = abs(target - ltp)
+                        r['risk_reward'] = round(reward / risk, 2) if risk > 0 else 0
+                    else:
+                        r['potential_return_pct'] = 0
+                        r['risk_reward'] = 0
+                        
+                    r['expected_duration'] = "1-15 days" if mode == 'swing' else "Intraday (Same Day)"
                     
         app_pool.close()
         datamart_pool.close()
@@ -67,10 +86,26 @@ async def get_stock_status(symbol: str, mode: str = 'swing'):
                 )
                 rows = await cur.fetchall()
                 for r in rows:
-                    if hasattr(r['ltp'], 'to_eng_string'): r['ltp'] = float(r['ltp'])
-                    if hasattr(r['rsi'], 'to_eng_string'): r['rsi'] = float(r['rsi'])
-                    if r.get('sl') and hasattr(r['sl'], 'to_eng_string'): r['sl'] = float(r['sl'])
-                    if r.get('target') and hasattr(r['target'], 'to_eng_string'): r['target'] = float(r['target'])
+                    ltp = float(r['ltp']) if r['ltp'] else 0
+                    target = float(r['target']) if r['target'] else 0
+                    sl = float(r['sl']) if r['sl'] else 0
+                    
+                    r['ltp'] = ltp
+                    r['target'] = target
+                    r['sl'] = sl
+                    r['rsi'] = float(r['rsi']) if r['rsi'] else 0
+                    
+                    # Add calculations for AI
+                    if ltp > 0:
+                        r['potential_return_pct'] = round(((target - ltp) / ltp) * 100, 2)
+                        risk = abs(ltp - sl)
+                        reward = abs(target - ltp)
+                        r['risk_reward'] = round(reward / risk, 2) if risk > 0 else 0
+                    else:
+                        r['potential_return_pct'] = 0
+                        r['risk_reward'] = 0
+                        
+                    r['expected_duration'] = "1-15 days" if mode == 'swing' else "Intraday (Same Day)"
                     
         app_pool.close()
         datamart_pool.close()
@@ -108,9 +143,57 @@ import httpx
 async def chat_with_assistant(messages, mode='swing'):
     client = openai.AsyncOpenAI(http_client=httpx.AsyncClient())
     
+    # Calculate IST Time (UTC+5:30)
+    now_utc = datetime.now(timezone.utc)
+    ist_now = now_utc + timedelta(hours=5, minutes=30)
+    ist_str = ist_now.strftime("%I:%M %p")
+    
+    # 1. Simple Market status logic (9:15 AM - 3:30 PM)
+    m_status = "Open"
+    minutes = ist_now.hour * 60 + ist_now.minute
+    
+    if minutes < (9*60 + 15):
+        m_status = "Closed (Morning)"
+    elif minutes > (15*60 + 30):
+        m_status = "Closed (Evening)"
+    elif minutes >= (15*60 + 15):
+        m_status = "Closing (Intraday Cutoff Active)"
+    elif minutes >= (14*60 + 45):
+        m_status = "Open (Closing Soon)"
+    
+    # 2. Data Staleness Check (Acceptable < 10min)
+    data_status_msg = "Data is Live"
+    try:
+        from app import app_pool
+        async with app_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # Check latest signal timestamp for intraday/swing
+                await cur.execute(
+                    "SELECT MAX(timestamp) FROM app_sg_calculated_signals WHERE profile_id = %s", 
+                    (mode,)
+                )
+                res = await cur.fetchone()
+                if res and res[0]:
+                    last_update = res[0]
+                    # Ensure last_update is aware or compare naive to naive
+                    if last_update.tzinfo is None:
+                        # Database usually stores naive local (which we treat as IST here)
+                        diff = (ist_now.replace(tzinfo=None) - last_update).total_seconds() / 60
+                    else:
+                        diff = (ist_now - last_update).total_seconds() / 60
+                    
+                    if diff > 10:
+                        data_status_msg = f"Data is STALE (Last update: {last_update.strftime('%I:%M %p')}, {int(diff)}m ago)"
+    except Exception as e:
+        print(f"Chat Engine: Staleness check failed: {e}")
+
     system_instruction = Config.CHAT_SYSTEM_PROMPT.format(
         mode=mode.upper(),
-        mode_lower=mode.lower()
+        mode_lower=mode.lower(),
+        mode_lower_cap=mode.capitalize(),
+        ist_time=ist_str,
+        market_status=m_status,
+        data_status=data_status_msg
     )
     
     # Update or insert system message to include mode context
@@ -189,18 +272,21 @@ async def chat_with_assistant(messages, mode='swing'):
                 function_args = json.loads(tool_call.function.arguments)
                 
                 if function_name == "get_top_signals":
+                    # Force the mode from the app context
                     function_response = await get_top_signals(
-                        mode=function_args.get("mode", "swing"),
+                        mode=mode, 
                         limit=function_args.get("limit", 5)
                     )
                 elif function_name == "get_stock_status":
+                    # Force the mode from the app context
                     function_response = await get_stock_status(
                         symbol=function_args.get("symbol"),
-                        mode=function_args.get("mode", "swing")
+                        mode=mode
                     )
                 elif function_name == "get_market_sentiment":
+                    # Force the mode from the app context
                     function_response = await get_market_sentiment(
-                        mode=function_args.get("mode", "swing")
+                        mode=mode
                     )
                 else:
                     function_response = json.dumps({"error": "Unknown function"})

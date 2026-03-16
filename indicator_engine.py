@@ -333,7 +333,7 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
             
             if not isins:
                 logging.warning(f"No OHLCV data found for timeframe {timeframe}.")
-                return
+                return 0
                 
             logging.info(f"Found {len(isins)} stocks for {profile_id}. Calculating signals...")
             
@@ -751,6 +751,8 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     """
                     await cur.executemany(history_query, history_to_insert)
                     logging.info(f"📜 Logged {len(history_to_insert)} high-conviction signals to history.")
+            
+            return len(signals_to_insert)
 
 async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30):
     """Calculates full technical indicators for a chart range. Used for zoomed modal charts."""

@@ -389,6 +389,18 @@ function setMode(mode, skipFetch = false) {
     if (oldMode !== mode) {
         signalCache = {};
         screenerMasterData = [];
+        
+        // Clear chat history for strict context
+        aiMessages = [];
+        const chatBody = document.getElementById('ai-chat-body');
+        if (chatBody) {
+            chatBody.innerHTML = `
+                <div class="ai-message ai-assistant">
+                    Hi! I'm your Signal Pro Assistant. I am now in <strong>${mode === 'swing' ? 'Swing' : 'Intraday'}</strong> mode. 
+                    Ask me about signals, stock status, or market sentiment.
+                </div>
+            `;
+        }
     }
 
     // --- Mode-Specific UI Sync ---
@@ -462,9 +474,22 @@ function setMode(mode, skipFetch = false) {
 
 function updateChatHeader() {
     const aiTitle = document.querySelector('.ai-title span');
+    const aiIcon = document.querySelector('.ai-title i');
+    const aiHeader = document.querySelector('.ai-header');
+    
     if (aiTitle) {
         const modeLabel = currentMode === 'swing' ? 'Swing' : 'Intraday';
-        aiTitle.innerText = `Signal Assistant (${modeLabel})`;
+        aiTitle.innerText = `Assistant (${modeLabel})`;
+        
+        if (aiIcon) {
+            aiIcon.style.color = currentMode === 'swing' ? 'var(--success)' : 'var(--amber)';
+        }
+        
+        if (aiHeader && !document.getElementById('ai-chat-widget').classList.contains('collapsed')) {
+            // Only update non-collapsed header gradient to match mode
+            const color = currentMode === 'swing' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)';
+            aiHeader.style.background = `linear-gradient(135deg, ${color}, rgba(15, 23, 42, 0.95))`;
+        }
     }
 }
 
@@ -1743,40 +1768,89 @@ async function stopFetch() {
 }
 
 async function refreshSignals() {
+    const mode = currentMode;
     const btn = document.getElementById('calc-signals-btn');
-    const icon = document.getElementById('refresh-icon');
-    const originalHTML = btn.innerHTML;
+    const hud = document.getElementById(`job-hud-${mode}`);
+    const bar = document.getElementById(`hud-bar-${mode}`);
+    const percent = document.getElementById(`hud-percent-${mode}`);
+    const statusText = document.getElementById(`hud-status-${mode}`);
+    const consoleEl = document.getElementById(`hud-console-${mode}`);
 
-    icon.classList.add('fa-spin');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
+    btn.classList.add('btn-disabled');
     btn.disabled = true;
 
-    try {
-        const mode = currentMode;
+    HUD_STATES[mode].active = true;
+    HUD_STATES[mode].operation = 'calculate';
+    syncHudVisibility();
+    consoleEl.innerHTML = '';
+    statusText.innerText = `Calculating ${mode.toUpperCase()} Signals...`;
 
-        // Track calculation state for UI isolation
-        HUD_STATES[mode].active = true;
-        HUD_STATES[mode].operation = 'calculate';
+    const fundamentals = (CONFIGS[mode] && CONFIGS[mode].fundamentals && CONFIGS[mode].fundamentals.enabled) || false;
+    const evtSource = new EventSource(`/api/stream/calculate?mode=${mode}&fundamentals=${fundamentals}`);
 
-        const fundamentals = (CONFIGS[mode] && CONFIGS[mode].fundamentals && CONFIGS[mode].fundamentals.enabled) || false;
+    evtSource.onopen = function () {
+        console.log("SSE Connection Opened for Calculation...");
+        statusText.innerText = "Connection Established. Calculating Indicators...";
+    };
 
-        const res = await fetch(`/api/calculate?mode=${mode}&fundamentals=${fundamentals}`, { method: 'POST' });
-        const result = await res.json();
+    evtSource.onmessage = async function (event) {
+        if (event.data === "[DONE]") {
+            evtSource.close();
+            bar.style.width = '100%';
+            percent.innerText = '100%';
+            statusText.innerText = 'Calculation Complete';
 
-        if (result.status === 'success') {
-            await fetchAndRenderSignals(true);
-            await fetchSystemStatus();
-            showToast("Calculations updated successfully.", "success");
-        } else {
-            showToast("Calculation failed: " + result.detail, "error");
+            setTimeout(async () => {
+                HUD_STATES[mode].active = false;
+                HUD_STATES[mode].operation = null;
+                syncHudVisibility();
+                btn.innerHTML = originalHTML;
+                btn.classList.remove('btn-disabled');
+                btn.disabled = false;
+                
+                // Refresh main view after calculation
+                await fetchAndRenderSignals(true);
+                await fetchSystemStatus();
+                showToast("Calculations completed successfully.", "success");
+            }, 1000);
+            return;
         }
-    } catch (e) {
-        showToast("Error during calculation. Check server.", "error");
-    } finally {
-        HUD_STATES[currentMode].active = false;
-        HUD_STATES[currentMode].operation = null;
-        icon.classList.remove('fa-spin');
+
+        // Progress Tracking (1d, 1w, 1mo) - 3 segments for swing
+        const tfs = (mode === 'swing') ? ['1d', '1w', '1mo'] : ['5m', '15m', '30m', '60m'];
+        let progress = 0;
+        tfs.forEach((t, idx) => {
+            if (event.data.includes(`${t} completed`)) {
+                progress = Math.floor(((idx + 1) / tfs.length) * 100);
+            }
+        });
+
+        if (progress > 0) {
+            bar.style.width = `${progress}%`;
+            percent.innerText = `${progress}%`;
+        }
+
+        const logLine = document.createElement('div');
+        logLine.innerText = event.data;
+        if (event.data.includes("✅")) logLine.style.color = "var(--success)";
+        else if (event.data.includes("💥")) logLine.style.color = "var(--danger)";
+
+        consoleEl.appendChild(logLine);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    };
+
+    evtSource.onerror = function (err) {
+        console.error("Calculation Stream Error:", err);
+        evtSource.close();
+        HUD_STATES[mode].active = false;
+        HUD_STATES[mode].operation = null;
+        syncHudVisibility();
+        btn.innerHTML = originalHTML;
         btn.disabled = false;
-    }
+        showToast("Calculation stream failed. Check server.", "error");
+    };
 }
 
 async function fetchSystemStatus() {
@@ -5893,8 +5967,20 @@ function toggleAIChat() {
     }
 
     if (!widget.classList.contains('collapsed')) {
-        setTimeout(() => document.getElementById('ai-chat-input').focus(), 300);
+        setTimeout(() => {
+            const input = document.getElementById('ai-chat-input');
+            if (input) {
+                input.focus();
+                autoExpandChatInput(input);
+            }
+        }, 300);
     }
+}
+
+function autoExpandChatInput(el) {
+    el.style.height = '40px'; // Reset to base height to calculate correctly
+    const newHeight = Math.min(el.scrollHeight, 150); // Max height 150px
+    el.style.height = newHeight + 'px';
 }
 
 function toggleAIExpand() {
@@ -5918,6 +6004,7 @@ async function sendAIMessage() {
     if (!text) return;
 
     input.value = '';
+    autoExpandChatInput(input);
 
     // Add user message to UI
     appendChatMessage('user', text);
@@ -5945,7 +6032,18 @@ async function sendAIMessage() {
         if (data.status === 'success') {
             aiMessages.push({ role: "assistant", content: data.reply });
             // Convert simple markdown/newlines to HTML
-            let formattedReply = data.reply.replace(/\n\n/g, '<br><br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+            let formattedReply = data.reply
+                .replace(/\n\n/g, '<br><br>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/### (.*?)\n/g, '<h3 style="color:var(--primary); margin:15px 0 8px 0; border-bottom:1px solid var(--border-color); padding-bottom:4px;">$1</h3>')
+                .replace(/\n/g, '<br>')
+                .replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.1); padding:2px 4px; border-radius:4px; font-family:monospace;">$1</code>');
+            if (formattedReply.includes('[!WARNING]')) {
+                formattedReply = formattedReply.replace(/\[!WARNING\]<br>(.*?)<br>/g, 
+                    '<div style="background:rgba(239, 68, 68, 0.1); border:1px solid var(--danger); border-radius:10px; padding:15px; margin:10px 0; color:var(--danger); display:flex; align-items:center; gap:12px;">' +
+                    '<i class="fas fa-exclamation-triangle" style="font-size:18px;"></i>' +
+                    '<div>$1</div></div>');
+            }
             appendChatMessage('assistant', formattedReply);
         } else {
             appendChatMessage('assistant', `<span style="color:var(--danger)">Error: ${data.detail || data.message || 'Failed to get response'}</span>`);
@@ -6236,3 +6334,13 @@ function renderPortfolioTable(groups) {
     });
 }
 
+
+// Initialize Chat Input auto-expand
+document.addEventListener('DOMContentLoaded', () => {
+    const chatInput = document.getElementById('ai-chat-input');
+    if (chatInput) {
+        chatInput.addEventListener('input', function() {
+            autoExpandChatInput(this);
+        });
+    }
+});
