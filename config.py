@@ -22,6 +22,7 @@ class Config:
     # --- API ENDPOINTS ---
     UPSTOX_HISTORICAL_URL = "https://api.upstox.com/v3/historical-candle/{prefix}|{isin}/days/1/{to_date}/{from_date}"
     UPSTOX_INTRADAY_URL = "https://api.upstox.com/v3/historical-candle/{prefix}|{isin}/minutes/5/{to_date}/{from_date}"
+    UPSTOX_LATEST_INTRADAY_URL = "https://api.upstox.com/v3/historical-candle/intraday/{prefix}|{isin}/minutes/5"
 
     # --- CHATBOT CONFIG ---
     CHAT_SYSTEM_PROMPT = (

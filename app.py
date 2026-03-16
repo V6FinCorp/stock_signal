@@ -692,10 +692,16 @@ async def stream_fetch(mode: str = "swing"):
                         lookback_str = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
                         
                         if mode == "swing":
+                            # Historical Daily for long-term charts
                             fetch_configs.append({'url': Config.UPSTOX_HISTORICAL_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date="2023-01-01"), 'tf': '1d'})
+                            # Dedicated Intraday for the latest moving session data (Today)
+                            fetch_configs.append({'url': Config.UPSTOX_LATEST_INTRADAY_URL.format(prefix=prefix, isin=isin), 'tf': '5m'})
+                            # Also keep a lookback historical fetch for "Self-Healing" (catches Friday PM gaps on Monday AM)
                             fetch_configs.append({'url': Config.UPSTOX_INTRADAY_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date=lookback_str), 'tf': '5m'})
                         else:
-                            # Use historical endpoint even for "intraday" mode to be robust against weekend gaps
+                            # Intraday mode: Primary focus is live data
+                            fetch_configs.append({'url': Config.UPSTOX_LATEST_INTRADAY_URL.format(prefix=prefix, isin=isin), 'tf': '5m'})
+                            # Self-healing lookback
                             fetch_configs.append({'url': Config.UPSTOX_INTRADAY_URL.format(prefix=prefix, isin=isin, to_date=today_str, from_date=lookback_str), 'tf': '5m'})
                             
                         for cfg in fetch_configs:

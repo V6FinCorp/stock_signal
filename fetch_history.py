@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Endpoints as discovered & outlined in IMPLEMENTATION_PLAN.md
 URL_DAILY = Config.UPSTOX_HISTORICAL_URL
 URL_INTRADAY = Config.UPSTOX_INTRADAY_URL
+URL_LATEST_INTRADAY = Config.UPSTOX_LATEST_INTRADAY_URL
 
 async def fetch_data(client, url):
     """Fetch JSON data from Upstox endpoint natively."""
@@ -91,8 +92,16 @@ async def process_company(app_pool, client, isin, symbol, exchange='NSE', fetch_
     
     intraday_candles = []
     if fetch_intraday:
-        intraday_url = URL_INTRADAY.format(prefix=prefix, isin=isin, to_date=to_date, from_date=from_date_intraday)
-        intraday_candles = await fetch_data(client, intraday_url)
+        # 1. Fetch live candles from the dedicated intraday endpoint
+        latest_url = URL_LATEST_INTRADAY.format(prefix=prefix, isin=isin)
+        intraday_candles = await fetch_data(client, latest_url)
+        
+        # 2. Fetch historical candles to fill any gaps (Self-healing)
+        historical_intraday_url = URL_INTRADAY.format(prefix=prefix, isin=isin, to_date=to_date, from_date=from_date_intraday)
+        historical_candles = await fetch_data(client, historical_intraday_url)
+        
+        # Merge candles (Duplicates handled by database ON DUPLICATE KEY)
+        intraday_candles.extend(historical_candles)
     
     # Write OHLCV data to APP DATABASE
     async with app_pool.acquire() as conn:
