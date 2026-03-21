@@ -624,7 +624,6 @@ function updateTableHeader() {
     thead.appendChild(createHeader('Supertrend', 'supertrend_dir', false));
     thead.appendChild(createHeader('MTF', null, false));
     thead.appendChild(createHeader('Trade Plan', null, false));
-    thead.appendChild(createHeader('Action', null, false));
 
     // Setup Column Toggle Dropdown
     setTimeout(() => setupColumnToggle('#main-signal-table', 'main-col-toggle-container'), 0);
@@ -1050,15 +1049,10 @@ function renderSignals() {
                     </div>
                     <div class="tp-row" style="justify-content: flex-start; gap: 8px; margin-top: 2px;">
                         <span class="text-dim" style="width: 25px;">Tgt:</span>
-            </td>
-        `;
-
-        // Add the new Trade button column here
-        rowHtml += `
-            <td>
-                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 11px; font-weight: 700;" onclick="openPaperTrade('${stock.isin}', '${stock.symbol}', ${stock.ltp}, '${currentTimeframe}')">
-                    <i class="fas fa-plus-circle"></i> Trade
-                </button>
+                        <span class="text-success font-bold">${stock.target ? stock.target.toFixed(1) : '-'}</span>
+                        <span style="font-size: 11px; color: var(--success); opacity: 0.8;">(${tgtDiffPct ? tgtDiffPct + '%' : '-'})</span>
+                    </div>
+                </div>
             </td>
         `;
 
@@ -5610,7 +5604,8 @@ function evaluateBlueprintMatch(stock, blueprint) {
         return `(${token} * ${factor})`;
     });
 
-    // 3. Resolve Tokens (Simpl    // Replace tokens with stock values
+    // 3. Resolve Tokens: Replace tokens with stock values
+    const tokenRegex = /[\[\{]\s*(.*?)\s*[\]\}]\s*\.\s*([A-Z_a-z0-9]+)/g;
     const finalQuery = processed.replace(tokenRegex, (match, tf, attr) => {
         const attrKey = Object.keys(indMap).find(k => k.toLowerCase() === attr.toLowerCase()) || attr;
         const key = indMap[attrKey] || attr.toLowerCase();
