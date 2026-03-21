@@ -3124,8 +3124,12 @@ function applyScreenerFilters() {
             // If the blueprint matched, ensure we show some positive score indicator if not present
             if (displayScore === 0) displayScore = 5;
         } else {
-            targets = [{ label: 'T1', price: (isBullish ? price * 1.05 : price * 0.95) }];
-            stopLosses = [{ label: 'SL', price: (isBullish ? price * 0.97 : price * 1.03) }];
+            // Use Backend Calculated Plan if available
+            if (s.target) targets = [{ label: 'T1', price: parseFloat(s.target) }];
+            else targets = [{ label: 'T1', price: (isBullish ? price * 1.05 : price * 0.95) }];
+
+            if (s.sl) stopLosses = [{ label: 'SL', price: parseFloat(s.sl) }];
+            else stopLosses = [{ label: 'SL', price: (isBullish ? price * 0.97 : price * 1.03) }];
         }
 
         // Format Multi-Target Display
