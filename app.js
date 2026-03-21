@@ -1052,6 +1052,12 @@ function renderSignals() {
                         <span class="text-success font-bold">${stock.target ? stock.target.toFixed(1) : '-'}</span>
                         <span style="font-size: 11px; color: var(--success); opacity: 0.8;">(${tgtDiffPct ? tgtDiffPct + '%' : '-'})</span>
                     </div>
+                    ${stock.profile_id === 'intraday' ? `
+                    <div class="tp-row" style="justify-content: flex-start; gap: 8px; margin-top: 2px;">
+                        <span class="text-dim" style="width: 25px;">Acc:</span>
+                        <span style="color: var(--amber); font-weight: bold;">${(ltp_val * (isBuy ? 0.997 : 1.003)).toFixed(1)}</span>
+                        <span style="font-size: 10px; color: var(--amber); opacity: 0.7;">(±0.3%)</span>
+                    </div>` : ''}
                 </div>
             </td>
         `;
@@ -3100,8 +3106,7 @@ function applyScreenerFilters() {
 
         // Visual distinction for Swing vs Intraday
         const tf = s.timeframe || (currentMode === 'swing' ? '1d' : '5m');
-        const isSwing = ['1d', '1w', '1mo'].includes(tf);
-        const tfBadge = `<span class="badge ${isSwing ? 'bg-blue-trans' : 'bg-amber-trans'}" style="font-size:9px; padding: 2px 6px;">${isSwing ? 'SWING' : 'INTRADAY'} (${tf})</span>`;
+        const tfBadge = `<span class="badge bg-amber-trans" style="font-size:11px; font-weight:700; padding: 4px 8px;">${tf}</span>`;
 
         // --- Dynamic Column Calculation (Match User Requirement) ---
         let strategy = s.trade_strategy || (Math.abs(score) === 5 ? "High Conviction Confluence" : "Trend Support");
@@ -3121,15 +3126,43 @@ function applyScreenerFilters() {
             stopLosses = resolveMultiTarget(b.sl || "", 'SL', price, bSide, s, screenerTfDataMap);
             accumulations = resolveMultiTarget(b.accum || "", 'ACCUM', price, bSide, s, screenerTfDataMap);
 
-            // If the blueprint matched, ensure we show some positive score indicator if not present
             if (displayScore === 0) displayScore = 5;
         } else {
-            // Use Backend Calculated Plan if available
-            if (s.target) targets = [{ label: 'T1', price: parseFloat(s.target) }];
-            else targets = [{ label: 'T1', price: (isBullish ? price * 1.05 : price * 0.95) }];
+            // Determine SL percentage distance
+            const engineSl = s.sl ? parseFloat(s.sl) : (isBullish ? price * (1 - sl_rule) : price * (1 + sl_rule));
+            const sl_dist_pct = Math.abs((engineSl - price) / price) * 100;
+            
+            stopLosses = [{ label: 'SL', price: engineSl }];
 
-            if (s.sl) stopLosses = [{ label: 'SL', price: parseFloat(s.sl) }];
-            else stopLosses = [{ label: 'SL', price: (isBullish ? price * 0.97 : price * 1.03) }];
+            // Dynamic Targets (Deduplicated)
+            const scalp_tgt = isBullish ? price * 1.005 : price * 0.995;
+            const db_tgt = s.target ? parseFloat(s.target) : null;
+            
+            targets = [{ label: 'T1', price: scalp_tgt }];
+            if (db_tgt) {
+                const diff_pct = Math.abs((db_tgt - scalp_tgt) / scalp_tgt) * 100;
+                if (diff_pct > 0.1) { // Only add T2 if it's distinct from T1 (>0.1% gap)
+                    if ((isBullish && db_tgt > scalp_tgt) || (!isBullish && db_tgt < scalp_tgt)) {
+                        targets.push({ label: 'T2', price: db_tgt });
+                    } else {
+                        // If DB target is tighter than scalp, use DB target as T1
+                        targets[0] = { label: 'T1', price: db_tgt };
+                    }
+                }
+            }
+            
+            // Dynamic Accumulation (Logic: equally split if risk allows min 0.25% gaps)
+            accumulations = [];
+            if (sl_dist_pct >= 0.75) {
+                // Split risk into 3 equal segments (Gaps >= 0.25%)
+                const step = (sl_dist_pct / 3) / 100;
+                accumulations.push({ label: 'A1', price: isBullish ? price * (1 - step) : price * (1 + step) });
+                accumulations.push({ label: 'A2', price: isBullish ? price * (1 - 2 * step) : price * (1 + step * 2) });
+            } else if (sl_dist_pct >= 0.40) {
+                // Split risk in half (Gap ~0.2%)
+                const step = (sl_dist_pct / 2) / 100;
+                accumulations.push({ label: 'A1', price: isBullish ? price * (1 - step) : price * (1 + step) });
+            }
         }
 
         // Format Multi-Target Display
@@ -3148,7 +3181,7 @@ function applyScreenerFilters() {
 
         const targetsDisplay = targets.map(t => formatLevel(t, price)).join('');
         const slDisplay = stopLosses.map(l => formatLevel(l, price)).join('');
-        const accumulationHTML = accumulations.map(a => `<div style="font-size:11px; opacity:0.8;">${a.label || 'Zone'}: ${a.price.toFixed(2)}</div>`).join('');
+        const accumulationHTML = accumulations.map(a => formatLevel(a, price)).join('');
 
         // --- Formation & Pattern Calculation (Dashboard Sync) ---
         let sparklineHtml = `<td class="formation-col"><div style="font-size: 13px; color: var(--text-dim);">-</div></td>`;
@@ -3244,7 +3277,9 @@ function applyScreenerFilters() {
             <tr>
                 <td>
                     <div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score}</div>
-                    <div style="margin-top: 8px;">${tfBadge}</div>
+                </td>
+                <td>
+                    <div style="margin-top: 2px;">${tfBadge}</div>
                 </td>
                 <td>
                     <div style="display: flex; align-items: center;">
@@ -3255,17 +3290,14 @@ function applyScreenerFilters() {
                 </td>
                 <td style="font-weight:700; color:var(--text-main);">
                     <div>${price.toLocaleString('en-IN')}</div>
-                    <div style="font-size: 10px; color: var(--text-dim); font-weight: 400; margin-top: 4px;">
-                        <i class="far fa-clock" style="font-size: 9px;"></i> ${s.timestamp || 'N/A'}
-                    </div>
+                </td>
+                <td style="font-size: 13px; font-weight: 700; color: var(--text-main);">
+                    ${rrDisplay}
                 </td>
                 <td>
                     <span class="badge" title="${metricsTooltip}" style="background:${isBullish ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; color:${isBullish ? 'var(--success)' : 'var(--danger)'}; border:1px solid ${isBullish ? 'var(--success)' : 'var(--danger)'}44; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; cursor: help;">
                         ${strategy} <i class="fas fa-info-circle" style="font-size: 9px; opacity: 0.7;"></i>
                     </span>
-                    <div style="font-size: 10px; color: var(--text-dim); margin-top: 6px;">
-                        Risk/Reward: <span style="color: var(--text-main); font-weight: 600;">${rrDisplay}</span>
-                    </div>
                 </td>
                 ${sparklineHtml}
                 ${patternNameHtml}
@@ -4676,7 +4708,7 @@ function resolveLevelQuery(query, type, ltp, side, stock, tfDataMap) {
 
         // Context-aware fallback if no sign provided
         if (type === 'TP') return isBuy ? ltp * (1 + pct) : ltp * (1 - pct);
-        if (type === 'SL') return isBuy ? ltp * (1 - pct) : ltp * (1 + pct);
+        if (type === 'SL' || type === 'ACCUM') return isBuy ? ltp * (1 - pct) : ltp * (1 + pct);
         return ltp;
     }
 

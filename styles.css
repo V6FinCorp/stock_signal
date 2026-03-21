@@ -528,7 +528,7 @@ h1 {
 }
 
 .signal-table td {
-    padding: 20px 24px;
+    padding: 12px 24px;
     border-top: 1px solid var(--border-color);
     font-size: 14px;
     vertical-align: top;
@@ -2002,6 +2002,7 @@ input:checked+.slider:before {
         opacity: 0;
         transform: translateY(5px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -2011,7 +2012,7 @@ input:checked+.slider:before {
 /* Portfolio Grouped Table Styles */
 .portfolio-group-row {
     cursor: pointer;
-    background: rgba(255,255,255,0.02);
+    background: rgba(255, 255, 255, 0.02);
     transition: background 0.2s;
 }
 
@@ -2020,7 +2021,7 @@ input:checked+.slider:before {
 }
 
 .portfolio-child-row {
-    background: rgba(0,0,0,0.15);
+    background: rgba(0, 0, 0, 0.15);
     border-left: 3px solid var(--primary);
 }
 
@@ -2028,7 +2029,7 @@ input:checked+.slider:before {
     padding-top: 8px !important;
     padding-bottom: 8px !important;
     font-size: 12px !important;
-    border-bottom: 1px solid rgba(255,255,255,0.03) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
 }
 
 .expand-icon {
@@ -2042,10 +2043,10 @@ input:checked+.slider:before {
 }
 
 .broker-pill {
-    background: rgba(255,255,255,0.05);
+    background: rgba(255, 255, 255, 0.05);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 10px;
     color: var(--text-dim);
     font-family: monospace;
-}
+}
