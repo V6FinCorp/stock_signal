@@ -25,6 +25,61 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+/**
+ * Generic table sorting utility
+ * @param {string} tableId - The HTML ID of the table to sort
+ * @param {number} colIndex - Index of the column to sort by
+ * @param {string} type - 'string' or 'number'
+ */
+function sortTable(tableId, colIndex, type = 'string') {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Check if we have data to sort (skip empty rows)
+    const dataRows = rows.filter(r => !r.id || r.id !== 'screener-empty-row');
+    if (dataRows.length === 0) return;
+    
+    // Toggle sort direction
+    const currentSortCol = table.dataset.sortCol;
+    let currentDir = table.dataset.sortDir || 'asc';
+    
+    if (currentSortCol == colIndex) {
+        currentDir = (currentDir === 'asc') ? 'desc' : 'asc';
+    } else {
+        currentDir = 'asc';
+    }
+    
+    table.dataset.sortCol = colIndex;
+    table.dataset.sortDir = currentDir;
+    
+    // Apply sort
+    const sorted = dataRows.sort((a, b) => {
+        let aVal = a.cells[colIndex] ? a.cells[colIndex].textContent.trim() : "";
+        let bVal = b.cells[colIndex] ? b.cells[colIndex].textContent.trim() : "";
+        
+        if (type === 'number') {
+            // Extact number from string like "₹539.50" or "(+1.2%)"
+            const extractNum = (s) => {
+                const match = s.replace(/,/g, '').match(/-?\d+(\.\d+)?/);
+                return match ? parseFloat(match[0]) : 0;
+            };
+            aVal = extractNum(aVal);
+            bVal = extractNum(bVal);
+        } else {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+        }
+        
+        if (currentDir === 'asc') return aVal > bVal ? 1 : -1;
+        return aVal < bVal ? 1 : -1;
+    });
+    
+    // Re-append sorted rows
+    tbody.append(...sorted);
+}
+
 const tableControllers = {
     dashboard: null,
     screener: null,
@@ -149,6 +204,7 @@ let screenerTfDataMap = {}; // Shared cache for MTF data in Screener
 let _indicesData = []; // Cache for local indices filtering
 let _indicesSortState = { key: 'bs_indexSymbol', asc: true };
 let _indicesCollapsedSections = {}; // Track collapsed state of sections
+let activeScreenerFilteredData = []; // Track current results for Excel export
 
 const SECTION_ORDER = {
     'INDICES ELIGIBLE IN DERIVATIVES': 1,
@@ -2977,6 +3033,7 @@ async function renderProScreener() {
 
         // Fetch all data for the screener; applyScreenerFilters will handle the high-conviction pre-filter if no blueprint is active
         screenerMasterData = result.data || [];
+        updateScreenerStrategyFilter();
         applyScreenerFilters();
     } catch (e) {
         if (e.name === 'AbortError') return;
@@ -2985,10 +3042,35 @@ async function renderProScreener() {
     }
 }
 
+function updateScreenerStrategyFilter() {
+    const filter = document.getElementById('screener-filter-strat');
+    if (!filter) return;
+    
+    // Get unique strategies from the master data
+    const strategies = [...new Set(screenerMasterData.map(s => s.trade_strategy).filter(Boolean))];
+    
+    // Preserve "all" and append others
+    let html = '<option value="all">Strategy: All</option>';
+    strategies.sort().forEach(s => {
+        html += `<option value="${s}">${s}</option>`;
+    });
+    
+    // Also include standard ones if not present
+    const defaults = ["Perfect Buy", "Perfect Sell", "Support Bounce", "Overextended"];
+    defaults.forEach(d => {
+        if (!strategies.includes(d)) {
+            html += `<option value="${d}">${d}</option>`;
+        }
+    });
+
+    filter.innerHTML = html;
+}
+
 function applyScreenerFilters() {
     const tbody = document.getElementById('screener-tbody');
     if (!tbody) return;
     const conf = CONFIGS[currentMode];
+    const sl_rule = currentMode === 'swing' ? 0.03 : 0.015; // 3% for swing, 1.5% for intraday default
 
     const searchTerm = document.getElementById('screener-search').value.toLowerCase();
     const tfFilter = document.getElementById('screener-filter-tf').value;
@@ -3001,7 +3083,7 @@ function applyScreenerFilters() {
     const slMin = parseFloat(document.getElementById('screener-sl-min')?.value || 0);
     const slMax = parseFloat(document.getElementById('screener-sl-max')?.value || 100);
 
-    let filtered = screenerMasterData.filter(s => {
+    activeScreenerFilteredData = screenerMasterData.filter(s => {
         // 1. Search filter
         const matchesSearch = s.symbol.toLowerCase().includes(searchTerm) || s.isin.toLowerCase().includes(searchTerm);
         if (!matchesSearch) return false;
@@ -3066,10 +3148,12 @@ function applyScreenerFilters() {
         return true;
     });
 
-    if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:40px; color:var(--text-dim);">No signals found matching your filters in ${currentMode} mode.</td></tr>`;
+    if (activeScreenerFilteredData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; padding:40px; color:var(--text-dim);">No signals found matching your filters in ${currentMode} mode.</td></tr>`;
         return;
     }
+
+    const filtered = activeScreenerFilteredData;
 
     const getMetricsList = (s) => {
         let metrics = [];
@@ -3257,21 +3341,20 @@ function applyScreenerFilters() {
             }
         }
 
-        // Calculate R:R Range
+        // Calculate R:R Ratio
         let rrDisplay = "1:2.0";
         if (targets.length > 0 && stopLosses.length > 0) {
-            const minT = targets[0].price;
             const maxT = targets[targets.length - 1].price;
             const sl = stopLosses[0].price;
-
             const risk = Math.max(0.1, Math.abs(price - sl));
-            const rewMin = Math.abs(minT - price);
             const rewMax = Math.abs(maxT - price);
-
-            const rrMin = (rewMin / risk).toFixed(1);
-            const rrMax = (rewMax / risk).toFixed(1);
-            rrDisplay = (rrMin === rrMax) ? `1:${rrMin}` : `1:${rrMin} \u279E ${rrMax}`;
+            const rr = (rewMax / risk).toFixed(1);
+            rrDisplay = `1:${rr}`;
         }
+
+        const sideBadge = isBullish 
+            ? '<span class="badge bg-success-trans" style="font-weight:800; color:var(--success);">BUY</span>' 
+            : '<span class="badge bg-danger-trans" style="font-weight:800; color:var(--danger);">SELL</span>';
 
         html += `
             <tr>
@@ -3279,19 +3362,22 @@ function applyScreenerFilters() {
                     <div class="rank-badge ${rankClass}" style="margin-top: 2px;">${score}</div>
                 </td>
                 <td>
+                    <div style="margin-top: 2px;">${sideBadge}</div>
+                </td>
+                <td>
                     <div style="margin-top: 2px;">${tfBadge}</div>
                 </td>
                 <td>
-                    <div style="display: flex; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
                         <div style="font-weight:700;">${s.symbol}</div>
-                        ${holdingsISINs.includes(s.isin) ? '<span class="holdings-badge">HOLDING</span>' : ''}
+                        ${holdingsISINs.includes(s.isin) ? '<i class="fas fa-briefcase text-success" style="font-size: 11px;" title="In Portfolio"></i>' : ''}
                     </div>
                     <div style="font-size:10px; color:var(--text-dim);">${s.isin}</div>
                 </td>
                 <td style="font-weight:700; color:var(--text-main);">
                     <div>${price.toLocaleString('en-IN')}</div>
                 </td>
-                <td style="font-size: 13px; font-weight: 700; color: var(--text-main);">
+                <td style="font-size: 14px; font-weight: 800; color: var(--success); text-align: center;">
                     ${rrDisplay}
                 </td>
                 <td>
@@ -3305,20 +3391,93 @@ function applyScreenerFilters() {
                 <td style="color:var(--success); font-weight:600; font-size:11px;">${targetsDisplay}</td>
                 <td style="color:var(--danger); font-weight:600; font-size:11px;">${slDisplay}</td>
                 <td style="text-align: center;">
-                    <span class="badge" style="background: rgba(168, 85, 247, 0.1); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 800; padding: 2px 8px;">
-                        ${displayScore}
-                    </span>
+                    <div class="rank-badge rank-purple" style="margin: 0 auto;">${displayScore}</div>
                 </td>
                 <td>
-                    <button class="btn btn-primary" style="padding:6px 14px; font-size:11px; background:var(--primary); box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);" 
+                    <button class="btn btn-primary" style="padding:6px 10px; font-size:12px; background:var(--primary); box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);" 
                         onclick="openPaperTrade('${s.isin}', '${s.symbol}', ${price}, '${s.timeframe || (currentMode === 'swing' ? '1d' : '5m')}')">
-                        <i class="fas fa-plus-circle"></i> Trade
+                        <i class="fas fa-plus-circle"></i>
                     </button>
                 </td>
             </tr>
         `;
     });
     tbody.innerHTML = html;
+}
+
+
+/**
+ * EXCEL EXPORT (CSV) for Pro Screener
+ */
+function exportScreenerToExcel() {
+    if (!activeScreenerFilteredData || activeScreenerFilteredData.length === 0) {
+        showToast("No data to export!", "error");
+        return;
+    }
+    
+    showToast("Preparing Excel Export...", "info");
+    
+    // Header Row
+    const headers = ["Rank", "Side", "Timeframe", "Stock", "ISIN", "LTP", "R:R", "Strategy", "Pattern", "Score", "Stop Loss", "Target", "Accumulation"];
+    
+    // Map data rows
+    const rows = activeScreenerFilteredData.map(s => {
+        const score = s.confluence_rank || 0;
+        const isBullish = score > 0;
+        const side = isBullish ? "BUY" : "SELL";
+        const price = s.ltp || s.close || 0;
+        const sl_rule = currentMode === 'swing' ? 0.03 : 0.015;
+        
+        // R:R Calculation (Same as display)
+        let rrValue = "1:2.0";
+        let targetVal = s.target ? parseFloat(s.target) : (isBullish ? price * 1.05 : price * 0.95);
+        let slVal = s.sl ? parseFloat(s.sl) : (isBullish ? price * (1 - sl_rule) : price * (1 + sl_rule));
+        
+        const risk = Math.max(0.1, Math.abs(price - slVal));
+        const rewMax = Math.abs(targetVal - price);
+        rrValue = `1:${(rewMax / risk).toFixed(1)}`;
+        
+        return [
+            score,
+            side,
+            s.timeframe || (currentMode === 'swing' ? '1d' : '5m'),
+            s.symbol,
+            s.isin,
+            price.toFixed(2),
+            rrValue,
+            s.trade_strategy || "Trend Support", // Default strategy name
+            s.candlestick_pattern || "-",
+            s.pattern_score || 0,
+            slVal.toFixed(2),
+            targetVal.toFixed(2),
+            price.toFixed(2) // Accumulation base (simplified for export)
+        ];
+    });
+
+    // Construct CSV String (Auto-quoted for safety)
+    const csvRows = [headers, ...rows].map(r => 
+        r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")
+    );
+    const csvContent = "\uFEFF" + csvRows.join("\r\n"); // Add BOM for Excel UTF-8 support
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement("a");
+    link.style.display = 'none';
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute("download", `ProScreener_Signals_${currentMode}_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    
+    // CLEANUP
+    setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }, 100);
+
+    showToast(`Successfully exported ${rows.length} signals.`, "success");
 }
 
 async function openPaperTrade(isin, symbol, price, timeframe) {

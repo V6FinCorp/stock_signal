@@ -392,17 +392,18 @@
 
                     <select class="select-input" id="screener-filter-strat" onchange="applyScreenerFilters()"
                         style="width: 140px;">
-                        <option value="all">Trade Plan: All</option>
-                        <option value="PERFECT_BUY">Perfect Buy</option>
-                        <option value="PERFECT_SELL">Perfect Sell</option>
-                        <option value="DMA_BOUNCE">Support Bounce</option>
-                        <option value="OVEREXTENDED">Overextended</option>
+                        <option value="all">Strategy: All</option>
                     </select>
 
                     <select class="select-input" id="screener-filter-custom" onchange="onScreenerCustomStrategyChange()"
                         style="max-width: 280px; border-color: var(--primary);">
                         <option value="none">Default Confluence Ranking</option>
                     </select>
+
+                    <button class="btn btn-outline" onclick="exportScreenerToExcel()" 
+                        style="height: 38px; padding: 0 16px; border-color: var(--success); color: var(--success); font-weight: 700; display: flex; align-items: center; gap: 8px; border-radius: 8px; background: rgba(8, 153, 129, 0.05);">
+                        <i class="fas fa-file-excel"></i> Export
+                    </button>
 
                     <!-- Compact Dynamic Dynamic Inputs for Target/SL -->
                     <div
@@ -455,19 +456,20 @@
                 <table class="signal-table" id="screener-table">
                     <thead>
                         <tr>
-                            <th>Rank</th>
-                            <th>TF</th>
-                            <th>Stock</th>
-                            <th>CMP</th>
-                            <th>R:R</th>
-                            <th>Trade Plan (Strategy)</th>
+                            <th onclick="sortTable('screener-table', 0, 'number')" style="width: 60px; cursor: pointer;">Rank <i class="fas fa-sort"></i></th>
+                            <th onclick="sortTable('screener-table', 1, 'string')" style="width: 70px; cursor: pointer;">Side <i class="fas fa-sort"></i></th>
+                            <th onclick="sortTable('screener-table', 2, 'string')" style="width: 70px; cursor: pointer;">TF <i class="fas fa-sort"></i></th>
+                            <th onclick="sortTable('screener-table', 3, 'string')" style="cursor: pointer;">Stock <i class="fas fa-sort"></i></th>
+                            <th onclick="sortTable('screener-table', 4, 'number')" style="cursor: pointer;">CMP <i class="fas fa-sort"></i></th>
+                            <th onclick="sortTable('screener-table', 5, 'number')" style="cursor: pointer;">R:R <i class="fas fa-sort"></i></th>
+                            <th onclick="sortTable('screener-table', 6, 'string')" style="cursor: pointer;">Strategy <i class="fas fa-sort"></i></th>
                             <th class="formation-col">Formation</th>
                             <th class="pattern-name-col">Pattern Name</th>
                             <th>Add</th>
                             <th>Targets</th>
                             <th>Stop Loss</th>
-                            <th>Score</th>
-                            <th>Action</th>
+                            <th onclick="sortTable('screener-table', 12, 'number')" style="width: 70px; cursor: pointer;">Score <i class="fas fa-sort"></i></th>
+                            <th style="width: 80px;">Action</th>
                         </tr>
                     </thead>
                     <tbody id="screener-tbody">

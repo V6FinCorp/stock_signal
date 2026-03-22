@@ -141,9 +141,17 @@ def calculate_indicators(df, settings, return_df=False, profile_id='swing'):
         day_mask = df['timestamp'].dt.date == latest_date
         df['day_high'] = df.loc[day_mask, 'high'].max()
         df['day_low'] = df.loc[day_mask, 'low'].min()
+        
+        # --- Recent 20-Bar Extremes (for Swing Location Confluence) ---
+        if profile_id == 'swing':
+            df['recent_20_high'] = df['high'].rolling(window=20).max()
+            df['recent_20_low'] = df['low'].rolling(window=20).min()
     else:
         df['day_high'] = None
         df['day_low'] = None
+        if profile_id == 'swing':
+            df['recent_20_high'] = None
+            df['recent_20_low'] = None
 
     # RSI
     if settings['RSI']['enabled']:
@@ -163,10 +171,10 @@ def calculate_indicators(df, settings, return_df=False, profile_id='swing'):
                 df['RSI_day_high'] = None
                 df['RSI_day_low'] = None
         
-        # --- MTF RSI Logic (Intraday Only) ---
+        # --- MTF RSI Logic ---
+        df_temp = df.set_index('timestamp').copy()
         if profile_id == 'intraday':
             # Resample for 15m and 30m if we have 5m data
-            df_temp = df.set_index('timestamp').copy()
             for tf_m in [15, 30]:
                 df_res = df_temp.resample(f'{tf_m}min').agg({
                     'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
@@ -174,8 +182,20 @@ def calculate_indicators(df, settings, return_df=False, profile_id='swing'):
                 if not df_res.empty:
                     rsi_mtf = ta.rsi(df_res['close'], length=rsi_len)
                     if rsi_mtf is not None:
-                        # Map the resampled RSI back to the original index
                         df[f'RSI_MTF_{tf_m}'] = rsi_mtf.reindex(df_temp.index, method='ffill').values
+        
+        elif profile_id == 'swing':
+            # Resample for Weekly and Monthly if we have Daily data
+            # Note: This is only effective if base data is Daily.
+            resample_rules = [('W-FRI', 'W'), ('ME', 'M')]
+            for rule, label in resample_rules:
+                df_res = df_temp.resample(rule).agg({
+                    'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+                }).dropna()
+                if not df_res.empty:
+                    rsi_mtf = ta.rsi(df_res['close'], length=rsi_len)
+                    if rsi_mtf is not None:
+                        df[f'RSI_MTF_{label}'] = rsi_mtf.reindex(df_temp.index, method='ffill').values
     
         
     # EMA (Fast/Slow Crossover)
@@ -209,7 +229,6 @@ def calculate_indicators(df, settings, return_df=False, profile_id='swing'):
             # Col 0: Supertrend, Col 1: Direction
             df['ST_value'] = st_df.iloc[:, 0]
             df['ST_dir'] = st_df.iloc[:, 1] # 1 for BUY, -1 for SELL
-
     # ATR (Average True Range)
     if settings.get('ATR', {}).get('enabled'):
         atr_len = settings['ATR']['period']
@@ -228,6 +247,12 @@ def calculate_indicators(df, settings, return_df=False, profile_id='swing'):
         df.loc[(df['vol_ratio'] > vol_threshold) & (df['close'] > df['open']), 'vol_signal'] = 'BULL_SPIKE'
         df.loc[(df['vol_ratio'] > vol_threshold) & (df['close'] < df['open']), 'vol_signal'] = 'BEAR_SPIKE'
         
+    # 3-Candle Reversal Confirmation (Green after Reds / Red after Greens)
+    df['is_green'] = df['close'] > df['open']
+    df['is_red'] = df['close'] < df['open']
+    df['rev_bull_conf'] = df['is_green'] & df['is_red'].shift(1) & df['is_red'].shift(2) & df['is_red'].shift(3)
+    df['rev_bear_conf'] = df['is_red'] & df['is_green'].shift(1) & df['is_green'].shift(2) & df['is_green'].shift(3)
+
     # CANDLESTICK PATTERNS
     if settings.get('patterns', {}).get('enabled'):
         try:
@@ -584,52 +609,104 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                     
                     # --- Confluence Ranking Logic ---
                     rank = 0
-                    day_high = latest_data.get('day_high')
-                    day_low = latest_data.get('day_low')
+                    
+                    # 1. Fetch dynamic RSI OB/OS levels from settings (Tuning)
+                    rsi_os = settings.get('RSI', {}).get('os', 30)
+                    rsi_ob = settings.get('RSI', {}).get('ob', 70)
                     
                     is_exhaustion_buy = False
                     is_exhaustion_sell = False
 
                     if profile_id == 'intraday':
-                        # 1. MTF RSI Exhaustion (Triple Alignment)
+                        # A. MTF RSI Exhaustion (5m + 15m + 30m)
                         rsi5 = rsi_val
                         rsi15 = latest_data.get('RSI_MTF_15')
                         rsi30 = latest_data.get('RSI_MTF_30')
 
-                        is_exhaustion_buy = (rsi5 < 31 and rsi15 is not None and rsi15 < 31 and rsi30 is not None and rsi30 < 31)
-                        is_exhaustion_sell = (rsi5 > 69 and rsi15 is not None and rsi15 > 69 and rsi30 is not None and rsi30 > 69)
+                        is_exhaustion_buy = (rsi5 is not None and rsi5 < rsi_os and 
+                                             rsi15 is not None and rsi15 < rsi_os and 
+                                             rsi30 is not None and rsi30 < rsi_os)
+                        is_exhaustion_sell = (rsi5 is not None and rsi5 > rsi_ob and 
+                                              rsi15 is not None and rsi15 > rsi_ob and 
+                                              rsi30 is not None and rsi30 > rsi_ob)
 
                         if is_exhaustion_buy: rank += 3
                         elif is_exhaustion_sell: rank -= 3
 
-                        # 2. Location (Day's Extreme)
-                        if day_low and abs(ltp - day_low) / day_low < 0.001: rank += 1 # Price near Day Low
-                        if day_high and abs(ltp - day_high) / day_high < 0.001: rank -= 1 # Price near Day High
+                        # B. Location (Day's Extreme - 1 Point)
+                        day_high = latest_data.get('day_high')
+                        day_low = latest_data.get('day_low')
+                        if day_low and abs(ltp - day_low) / day_low < 0.001: rank += 1 
+                        if day_high and abs(ltp - day_high) / day_high < 0.001: rank -= 1
 
-                        # 3. Pattern Confirmation
-                        if pattern_str:
-                            if "Bullish" in pattern_str: rank += 1
-                            elif "Bearish" in pattern_str: rank -= 1
+                        # C. Pattern Confirmation (Up to 2 Pts)
+                        if pattern_str or latest_data.get('rev_bull_conf') or latest_data.get('rev_bear_conf'):
+                            if pattern_str:
+                                if "Bullish" in pattern_str: rank += 1
+                                elif "Bearish" in pattern_str: rank -= 1
+                            else:
+                                if latest_data.get('rev_bull_conf'): rank += 1
+                                elif latest_data.get('rev_bear_conf'): rank -= 1
                             
-                            # Bonus for Small Bodies (Specified in user method)
+                            # Confirmation Bonus (+1 Pt)
                             small_body_patterns = ['Spinningtop', 'Doji', 'Hammer', 'Star']
-                            if any(sb in pattern_str for sb in small_body_patterns):
-                                rank = (rank + 1) if rank > 0 else (rank - 1)
+                            is_small_body = pattern_str and any(sb in pattern_str for sb in small_body_patterns)
+                            is_buy_seq = latest_data.get('rev_bull_conf')
+                            is_sell_seq = latest_data.get('rev_bear_conf')
+
+                            if (rank > 0 and (is_small_body or is_buy_seq)):
+                                rank += 1
+                            elif (rank < 0 and (is_small_body or is_sell_seq)):
+                                rank -= 1
 
                     else:
-                        # Legacy/General Scoring for non-intraday
-                        if ema_signal == 'BUY': rank += 1
-                        elif ema_signal == 'SELL': rank -= 1
-                        if st_dir == 'BUY': rank += 1
-                        elif st_dir == 'SELL': rank -= 1
-                        if rsi_val is not None:
-                            if rsi_val > 50: rank += 1
-                            elif rsi_val < 50: rank -= 1
-                        if dma_data and dma_data.get('SMA_20'):
-                            if ltp > dma_data.get('SMA_20'): rank += 1
-                            else: rank -= 1
-                        if vol_signal == 'BULL_SPIKE': rank += 1
-                        elif vol_signal == 'BEAR_SPIKE': rank -= 1
+                        # --- Swing Point-Based Logic ---
+                        # A. MTF RSI Exhaustion (Daily + Weekly + Monthly)
+                        # Assumes Daily data run (timeframe='1d') to possess resampled W/M columns
+                        rsi_d = rsi_val
+                        rsi_w = latest_data.get('RSI_MTF_W')
+                        rsi_m = latest_data.get('RSI_MTF_M')
+
+                        is_exhaustion_buy = (rsi_d is not None and rsi_d < rsi_os and 
+                                             rsi_w is not None and rsi_w < rsi_os and 
+                                             rsi_m is not None and rsi_m < rsi_os)
+                        is_exhaustion_sell = (rsi_d is not None and rsi_d > rsi_ob and 
+                                              rsi_w is not None and rsi_w > rsi_ob and 
+                                              rsi_m is not None and rsi_m > rsi_ob)
+
+                        if is_exhaustion_buy: rank += 3
+                        elif is_exhaustion_sell: rank -= 3
+
+                        # B. Location (Recent 20-Bar Extreme - 1 Point)
+                        rec_high = latest_data.get('recent_20_high')
+                        rec_low = latest_data.get('recent_20_low')
+                        
+                        # Timeframe-specific buffers: Daily 5%, Weekly 15%, Monthly 20%
+                        buffer = 0.05 if timeframe == '1d' else (0.15 if timeframe == '1w' else 0.20)
+                        
+                        if rec_low and abs(ltp - rec_low) / rec_low < buffer: rank += 1
+                        if rec_high and abs(ltp - rec_high) / rec_high < buffer: rank -= 1
+
+                        # C. Pattern Confirmation (Up to 2 Pts)
+                        if pattern_str or latest_data.get('rev_bull_conf') or latest_data.get('rev_bear_conf'):
+                            # Base Pattern (+1 Pt)
+                            if pattern_str:
+                                if "Bullish" in pattern_str: rank += 1
+                                elif "Bearish" in pattern_str: rank -= 1
+                            else:
+                                if latest_data.get('rev_bull_conf'): rank += 1
+                                elif latest_data.get('rev_bear_conf'): rank -= 1
+
+                            # Confirmation Bonus (+1 Pt)
+                            small_body_patterns = ['Spinningtop', 'Doji', 'Hammer', 'Star']
+                            is_small_body = pattern_str and any(sb in pattern_str for sb in small_body_patterns)
+                            is_buy_seq = latest_data.get('rev_bull_conf')
+                            is_sell_seq = latest_data.get('rev_bear_conf')
+
+                            if (rank > 0 and (is_small_body or is_buy_seq)):
+                                rank += 1
+                            elif (rank < 0 and (is_small_body or is_sell_seq)):
+                                rank -= 1
 
                     # --- Trade Plan Logic (Pick Stocks for Trade) ---
                     sl = None
@@ -651,30 +728,38 @@ async def process_profile(pool, datamart_pool, profile_id, timeframe, shared_cac
                             target = ltp - max(risk, ltp * 0.005)
 
                     else:
-                        # Standard Signal Logic
+                        # Standard Signal Logic - Align direction with confluence rank
                         rr_multiplier = 2.0 if profile_id == 'swing' else 1.5
-                        if st_dir == 'BUY':
+                        is_buy_side = (rank > 0)
+                        
+                        if is_buy_side:
+                            # Target/SL for Longs
                             if st_value and ema_slow: sl = min(st_value, ema_slow)
                             elif st_value: sl = st_value
                             elif ema_slow: sl = ema_slow
+                            
+                            # Safety: Ensure SL is actually BELOW LTP for Longs
                             if sl and sl < ltp:
                                 risk = ltp - sl
                                 target = ltp + (risk * rr_multiplier)
                             else:
                                 sl_pct = 0.03 if profile_id == 'swing' else 0.005
                                 sl = ltp * (1 - sl_pct)
-                                target = ltp * (1 + (sl_pct * rr_multiplier))
-                        elif st_dir == 'SELL':
+                                target = ltp + (ltp * sl_pct * rr_multiplier)
+                        else:
+                            # Target/SL for Shorts
                             if st_value and ema_slow: sl = max(st_value, ema_slow)
                             elif st_value: sl = st_value
                             elif ema_slow: sl = ema_slow
+                            
+                            # Safety: Ensure SL is actually ABOVE LTP for Shorts
                             if sl and sl > ltp:
                                 risk = sl - ltp
                                 target = ltp - (risk * rr_multiplier)
                             else:
                                 sl_pct = 0.03 if profile_id == 'swing' else 0.005
                                 sl = ltp * (1 + sl_pct)
-                                target = ltp * (1 - (sl_pct * rr_multiplier))
+                                target = ltp - (ltp * sl_pct * rr_multiplier)
 
                     
                     # Pick Strategy Labels
@@ -922,32 +1007,66 @@ async def get_enriched_chart_data(app_pool, isin, timeframe, profile_id, bars=30
             st_dir = f"{latest_meta.get('ST_dir')}"
             st_dir = 'BUY' if st_dir == '1' else ('SELL' if st_dir == '-1' else 'Neutral')
 
-            # --- Simple Rank Estimation (Enrichment Mode) ---
+            # --- Confluence Rank Estimation (Matches process_profile) ---
             calc_rank = 0
+            rsi_os = settings.get('RSI', {}).get('os', 30)
+            rsi_ob = settings.get('RSI', {}).get('ob', 70)
+            ltp = latest_meta.get('close')
+
             if profile_id == 'intraday':
+                # A. MTF RSI Exhaustion (5m + 15m + 30m)
                 r5 = latest_meta.get(f"RSI_{settings['RSI']['period']}")
                 r15 = latest_meta.get('RSI_MTF_15')
                 r30 = latest_meta.get('RSI_MTF_30')
-                ltp = latest_meta.get('close')
+
+                is_ex_buy = (r5 is not None and r5 < rsi_os and r15 is not None and r15 < rsi_os and r30 is not None and r30 < rsi_os)
+                is_ex_sell = (r5 is not None and r5 > rsi_ob and r15 is not None and r15 > rsi_ob and r30 is not None and r30 > rsi_ob)
+                if is_ex_buy: calc_rank += 3
+                elif is_ex_sell: calc_rank -= 3
+                
+                # B. Location (Day Extreme)
                 d_low = latest_meta.get('day_low')
                 d_high = latest_meta.get('day_high')
-
-                if r5 is not None and r15 is not None and r30 is not None:
-                    if r5 < 31 and r15 < 31 and r30 < 31: calc_rank += 3
-                    elif r5 > 69 and r15 > 69 and r30 > 69: calc_rank -= 3
-                
                 if d_low and ltp and abs(ltp - d_low) / d_low < 0.001: calc_rank += 1
                 if d_high and ltp and abs(ltp - d_high) / d_high < 0.001: calc_rank -= 1
+            else:
+                # --- Swing Points ---
+                r_d = latest_meta.get(f"RSI_{settings['RSI']['period']}")
+                r_w = latest_meta.get('RSI_MTF_W')
+                r_m = latest_meta.get('RSI_MTF_M')
+
+                is_ex_buy = (r_d is not None and r_d < rsi_os and r_w is not None and r_w < rsi_os and r_m is not None and r_m < rsi_os)
+                is_ex_sell = (r_d is not None and r_d > rsi_ob and r_w is not None and r_w > rsi_ob and r_m is not None and r_m > rsi_ob)
+                if is_ex_buy: calc_rank += 3
+                elif is_ex_sell: calc_rank -= 3
+
+                # B. Location (20-bar Extreme)
+                rec_h = latest_meta.get('recent_20_high')
+                rec_l = latest_meta.get('recent_20_low')
+                buffer = 0.05 if timeframe == '1d' else (0.15 if timeframe == '1w' else 0.20)
+                if rec_l and ltp and abs(ltp - rec_l) / rec_l < buffer: calc_rank += 1
+                if rec_h and ltp and abs(ltp - rec_h) / rec_h < buffer: calc_rank -= 1
+
+            # C. Pattern Confirmation (Common - Up to 2 Pts)
+            if pattern_str or latest_meta.get('rev_bull_conf') or latest_meta.get('rev_bear_conf'):
+                # Base Pattern (+1 Pt)
                 if pattern_str:
                     if "Bullish" in pattern_str: calc_rank += 1
                     elif "Bearish" in pattern_str: calc_rank -= 1
-            else:
-                if latest_meta.get('ema_signal') == 'BUY': calc_rank += 1
-                elif latest_meta.get('ema_signal') == 'SELL': calc_rank -= 1
-                if st_dir == 'BUY': calc_rank += 1
-                elif st_dir == 'SELL': calc_rank -= 1
-                if latest_meta.get('vol_signal') == 'BULL_SPIKE': calc_rank += 1
-                elif latest_meta.get('vol_signal') == 'BEAR_SPIKE': calc_rank -= 1
+                else:
+                    if latest_meta.get('rev_bull_conf'): calc_rank += 1
+                    elif latest_meta.get('rev_bear_conf'): calc_rank -= 1
+
+                # Confirmation Bonus (+1 Pt)
+                small_body_patterns = ['Spinningtop', 'Doji', 'Hammer', 'Star']
+                is_small_body = pattern_str and any(sb in pattern_str for sb in small_body_patterns)
+                is_buy_seq = latest_meta.get('rev_bull_conf')
+                is_sell_seq = latest_meta.get('rev_bear_conf')
+
+                if (calc_rank > 0 and (is_small_body or is_buy_seq)):
+                    calc_rank += 1
+                elif (calc_rank < 0 and (is_small_body or is_sell_seq)):
+                    calc_rank -= 1
             
             # --- DMA ---
             if settings['DMA']['enabled']:

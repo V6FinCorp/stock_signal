@@ -15,6 +15,7 @@
     --glass-border: rgba(255, 255, 255, 0.08);
     --portfolio: #a855f7;
     --portfolio-rgb: 168, 85, 247;
+    --purple: #a855f7;
 }
 
 * {
@@ -558,6 +559,12 @@ h1 {
     background: rgba(239, 68, 68, 0.2);
     border: 1px solid var(--danger);
     color: var(--danger) !important;
+}
+
+.rank-purple {
+    background: rgba(168, 85, 247, 0.2);
+    border: 1px solid var(--purple);
+    color: var(--purple) !important;
 }
 
 .symbol-name {
